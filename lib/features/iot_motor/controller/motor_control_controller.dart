@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/motor_command_type.dart';
 import '../models/mqtt_connection_config.dart';
 import '../models/telemetry_sample.dart';
+import '../services/background_mqtt_service.dart';
 import '../services/mqtt_motor_service.dart';
 
 class MotorControlController extends ChangeNotifier {
@@ -288,7 +289,19 @@ class MotorControlController extends ChangeNotifier {
 
     isConnected = true;
     connectionMessage = result.message;
-    statusMessage = 'Conexao ativa. Aguardando dados dos ESP32.';
+
+    bool backgroundReady = false;
+    try {
+      await BackgroundMqttService.instance.startMonitoring(config);
+      backgroundReady = true;
+    } catch (_) {
+      backgroundReady = false;
+    }
+
+    statusMessage =
+        backgroundReady
+            ? 'Conexao ativa. Monitoramento em segundo plano ativo.'
+            : 'Conexao ativa. Aguardando dados dos ESP32.';
     _notify();
   }
 
@@ -296,6 +309,12 @@ class MotorControlController extends ChangeNotifier {
     if (!isConnected && !isBusy) {
       return;
     }
+    try {
+      await BackgroundMqttService.instance.stopMonitoring();
+    } catch (_) {
+      // Keep foreground disconnect flow even if background service stop fails.
+    }
+
     await _service.disconnect();
     isBusy = false;
     isConnected = false;
