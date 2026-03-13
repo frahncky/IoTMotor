@@ -66,12 +66,12 @@ class HistoricoTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Historico de eventos',
+                      'Hist\u00f3rico',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Linha do tempo das leituras e estados do motor.',
+                      'Linha do tempo dos eventos do motor.',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
@@ -96,7 +96,7 @@ class HistoricoTab extends StatelessWidget {
             children: <Widget>[
               Chip(
                 avatar: const Icon(Icons.timeline_rounded, size: 16),
-                label: Text('$total eventos'),
+                label: Text(total == 1 ? '1 evento' : '$total eventos'),
               ),
               Chip(
                 avatar: const Icon(Icons.schedule_rounded, size: 16),
@@ -181,14 +181,14 @@ class HistoricoTab extends StatelessWidget {
                 Icon(Icons.history_toggle_off_rounded, color: AppTheme.inkSoft),
                 const SizedBox(width: 8),
                 Text(
-                  'Ainda sem eventos no historico.',
+                  'Ainda sem eventos no hist\u00f3rico.',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
               ],
             ),
             const SizedBox(height: 6),
             Text(
-              'Conecte no broker e receba telemetria para montar a linha do tempo.',
+              'Conecte-se ao broker para come\u00e7ar.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
@@ -227,6 +227,7 @@ class HistoricoTab extends StatelessWidget {
   }) {
     final _HistoryEventStyle style = _eventStyle(sample);
     final String modeLabel = _resolveModeLabel(sample.mode);
+    final List<Widget> metricChips = _metricChips(sample);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,13 +309,17 @@ class HistoricoTab extends StatelessWidget {
                   _formatDateTime(sample.timestamp),
                   style: Theme.of(context).textTheme.labelMedium,
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Modo: $modeLabel',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                Wrap(spacing: 8, runSpacing: 8, children: _metricChips(sample)),
+                if (modeLabel != '--') ...<Widget>[
+                  const SizedBox(height: 6),
+                  Text(
+                    'Modo: $modeLabel',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+                if (metricChips.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 8, children: metricChips),
+                ],
               ],
             ),
           ),
@@ -336,10 +341,10 @@ class HistoricoTab extends StatelessWidget {
     }
 
     if (modeLabel != '--') {
-      return 'Atualizacao de modo ($modeLabel)';
+      return 'Atualização de modo ($modeLabel)';
     }
 
-    return 'Pacote de telemetria recebido';
+    return 'Leitura registrada';
   }
 
   _HistoryEventStyle _eventStyle(TelemetrySample sample) {
@@ -375,7 +380,9 @@ class HistoricoTab extends StatelessWidget {
     final List<Widget> chips = <Widget>[];
 
     if (sample.voltage != null) {
-      chips.add(_MetricChip(label: 'Tensao', color: AppTheme.voltageAccent));
+      chips.add(
+        _MetricChip(label: 'Tens\u00e3o', color: AppTheme.voltageAccent),
+      );
     }
 
     if (sample.current != null) {
@@ -384,7 +391,10 @@ class HistoricoTab extends StatelessWidget {
 
     if (sample.vibration != null) {
       chips.add(
-        _MetricChip(label: 'Vibracao', color: AppTheme.vibrationAccent),
+        _MetricChip(
+          label: 'Vibra\u00e7\u00e3o',
+          color: AppTheme.vibrationAccent,
+        ),
       );
     }
 
@@ -392,10 +402,6 @@ class HistoricoTab extends StatelessWidget {
       chips.add(
         _MetricChip(label: 'Temperatura', color: AppTheme.temperatureAccent),
       );
-    }
-
-    if (chips.isEmpty) {
-      chips.add(_MetricChip(label: 'Sem medidas', color: AppTheme.inkSoft));
     }
 
     return chips;
@@ -455,10 +461,8 @@ class HistoricoTab extends StatelessWidget {
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: const Text('Limpar historico'),
-          content: const Text(
-            'Deseja remover todos os eventos da linha do tempo?',
-          ),
+          title: const Text('Limpar hist\u00f3rico'),
+          content: const Text('Deseja remover todos os eventos?'),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -480,7 +484,7 @@ class HistoricoTab extends StatelessWidget {
     controller.clearHistory();
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Historico limpo.')));
+    ).showSnackBar(const SnackBar(content: Text('Hist\u00f3rico limpo.')));
   }
 }
 
