@@ -8,6 +8,7 @@ import '../models/mqtt_connection_config.dart';
 import '../models/telemetry_sample.dart';
 import '../services/background_mqtt_service.dart';
 import '../services/mqtt_motor_service.dart';
+import '../services/start_types_store.dart';
 
 class MotorControlController extends ChangeNotifier {
   MotorControlController({MqttMotorService? service})
@@ -31,11 +32,16 @@ class MotorControlController extends ChangeNotifier {
     _connectedDevicesTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _notifyConnectedDevicesIfChanged();
     });
+    unawaited(loadStartTypes());
   }
 
   static const int maxHistory = 120;
   static const String _autoDeviceId = 'auto';
   static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
+  static const List<MotorCommandType> _defaultStartTypes = <MotorCommandType>[
+    MotorCommandType.directStart,
+    MotorCommandType.starDeltaStart,
+  ];
   static const List<String> telemetryRequestFields = <String>[
     'voltage',
     'current',
@@ -45,6 +51,7 @@ class MotorControlController extends ChangeNotifier {
 
   final MqttMotorService _service;
   bool _disposed = false;
+  bool _startTypesLoaded = false;
   String? _pendingMessage;
 
   late final TextEditingController brokerController;
@@ -75,8 +82,7 @@ class MotorControlController extends ChangeNotifier {
   Timer? _connectedDevicesTimer;
   final LinkedHashSet<String> _knownDevices = LinkedHashSet<String>();
   final List<MotorCommandType> _startTypes = <MotorCommandType>[
-    MotorCommandType.directStart,
-    MotorCommandType.starDeltaStart,
+    ..._defaultStartTypes,
   ];
 
   TelemetrySample? get latestSample => _buildCombinedLatestSample();
@@ -370,6 +376,30 @@ class MotorControlController extends ChangeNotifier {
     return null;
   }
 
+  Future<void> loadStartTypes() async {
+    if (_startTypesLoaded) {
+      return;
+    }
+    _startTypesLoaded = true;
+
+    try {
+      final List<MotorCommandType> persisted = await loadPersistedStartTypes();
+      final List<MotorCommandType> normalized = _normalizePersistedStartTypes(
+        persisted,
+      );
+      if (normalized.isEmpty) {
+        return;
+      }
+
+      _startTypes
+        ..clear()
+        ..addAll(normalized);
+      _notify();
+    } catch (_) {
+      // Keep defaults if storage is unavailable or content is invalid.
+    }
+  }
+
   String? addStartType({required String label, required String mode}) {
     final String normalizedLabel = _normalizeLabel(label);
     if (normalizedLabel.isEmpty) {
@@ -393,6 +423,7 @@ class MotorControlController extends ChangeNotifier {
       mode: normalizedMode,
     );
     _startTypes.add(type);
+    unawaited(_persistStartTypes());
     _pendingMessage = 'Partida "$normalizedLabel" adicionada.';
     _notify();
     return id;
@@ -420,10 +451,7 @@ class MotorControlController extends ChangeNotifier {
     }
 
     final String normalizedMode = _normalizeMode(mode, normalizedLabel);
-    final bool modeInUse = _startTypes.any(
-      (MotorCommandType item) => item.id != id && item.mode == normalizedMode,
-    );
-    if (modeInUse) {
+    if (_containsMode(normalizedMode, ignoreId: id)) {
       _pendingMessage = 'Ja existe uma partida com modo "$normalizedMode".';
       _notify();
       return false;
@@ -433,6 +461,7 @@ class MotorControlController extends ChangeNotifier {
       label: normalizedLabel,
       mode: normalizedMode,
     );
+    unawaited(_persistStartTypes());
     _pendingMessage = 'Partida "$normalizedLabel" atualizada.';
     _notify();
     return true;
@@ -456,6 +485,7 @@ class MotorControlController extends ChangeNotifier {
 
     final String removed = _startTypes[index].label;
     _startTypes.removeAt(index);
+    unawaited(_persistStartTypes());
     _pendingMessage = 'Partida "$removed" removida.';
     _notify();
     return true;
@@ -907,8 +937,57 @@ class MotorControlController extends ChangeNotifier {
     return selected;
   }
 
-  bool _containsMode(String mode) {
-    return _startTypes.any((MotorCommandType item) => item.mode == mode);
+  bool _containsMode(String mode, {String? ignoreId}) {
+    return _startTypes.any(
+      (MotorCommandType item) => item.mode == mode && item.id != ignoreId,
+    );
+  }
+
+  List<MotorCommandType> _normalizePersistedStartTypes(
+    List<MotorCommandType> persisted,
+  ) {
+    if (persisted.isEmpty) {
+      return const <MotorCommandType>[];
+    }
+
+    final Set<String> knownModes = <String>{};
+    final List<MotorCommandType> normalized = <MotorCommandType>[];
+
+    for (final MotorCommandType raw in persisted) {
+      final String label = _normalizeLabel(raw.label);
+      if (label.isEmpty) {
+        continue;
+      }
+
+      final String mode = _normalizeMode(raw.mode, label);
+      if (knownModes.contains(mode)) {
+        continue;
+      }
+      knownModes.add(mode);
+
+      final String id = raw.id.trim();
+      final String normalizedId =
+          id.isEmpty
+              ? 'custom_${DateTime.now().millisecondsSinceEpoch}_${normalized.length}'
+              : id;
+
+      normalized.add(
+        MotorCommandType.start(id: normalizedId, label: label, mode: mode),
+      );
+    }
+
+    if (normalized.isEmpty) {
+      return <MotorCommandType>[..._defaultStartTypes];
+    }
+    return normalized;
+  }
+
+  Future<void> _persistStartTypes() async {
+    try {
+      await savePersistedStartTypes(_startTypes);
+    } catch (_) {
+      // Keep in-memory flow active even if persistence fails.
+    }
   }
 
   String _normalizeLabel(String raw) {
