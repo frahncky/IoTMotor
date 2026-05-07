@@ -556,7 +556,7 @@ class HistoricoTab extends StatelessWidget {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Falha ao exportar historico: $error')),
+        SnackBar(content: Text('Falha ao exportar histórico: $error')),
       );
     }
   }
