@@ -67,23 +67,31 @@ class GrandezasTab extends StatelessWidget {
                             grid.maxWidth.isFinite
                                 ? grid.maxWidth
                                 : MediaQuery.sizeOf(context).width;
+                        final double maxHeight = grid.maxHeight.isFinite ? grid.maxHeight : MediaQuery.sizeOf(context).height;
                         final int columns = _columnsForWidth(maxWidth);
                         const double spacing = 8;
-                        final double cardWidth =
-                            (maxWidth - spacing * (columns - 1)) / columns;
+                        final int rows = (magnitudes.length / columns).ceil();
+                        // Calcula altura mínima necessária para todos os cards sem rolagem (mais compacto)
+                        final double cardHeight = ((maxHeight - (rows - 1) * spacing) / rows).clamp(90, 200);
+                        final double cardWidth = (maxWidth - spacing * (columns - 1)) / columns;
+                        final double aspectRatio = cardWidth / cardHeight;
 
-                        return SingleChildScrollView(
-                          child: Wrap(
-                            spacing: spacing,
-                            runSpacing: spacing,
-                            children: <Widget>[
-                              for (final _MagnitudeInfo magnitude in magnitudes)
-                                SizedBox(
-                                  width: cardWidth,
-                                  child: _MagnitudeCard(magnitude: magnitude),
-                                ),
-                            ],
+                        // Se todos os cards cabem, não rola
+                        final bool needsScroll = (rows * 300 + (rows - 1) * spacing) > maxHeight;
+
+                        return GridView.builder(
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: columns,
+                            crossAxisSpacing: spacing,
+                            mainAxisSpacing: spacing,
+                            childAspectRatio: aspectRatio,
                           ),
+                          itemCount: magnitudes.length,
+                          physics: needsScroll ? null : const NeverScrollableScrollPhysics(),
+                          shrinkWrap: !needsScroll,
+                          itemBuilder: (context, index) {
+                            return _MagnitudeCard(magnitude: magnitudes[index]);
+                          },
                         );
                       },
                     ),
@@ -101,7 +109,7 @@ class GrandezasTab extends StatelessWidget {
     if (width >= 1080) {
       return 6;
     }
-    if (width >= 760) {
+    if (width >= 8060) {
       return 5;
     }
     if (width >= 520) {
