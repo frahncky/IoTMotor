@@ -426,6 +426,22 @@ class HistoricoTab extends StatelessWidget {
       chips.add(_MetricChip(label: 'Corrente', color: AppTheme.currentAccent));
     }
 
+    if (sample.power != null) {
+      chips.add(_MetricChip(label: 'Potencia', color: AppTheme.brandOrange));
+    }
+
+    if (sample.powerFactor != null) {
+      chips.add(_MetricChip(label: 'FP', color: AppTheme.brandMint));
+    }
+
+    if (sample.frequency != null) {
+      chips.add(_MetricChip(label: 'Frequencia', color: AppTheme.brandBlue));
+    }
+
+    if (sample.energy != null) {
+      chips.add(_MetricChip(label: 'Energia', color: AppTheme.brandMint));
+    }
+
     if (sample.vibration != null) {
       chips.add(
         _MetricChip(
@@ -606,6 +622,22 @@ class HistoricoTab extends StatelessWidget {
               _FilterOption(
                 MotorControlController.historyMetricCurrent,
                 'Corrente',
+              ),
+              _FilterOption(
+                MotorControlController.historyMetricPower,
+                'Potencia',
+              ),
+              _FilterOption(
+                MotorControlController.historyMetricPowerFactor,
+                'FP',
+              ),
+              _FilterOption(
+                MotorControlController.historyMetricFrequency,
+                'Frequencia',
+              ),
+              _FilterOption(
+                MotorControlController.historyMetricEnergy,
+                'Energia',
               ),
               _FilterOption(
                 MotorControlController.historyMetricVibration,

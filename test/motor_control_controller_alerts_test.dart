@@ -69,7 +69,7 @@ void main() {
 
     service.emit(
       'iotmotor/esp-1/telemetry',
-      '{"voltage":220,"current":4,"motor_on":true}',
+      '{"voltage":220,"current":4,"power":880,"pf":0.98,"frequency":60,"energy":1.2,"motor_on":true}',
     );
     service.emit(
       'iotmotor/esp-2/telemetry',
@@ -88,6 +88,12 @@ void main() {
       MotorControlController.historyMetricCurrent,
     );
     expect(controller.filteredHistoryEntryCount, 2);
+
+    controller.setHistoryMetricFilter(
+      MotorControlController.historyMetricPower,
+    );
+    expect(controller.filteredHistoryEntryCount, 1);
+    expect(controller.filteredHistoryEntries.single.sample.power, 880);
 
     controller.setHistoryStateFilter(MotorControlController.historyStateOn);
     expect(controller.filteredHistoryEntryCount, 1);

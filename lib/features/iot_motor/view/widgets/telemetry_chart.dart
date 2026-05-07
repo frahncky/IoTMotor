@@ -15,6 +15,7 @@ class TelemetryChart extends StatelessWidget {
     this.instantValue,
     this.decimalDigits = 2,
     this.chartHeight = 210,
+    this.titleWidget,
   });
 
   final String title;
@@ -24,6 +25,7 @@ class TelemetryChart extends StatelessWidget {
   final double? instantValue;
   final int decimalDigits;
   final double chartHeight;
+  final Widget? titleWidget;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +36,11 @@ class TelemetryChart extends StatelessWidget {
         values.isEmpty ? _emptyScale(liveValue) : _computeScale(values);
     final String formattedLiveValue =
         liveValue == null ? '--' : liveValue.toStringAsFixed(decimalDigits);
+    final String titleText = unit.isEmpty ? title : '$title ($unit)';
+    final String instantText =
+        unit.isEmpty
+            ? 'Instant\u00e2neo: $formattedLiveValue'
+            : 'Instant\u00e2neo: $formattedLiveValue $unit';
     final Widget chartBody = Stack(
       fit: StackFit.expand,
       children: <Widget>[
@@ -60,12 +67,14 @@ class TelemetryChart extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(
-                    child: Text(
-                      '$title ($unit)',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.titleMedium,
-                    ),
+                    child:
+                        titleWidget ??
+                        Text(
+                          titleText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.titleMedium,
+                        ),
                   ),
                   const SizedBox(width: 8),
                   Flexible(
@@ -87,7 +96,7 @@ class TelemetryChart extends StatelessWidget {
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerRight,
                           child: Text(
-                            'Instant\u00e2neo: $formattedLiveValue $unit',
+                            instantText,
                             maxLines: 1,
                             style: textTheme.labelMedium?.copyWith(
                               color: color.withValues(alpha: 0.95),
@@ -136,8 +145,9 @@ class TelemetryChart extends StatelessWidget {
           tooltipRoundedRadius: 10,
           getTooltipItems: (List<LineBarSpot> touchedSpots) {
             return touchedSpots.map((LineBarSpot spot) {
+              final String formatted = spot.y.toStringAsFixed(decimalDigits);
               return LineTooltipItem(
-                '${spot.y.toStringAsFixed(decimalDigits)} $unit',
+                unit.isEmpty ? formatted : '$formatted $unit',
                 (Theme.of(context).textTheme.labelMedium ??
                         const TextStyle(fontSize: 11))
                     .copyWith(color: Colors.white),

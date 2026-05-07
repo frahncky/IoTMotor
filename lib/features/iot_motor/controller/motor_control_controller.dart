@@ -56,6 +56,10 @@ class MotorControlController extends ChangeNotifier {
   static const String historyPeriodLast24Hours = 'last_24h';
   static const String historyMetricVoltage = 'voltage';
   static const String historyMetricCurrent = 'current';
+  static const String historyMetricPower = 'power';
+  static const String historyMetricPowerFactor = 'power_factor';
+  static const String historyMetricFrequency = 'frequency';
+  static const String historyMetricEnergy = 'energy';
   static const String historyMetricVibration = 'vibration';
   static const String historyMetricTemperature = 'temperature';
   static const String historyStateOn = 'on';
@@ -71,6 +75,10 @@ class MotorControlController extends ChangeNotifier {
   static const List<String> telemetryRequestFields = <String>[
     'voltage',
     'current',
+    'power',
+    'pf',
+    'frequency',
+    'energy',
     'vibration',
     'temperature',
   ];
@@ -1011,6 +1019,14 @@ class MotorControlController extends ChangeNotifier {
         return sample.voltage != null;
       case historyMetricCurrent:
         return sample.current != null;
+      case historyMetricPower:
+        return sample.power != null;
+      case historyMetricPowerFactor:
+        return sample.powerFactor != null;
+      case historyMetricFrequency:
+        return sample.frequency != null;
+      case historyMetricEnergy:
+        return sample.energy != null;
       case historyMetricVibration:
         return sample.vibration != null;
       case historyMetricTemperature:
@@ -1060,6 +1076,14 @@ class MotorControlController extends ChangeNotifier {
     DateTime? voltageAt;
     double? current;
     DateTime? currentAt;
+    double? power;
+    DateTime? powerAt;
+    double? powerFactor;
+    DateTime? powerFactorAt;
+    double? frequency;
+    DateTime? frequencyAt;
+    double? energy;
+    DateTime? energyAt;
     double? vibration;
     DateTime? vibrationAt;
     double? temperature;
@@ -1085,6 +1109,30 @@ class MotorControlController extends ChangeNotifier {
           (currentAt == null || sample.timestamp.isAfter(currentAt))) {
         current = sample.current;
         currentAt = sample.timestamp;
+      }
+
+      if (sample.power != null &&
+          (powerAt == null || sample.timestamp.isAfter(powerAt))) {
+        power = sample.power;
+        powerAt = sample.timestamp;
+      }
+
+      if (sample.powerFactor != null &&
+          (powerFactorAt == null || sample.timestamp.isAfter(powerFactorAt))) {
+        powerFactor = sample.powerFactor;
+        powerFactorAt = sample.timestamp;
+      }
+
+      if (sample.frequency != null &&
+          (frequencyAt == null || sample.timestamp.isAfter(frequencyAt))) {
+        frequency = sample.frequency;
+        frequencyAt = sample.timestamp;
+      }
+
+      if (sample.energy != null &&
+          (energyAt == null || sample.timestamp.isAfter(energyAt))) {
+        energy = sample.energy;
+        energyAt = sample.timestamp;
       }
 
       if (sample.vibration != null &&
@@ -1115,6 +1163,10 @@ class MotorControlController extends ChangeNotifier {
 
     if (voltage == null &&
         current == null &&
+        power == null &&
+        powerFactor == null &&
+        frequency == null &&
+        energy == null &&
         vibration == null &&
         temperature == null &&
         motorOn == null &&
@@ -1126,6 +1178,10 @@ class MotorControlController extends ChangeNotifier {
       timestamp: latestTimestamp,
       voltage: voltage,
       current: current,
+      power: power,
+      powerFactor: powerFactor,
+      frequency: frequency,
+      energy: energy,
       vibration: vibration,
       temperature: temperature,
       motorOn: motorOn,

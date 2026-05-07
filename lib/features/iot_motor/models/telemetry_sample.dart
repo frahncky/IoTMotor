@@ -5,6 +5,10 @@ class TelemetrySample {
     required this.timestamp,
     this.voltage,
     this.current,
+    this.power,
+    this.powerFactor,
+    this.frequency,
+    this.energy,
     this.vibration,
     this.temperature,
     this.motorOn,
@@ -14,6 +18,10 @@ class TelemetrySample {
   final DateTime timestamp;
   final double? voltage;
   final double? current;
+  final double? power;
+  final double? powerFactor;
+  final double? frequency;
+  final double? energy;
   final double? vibration;
   final double? temperature;
   final bool? motorOn;
@@ -52,6 +60,28 @@ class TelemetrySample {
       'corrente',
       'i',
     ]);
+    final double? power = _readDouble(source, const <String>[
+      'power',
+      'potencia',
+      'w',
+    ]);
+    final double? powerFactor = _readDouble(source, const <String>[
+      'pf',
+      'power_factor',
+      'fator_potencia',
+      'fp',
+    ]);
+    final double? frequency = _readDouble(source, const <String>[
+      'frequency',
+      'frequencia',
+      'hz',
+    ]);
+    final double? energy = _readDouble(source, const <String>[
+      'energy',
+      'energy_kwh',
+      'energia',
+      'kwh',
+    ]);
     final double? vibration = _readDouble(source, const <String>[
       'vibration',
       'vibracao',
@@ -76,6 +106,10 @@ class TelemetrySample {
 
     if (voltage == null &&
         current == null &&
+        power == null &&
+        powerFactor == null &&
+        frequency == null &&
+        energy == null &&
         vibration == null &&
         temperature == null &&
         motorOn == null &&
@@ -87,6 +121,10 @@ class TelemetrySample {
       timestamp: timestamp,
       voltage: voltage,
       current: current,
+      power: power,
+      powerFactor: powerFactor,
+      frequency: frequency,
+      energy: energy,
       vibration: vibration,
       temperature: temperature,
       motorOn: motorOn,
@@ -108,6 +146,10 @@ class TelemetrySample {
       'timestamp': timestamp.toIso8601String(),
       if (voltage != null) 'voltage': voltage,
       if (current != null) 'current': current,
+      if (power != null) 'power': power,
+      if (powerFactor != null) 'pf': powerFactor,
+      if (frequency != null) 'frequency': frequency,
+      if (energy != null) 'energy': energy,
       if (vibration != null) 'vibration': vibration,
       if (temperature != null) 'temperature': temperature,
       if (motorOn != null) 'motor_on': motorOn,

@@ -9,6 +9,10 @@ void main() {
       timestamp: DateTime(2026, 5, 7, 9),
       voltage: 220.1,
       current: 3.2,
+      power: 704.3,
+      powerFactor: 0.97,
+      frequency: 60.0,
+      energy: 1.234,
       motorOn: true,
       mode: 'direct',
     );
@@ -21,6 +25,10 @@ void main() {
     expect(restored!.timestamp, original.timestamp);
     expect(restored.voltage, 220.1);
     expect(restored.current, 3.2);
+    expect(restored.power, 704.3);
+    expect(restored.powerFactor, 0.97);
+    expect(restored.frequency, 60.0);
+    expect(restored.energy, 1.234);
     expect(restored.motorOn, isTrue);
     expect(restored.mode, 'direct');
   });
@@ -39,6 +47,10 @@ void main() {
         sample: TelemetrySample(
           timestamp: older,
           voltage: 220.46,
+          power: 704.3,
+          powerFactor: 0.97,
+          frequency: 60,
+          energy: 1.234,
           motorOn: true,
           mode: 'direct',
         ),
@@ -50,6 +62,10 @@ void main() {
     expect(lines[1], contains('esp-1'));
     expect(lines[1], contains('Ligado'));
     expect(lines[1], contains('220.5'));
+    expect(lines[1], contains('704.3'));
+    expect(lines[1], contains('0.97'));
+    expect(lines[1], contains('60.00'));
+    expect(lines[1], contains('1.234'));
     expect(lines[2], contains('esp-2'));
     expect(lines[2], contains('3.46'));
   });

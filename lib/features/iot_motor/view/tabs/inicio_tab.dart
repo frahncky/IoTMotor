@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_theme.dart';
@@ -7,8 +9,167 @@ import '../../models/telemetry_sample.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/telemetry_chart.dart';
+import 'grandezas_tab.dart';
 
-enum _TelemetryPalette { eletrica, mecanica }
+enum _TelemetryGroup { grandezas, eletrica, mecanica }
+
+final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
+  _TelemetryPlot(
+    id: 'voltage',
+    group: _TelemetryGroup.eletrica,
+    label: 'Tens\u00e3o',
+    title: 'Tens\u00e3o',
+    unit: 'V',
+    color: AppTheme.voltageAccent,
+    decimalDigits: 1,
+    readValue: (TelemetrySample sample) => sample.voltage,
+  ),
+  _TelemetryPlot(
+    id: 'current',
+    group: _TelemetryGroup.eletrica,
+    label: 'Corrente',
+    title: 'Corrente',
+    unit: 'A',
+    color: AppTheme.currentAccent,
+    decimalDigits: 2,
+    readValue: (TelemetrySample sample) => sample.current,
+  ),
+  _TelemetryPlot(
+    id: 'power',
+    group: _TelemetryGroup.eletrica,
+    label: 'Ativa',
+    title: 'Pot\u00eancia ativa',
+    unit: 'W',
+    color: AppTheme.brandOrange,
+    decimalDigits: 1,
+    readValue: (TelemetrySample sample) => sample.power,
+  ),
+  _TelemetryPlot(
+    id: 'apparent_power',
+    group: _TelemetryGroup.eletrica,
+    label: 'Aparente',
+    title: 'Pot\u00eancia aparente',
+    unit: 'VA',
+    color: AppTheme.brandMint,
+    decimalDigits: 1,
+    readValue: _readApparentPower,
+  ),
+  _TelemetryPlot(
+    id: 'reactive_power',
+    group: _TelemetryGroup.eletrica,
+    label: 'Reativa',
+    title: 'Pot\u00eancia reativa',
+    unit: 'VAr',
+    color: AppTheme.brandBlue,
+    decimalDigits: 1,
+    readValue: _readReactivePower,
+  ),
+  _TelemetryPlot(
+    id: 'energy',
+    group: _TelemetryGroup.eletrica,
+    label: 'Energia',
+    title: 'Energia',
+    unit: 'kWh',
+    color: AppTheme.brandMint,
+    decimalDigits: 3,
+    readValue: (TelemetrySample sample) => sample.energy,
+  ),
+  _TelemetryPlot(
+    id: 'power_factor',
+    group: _TelemetryGroup.eletrica,
+    label: 'FP',
+    title: 'Fator de pot\u00eancia',
+    unit: '',
+    color: AppTheme.online,
+    decimalDigits: 2,
+    readValue: (TelemetrySample sample) => sample.powerFactor,
+  ),
+  _TelemetryPlot(
+    id: 'frequency',
+    group: _TelemetryGroup.eletrica,
+    label: 'Frequ\u00eancia',
+    title: 'Frequ\u00eancia',
+    unit: 'Hz',
+    color: AppTheme.brandBlue,
+    decimalDigits: 2,
+    readValue: (TelemetrySample sample) => sample.frequency,
+  ),
+  _TelemetryPlot(
+    id: 'vibration',
+    group: _TelemetryGroup.mecanica,
+    label: 'Vibra\u00e7\u00e3o',
+    title: 'Vibra\u00e7\u00e3o',
+    unit: 'g',
+    color: AppTheme.vibrationAccent,
+    decimalDigits: 3,
+    readValue: (TelemetrySample sample) => sample.vibration,
+  ),
+  _TelemetryPlot(
+    id: 'temperature',
+    group: _TelemetryGroup.mecanica,
+    label: 'Temperatura',
+    title: 'Temperatura',
+    unit: '\u00b0C',
+    color: AppTheme.temperatureAccent,
+    decimalDigits: 1,
+    readValue: (TelemetrySample sample) => sample.temperature,
+  ),
+];
+
+class _TelemetryPlot {
+  const _TelemetryPlot({
+    required this.id,
+    required this.group,
+    required this.label,
+    required this.title,
+    required this.unit,
+    required this.color,
+    required this.decimalDigits,
+    required this.readValue,
+  });
+
+  final String id;
+  final _TelemetryGroup group;
+  final String label;
+  final String title;
+  final String unit;
+  final Color color;
+  final int decimalDigits;
+  final double? Function(TelemetrySample sample) readValue;
+}
+
+double? _readApparentPower(TelemetrySample sample) {
+  final double? voltage = sample.voltage;
+  final double? current = sample.current;
+  if (!_isFinite(voltage) || !_isFinite(current)) {
+    return null;
+  }
+  return voltage! * current!;
+}
+
+double? _readReactivePower(TelemetrySample sample) {
+  final double? apparent = _readApparentPower(sample);
+  if (!_isFinite(apparent)) {
+    return null;
+  }
+
+  final double? active = sample.power;
+  if (_isFinite(active)) {
+    final double squared = apparent! * apparent - active! * active;
+    return squared <= 0 ? 0 : math.sqrt(squared);
+  }
+
+  final double? powerFactor = sample.powerFactor;
+  if (!_isFinite(powerFactor)) {
+    return null;
+  }
+  final double squaredRatio = 1 - powerFactor! * powerFactor;
+  return apparent! * (squaredRatio <= 0 ? 0 : math.sqrt(squaredRatio));
+}
+
+bool _isFinite(double? value) {
+  return value != null && value.isFinite;
+}
 
 class InicioTab extends StatefulWidget {
   const InicioTab({super.key, required this.controller});
@@ -23,7 +184,11 @@ class _InicioTabState extends State<InicioTab> {
   static const String _addStartTypeAction = '__add_start_type__';
 
   String? _selectedStartTypeId;
-  _TelemetryPalette _selectedPalette = _TelemetryPalette.eletrica;
+  _TelemetryGroup _selectedGroup = _TelemetryGroup.grandezas;
+  String _selectedElectricalPlotAId = 'voltage';
+  String _selectedElectricalPlotBId = 'current';
+  String _selectedMechanicalPlotAId = 'vibration';
+  String _selectedMechanicalPlotBId = 'temperature';
 
   @override
   Widget build(BuildContext context) {
@@ -36,26 +201,6 @@ class _InicioTabState extends State<InicioTab> {
     );
 
     final TelemetrySample? sample = widget.controller.latestSample;
-    final List<double> voltageSeries =
-        widget.controller.history
-            .where((TelemetrySample entry) => entry.voltage != null)
-            .map((TelemetrySample entry) => entry.voltage!)
-            .toList();
-    final List<double> currentSeries =
-        widget.controller.history
-            .where((TelemetrySample entry) => entry.current != null)
-            .map((TelemetrySample entry) => entry.current!)
-            .toList();
-    final List<double> vibrationSeries =
-        widget.controller.history
-            .where((TelemetrySample entry) => entry.vibration != null)
-            .map((TelemetrySample entry) => entry.vibration!)
-            .toList();
-    final List<double> temperatureSeries =
-        widget.controller.history
-            .where((TelemetrySample entry) => entry.temperature != null)
-            .map((TelemetrySample entry) => entry.temperature!)
-            .toList();
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints viewport) {
@@ -81,14 +226,7 @@ class _InicioTabState extends State<InicioTab> {
                     ),
                     DelayedReveal(
                       delay: const Duration(milliseconds: 240),
-                      child: _buildChartsPanel(
-                        context,
-                        sample: sample,
-                        voltageSeries: voltageSeries,
-                        currentSeries: currentSeries,
-                        vibrationSeries: vibrationSeries,
-                        temperatureSeries: temperatureSeries,
-                      ),
+                      child: _buildChartsPanel(context, sample: sample),
                     ),
                   ],
                 ),
@@ -124,14 +262,7 @@ class _InicioTabState extends State<InicioTab> {
                           Expanded(
                             child: DelayedReveal(
                               delay: const Duration(milliseconds: 240),
-                              child: _buildChartsPanel(
-                                context,
-                                sample: sample,
-                                voltageSeries: voltageSeries,
-                                currentSeries: currentSeries,
-                                vibrationSeries: vibrationSeries,
-                                temperatureSeries: temperatureSeries,
-                              ),
+                              child: _buildChartsPanel(context, sample: sample),
                             ),
                           ),
                         ],
@@ -576,27 +707,159 @@ class _InicioTabState extends State<InicioTab> {
     });
   }
 
-  Widget _buildPaletteSelector() {
+  Widget _buildChartsPanel(
+    BuildContext context, {
+    required TelemetrySample? sample,
+  }) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide = constraints.maxWidth >= 980;
+        final double rawHeight =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 620;
+        if (_selectedGroup == _TelemetryGroup.grandezas) {
+          return _buildGrandezasPanel(constraints);
+        }
+
+        final List<_TelemetryPlot> plots = _plotsForGroup(_selectedGroup);
+        final String selectedPlotAId = _selectedPlotAId;
+        final String selectedPlotBId = _selectedPlotBId;
+        final _TelemetryPlot plotA = _plotById(selectedPlotAId, plots);
+        final _TelemetryPlot plotB = _plotById(selectedPlotBId, plots);
+
+        if (wide) {
+          final double availableForCards = (rawHeight - 54).clamp(
+            260.0,
+            1200.0,
+          );
+          final double cardHeight = availableForCards.clamp(220.0, 420.0);
+          final double plotHeight = (cardHeight - 86).clamp(84.0, 320.0);
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _buildGroupSelector(),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: cardHeight,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(
+                      child: _buildChartForPlot(
+                        context,
+                        plotA,
+                        sample,
+                        plotHeight,
+                        selectedPlotId: selectedPlotAId,
+                        plots: plots,
+                        onPlotChanged: _setSelectedPlotAId,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildChartForPlot(
+                        context,
+                        plotB,
+                        sample,
+                        plotHeight,
+                        selectedPlotId: selectedPlotBId,
+                        plots: plots,
+                        onPlotChanged: _setSelectedPlotBId,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        }
+
+        final double availableForCards = (rawHeight - 54).clamp(260.0, 1200.0);
+        final double cardHeight = ((availableForCards - 10) / 2).clamp(
+          150.0,
+          360.0,
+        );
+        final double plotHeight = (cardHeight - 86).clamp(72.0, 250.0);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            _buildGroupSelector(),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: cardHeight,
+              child: _buildChartForPlot(
+                context,
+                plotA,
+                sample,
+                plotHeight,
+                selectedPlotId: selectedPlotAId,
+                plots: plots,
+                onPlotChanged: _setSelectedPlotAId,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: cardHeight,
+              child: _buildChartForPlot(
+                context,
+                plotB,
+                sample,
+                plotHeight,
+                selectedPlotId: selectedPlotBId,
+                plots: plots,
+                onPlotChanged: _setSelectedPlotBId,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildGrandezasPanel(BoxConstraints constraints) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _buildGroupSelector(),
+        const SizedBox(height: 8),
+        Expanded(
+          child: GrandezasTab(
+            controller: widget.controller,
+            showHeader: false,
+            padding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGroupSelector() {
     return Align(
       alignment: Alignment.center,
-      child: SizedBox(
-        width: 320,
-        child: SegmentedButton<_TelemetryPalette>(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SegmentedButton<_TelemetryGroup>(
           showSelectedIcon: false,
-          selected: <_TelemetryPalette>{_selectedPalette},
-          onSelectionChanged: (Set<_TelemetryPalette> selection) {
+          selected: <_TelemetryGroup>{_selectedGroup},
+          onSelectionChanged: (Set<_TelemetryGroup> selection) {
             setState(() {
-              _selectedPalette = selection.first;
+              _selectedGroup = selection.first;
             });
           },
-          segments: const <ButtonSegment<_TelemetryPalette>>[
-            ButtonSegment<_TelemetryPalette>(
-              value: _TelemetryPalette.eletrica,
+          segments: const <ButtonSegment<_TelemetryGroup>>[
+            ButtonSegment<_TelemetryGroup>(
+              value: _TelemetryGroup.grandezas,
+              icon: Icon(Icons.speed_rounded, size: 16),
+              label: Text('Medi\u00e7\u00f5es'),
+            ),
+            ButtonSegment<_TelemetryGroup>(
+              value: _TelemetryGroup.eletrica,
               icon: Icon(Icons.electric_bolt_rounded, size: 16),
               label: Text('El\u00e9trica'),
             ),
-            ButtonSegment<_TelemetryPalette>(
-              value: _TelemetryPalette.mecanica,
+            ButtonSegment<_TelemetryGroup>(
+              value: _TelemetryGroup.mecanica,
               icon: Icon(Icons.sensors_rounded, size: 16),
               label: Text('Mec\u00e2nica'),
             ),
@@ -615,91 +878,208 @@ class _InicioTabState extends State<InicioTab> {
     );
   }
 
-  Widget _buildChartsPanel(
-    BuildContext context, {
-    required TelemetrySample? sample,
-    required List<double> voltageSeries,
-    required List<double> currentSeries,
-    required List<double> vibrationSeries,
-    required List<double> temperatureSeries,
+  String get _selectedPlotAId {
+    switch (_selectedGroup) {
+      case _TelemetryGroup.grandezas:
+        return _selectedElectricalPlotAId;
+      case _TelemetryGroup.eletrica:
+        return _selectedElectricalPlotAId;
+      case _TelemetryGroup.mecanica:
+        return _selectedMechanicalPlotAId;
+    }
+  }
+
+  String get _selectedPlotBId {
+    switch (_selectedGroup) {
+      case _TelemetryGroup.grandezas:
+        return _selectedElectricalPlotBId;
+      case _TelemetryGroup.eletrica:
+        return _selectedElectricalPlotBId;
+      case _TelemetryGroup.mecanica:
+        return _selectedMechanicalPlotBId;
+    }
+  }
+
+  void _setSelectedPlotAId(String id) {
+    setState(() {
+      switch (_selectedGroup) {
+        case _TelemetryGroup.grandezas:
+          _selectedElectricalPlotAId = id;
+          break;
+        case _TelemetryGroup.eletrica:
+          _selectedElectricalPlotAId = id;
+          break;
+        case _TelemetryGroup.mecanica:
+          _selectedMechanicalPlotAId = id;
+          break;
+      }
+    });
+  }
+
+  void _setSelectedPlotBId(String id) {
+    setState(() {
+      switch (_selectedGroup) {
+        case _TelemetryGroup.grandezas:
+          _selectedElectricalPlotBId = id;
+          break;
+        case _TelemetryGroup.eletrica:
+          _selectedElectricalPlotBId = id;
+          break;
+        case _TelemetryGroup.mecanica:
+          _selectedMechanicalPlotBId = id;
+          break;
+      }
+    });
+  }
+
+  Widget _buildChartForPlot(
+    BuildContext context,
+    _TelemetryPlot plot,
+    TelemetrySample? sample,
+    double plotHeight, {
+    required String selectedPlotId,
+    required List<_TelemetryPlot> plots,
+    required ValueChanged<String> onPlotChanged,
   }) {
-    final bool eletrica = _selectedPalette == _TelemetryPalette.eletrica;
+    return TelemetryChart(
+      title: plot.title,
+      color: plot.color,
+      values: _seriesForPlot(plot),
+      unit: plot.unit,
+      instantValue: sample == null ? null : plot.readValue(sample),
+      decimalDigits: plot.decimalDigits,
+      chartHeight: plotHeight,
+      titleWidget: _buildPlotTitleMenu(
+        context,
+        plot: plot,
+        selectedPlotId: selectedPlotId,
+        plots: plots,
+        onPlotChanged: onPlotChanged,
+      ),
+    );
+  }
 
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        Widget chartA(double plotHeight) {
-          return TelemetryChart(
-            title: eletrica ? 'Tens\u00e3o' : 'Vibra\u00e7\u00e3o',
-            color: eletrica ? AppTheme.voltageAccent : AppTheme.vibrationAccent,
-            values: eletrica ? voltageSeries : vibrationSeries,
-            unit: eletrica ? 'V' : 'g',
-            instantValue: eletrica ? sample?.voltage : sample?.vibration,
-            decimalDigits: eletrica ? 1 : 3,
-            chartHeight: plotHeight,
-          );
-        }
+  Widget _buildPlotTitleMenu(
+    BuildContext context, {
+    required _TelemetryPlot plot,
+    required String selectedPlotId,
+    required List<_TelemetryPlot> plots,
+    required ValueChanged<String> onPlotChanged,
+  }) {
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final String titleText =
+        plot.unit.isEmpty ? plot.title : '${plot.title} (${plot.unit})';
 
-        Widget chartB(double plotHeight) {
-          return TelemetryChart(
-            title: eletrica ? 'Corrente' : 'Temperatura',
-            color:
-                eletrica ? AppTheme.currentAccent : AppTheme.temperatureAccent,
-            values: eletrica ? currentSeries : temperatureSeries,
-            unit: eletrica ? 'A' : '\u00b0C',
-            instantValue: eletrica ? sample?.current : sample?.temperature,
-            decimalDigits: eletrica ? 2 : 1,
-            chartHeight: plotHeight,
-          );
-        }
-
-        final bool wide = constraints.maxWidth >= 980;
-        final double rawHeight =
-            constraints.maxHeight.isFinite ? constraints.maxHeight : 620;
-        const double selectorReservedHeight = 52;
-        final double availableForCards = (rawHeight - selectorReservedHeight)
-            .clamp(260.0, 1200.0);
-
-        if (wide) {
-          final double cardHeight = availableForCards.clamp(220.0, 420.0);
-          final double plotHeight = (cardHeight - 86).clamp(84.0, 320.0);
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Builder(
+      builder: (BuildContext titleContext) {
+        return InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            _openPlotMenu(
+              titleContext,
+              selectedPlotId: selectedPlotId,
+              plots: plots,
+              onPlotChanged: onPlotChanged,
+            );
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              _buildPaletteSelector(),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: cardHeight,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Expanded(child: chartA(plotHeight)),
-                    const SizedBox(width: 10),
-                    Expanded(child: chartB(plotHeight)),
-                  ],
+              Flexible(
+                child: Text(
+                  titleText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleMedium,
                 ),
               ),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down_rounded, color: plot.color, size: 20),
             ],
-          );
-        }
-
-        final double cardHeight = ((availableForCards - 10) / 2).clamp(
-          150.0,
-          360.0,
-        );
-        final double plotHeight = (cardHeight - 86).clamp(72.0, 250.0);
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            _buildPaletteSelector(),
-            const SizedBox(height: 8),
-            SizedBox(height: cardHeight, child: chartA(plotHeight)),
-            const SizedBox(height: 10),
-            SizedBox(height: cardHeight, child: chartB(plotHeight)),
-          ],
+          ),
         );
       },
+    );
+  }
+
+  Future<void> _openPlotMenu(
+    BuildContext context, {
+    required String selectedPlotId,
+    required List<_TelemetryPlot> plots,
+    required ValueChanged<String> onPlotChanged,
+  }) async {
+    final RenderBox button = context.findRenderObject()! as RenderBox;
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final Offset topLeft = button.localToGlobal(Offset.zero, ancestor: overlay);
+    final double menuWidth =
+        overlay.size.width < 260 ? overlay.size.width - 16 : 240;
+    final double maxLeft = overlay.size.width - menuWidth - 8;
+    final double left = topLeft.dx.clamp(8.0, maxLeft).toDouble();
+    final double top =
+        (topLeft.dy + button.size.height + 4)
+            .clamp(8.0, overlay.size.height - 8)
+            .toDouble();
+
+    final String? selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        left,
+        top,
+        overlay.size.width - left - menuWidth,
+        0,
+      ),
+      items:
+          plots.map((_TelemetryPlot option) {
+            final bool selected = option.id == selectedPlotId;
+            return PopupMenuItem<String>(
+              value: option.id,
+              child: Row(
+                children: <Widget>[
+                  Icon(Icons.show_chart_rounded, color: option.color, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      option.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (selected)
+                    Icon(
+                      Icons.check_rounded,
+                      color: AppTheme.brandMint,
+                      size: 18,
+                    ),
+                ],
+              ),
+            );
+          }).toList(),
+    );
+
+    if (!mounted || selected == null) {
+      return;
+    }
+    onPlotChanged(selected);
+  }
+
+  List<double> _seriesForPlot(_TelemetryPlot plot) {
+    return widget.controller.history
+        .map((TelemetrySample sample) => plot.readValue(sample))
+        .whereType<double>()
+        .toList();
+  }
+
+  List<_TelemetryPlot> _plotsForGroup(_TelemetryGroup group) {
+    return _telemetryPlots
+        .where((_TelemetryPlot plot) => plot.group == group)
+        .toList();
+  }
+
+  _TelemetryPlot _plotById(String id, List<_TelemetryPlot> plots) {
+    return plots.firstWhere(
+      (_TelemetryPlot plot) => plot.id == id,
+      orElse: () => plots.first,
     );
   }
 }
