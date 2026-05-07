@@ -105,6 +105,44 @@ void main() {
 
     controller.dispose();
   });
+
+  test('mantem preferencias do dashboard e status da telemetria', () {
+    final _FakeMqttMotorService service = _FakeMqttMotorService();
+    final MotorControlController controller = MotorControlController(
+      service: service,
+    );
+    service.config = const MqttConnectionConfig(
+      host: 'broker.hivemq.com',
+      port: 1883,
+      clientId: 'test_client',
+      topicPrefix: 'iotmotor',
+      deviceId: 'auto',
+      useTls: false,
+    );
+    controller.isConnected = true;
+
+    expect(controller.telemetryStatusSummary, 'aguardando leituras');
+
+    controller.setDashboardTab(MotorControlController.dashboardTabMechanical);
+    controller.setMechanicalPlotAId('temperature');
+    controller.setMechanicalPlotBId('vibration');
+    controller.setElectricalPlotAId('power');
+
+    expect(
+      controller.dashboardTab,
+      MotorControlController.dashboardTabMechanical,
+    );
+    expect(controller.mechanicalPlotAId, 'temperature');
+    expect(controller.mechanicalPlotBId, 'vibration');
+    expect(controller.electricalPlotAId, 'power');
+
+    service.emit('iotmotor/esp-1/telemetry', '{"voltage":220,"current":4}');
+
+    expect(controller.latestTelemetryReceivedAt, isNotNull);
+    expect(controller.telemetryStatusSummary, startsWith('ativa'));
+
+    controller.dispose();
+  });
 }
 
 class _FakeMqttMotorService extends MqttMotorService {

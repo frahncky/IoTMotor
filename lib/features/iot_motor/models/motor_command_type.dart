@@ -79,4 +79,3 @@
   @override
   int get hashCode => Object.hash(id, command, mode, label, feedback);
 }
-

@@ -146,6 +146,7 @@ class _MotorControlPageState extends State<MotorControlPage> {
     final String tickerText =
         'Dispositivos conectados: ${_controller.connectedDevicesSummary} | '
         'Broker: ${_controller.brokerStatusLabel} | '
+        'Telemetria: ${_controller.telemetryStatusSummary} | '
         'Alertas: ${_controller.alertStatusSummary} |';
 
     return DelayedReveal(
@@ -232,6 +233,9 @@ class _MotorControlPageState extends State<MotorControlPage> {
   }
 
   Color _statusColor() {
+    if (_controller.hasStaleTelemetry) {
+      return AppTheme.brandOrange;
+    }
     if (_controller.isConnected) {
       return AppTheme.brandMint;
     }

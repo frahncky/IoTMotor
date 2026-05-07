@@ -184,11 +184,9 @@ class _InicioTabState extends State<InicioTab> {
   static const String _addStartTypeAction = '__add_start_type__';
 
   String? _selectedStartTypeId;
-  _TelemetryGroup _selectedGroup = _TelemetryGroup.grandezas;
-  String _selectedElectricalPlotAId = 'voltage';
-  String _selectedElectricalPlotBId = 'current';
-  String _selectedMechanicalPlotAId = 'vibration';
-  String _selectedMechanicalPlotBId = 'temperature';
+
+  _TelemetryGroup get _selectedGroup =>
+      _groupFromDashboardTab(widget.controller.dashboardTab);
 
   @override
   Widget build(BuildContext context) {
@@ -818,18 +816,30 @@ class _InicioTabState extends State<InicioTab> {
   }
 
   Widget _buildGrandezasPanel(BoxConstraints constraints) {
+    final Widget panel = GrandezasTab(
+      controller: widget.controller,
+      showHeader: false,
+      padding: EdgeInsets.zero,
+    );
+
+    if (!constraints.maxHeight.isFinite) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _buildGroupSelector(),
+          const SizedBox(height: 8),
+          SizedBox(height: 360, child: panel),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         _buildGroupSelector(),
         const SizedBox(height: 8),
-        Expanded(
-          child: GrandezasTab(
-            controller: widget.controller,
-            showHeader: false,
-            padding: EdgeInsets.zero,
-          ),
-        ),
+        Expanded(child: panel),
       ],
     );
   }
@@ -837,15 +847,15 @@ class _InicioTabState extends State<InicioTab> {
   Widget _buildGroupSelector() {
     return Align(
       alignment: Alignment.center,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
         child: SegmentedButton<_TelemetryGroup>(
           showSelectedIcon: false,
           selected: <_TelemetryGroup>{_selectedGroup},
           onSelectionChanged: (Set<_TelemetryGroup> selection) {
-            setState(() {
-              _selectedGroup = selection.first;
-            });
+            widget.controller.setDashboardTab(
+              _dashboardTabForGroup(selection.first),
+            );
           },
           segments: const <ButtonSegment<_TelemetryGroup>>[
             ButtonSegment<_TelemetryGroup>(
@@ -881,55 +891,51 @@ class _InicioTabState extends State<InicioTab> {
   String get _selectedPlotAId {
     switch (_selectedGroup) {
       case _TelemetryGroup.grandezas:
-        return _selectedElectricalPlotAId;
+        return widget.controller.electricalPlotAId;
       case _TelemetryGroup.eletrica:
-        return _selectedElectricalPlotAId;
+        return widget.controller.electricalPlotAId;
       case _TelemetryGroup.mecanica:
-        return _selectedMechanicalPlotAId;
+        return widget.controller.mechanicalPlotAId;
     }
   }
 
   String get _selectedPlotBId {
     switch (_selectedGroup) {
       case _TelemetryGroup.grandezas:
-        return _selectedElectricalPlotBId;
+        return widget.controller.electricalPlotBId;
       case _TelemetryGroup.eletrica:
-        return _selectedElectricalPlotBId;
+        return widget.controller.electricalPlotBId;
       case _TelemetryGroup.mecanica:
-        return _selectedMechanicalPlotBId;
+        return widget.controller.mechanicalPlotBId;
     }
   }
 
   void _setSelectedPlotAId(String id) {
-    setState(() {
-      switch (_selectedGroup) {
-        case _TelemetryGroup.grandezas:
-          _selectedElectricalPlotAId = id;
-          break;
-        case _TelemetryGroup.eletrica:
-          _selectedElectricalPlotAId = id;
-          break;
-        case _TelemetryGroup.mecanica:
-          _selectedMechanicalPlotAId = id;
-          break;
-      }
-    });
+    switch (_selectedGroup) {
+      case _TelemetryGroup.grandezas:
+        widget.controller.setElectricalPlotAId(id);
+        break;
+      case _TelemetryGroup.eletrica:
+        widget.controller.setElectricalPlotAId(id);
+        break;
+      case _TelemetryGroup.mecanica:
+        widget.controller.setMechanicalPlotAId(id);
+        break;
+    }
   }
 
   void _setSelectedPlotBId(String id) {
-    setState(() {
-      switch (_selectedGroup) {
-        case _TelemetryGroup.grandezas:
-          _selectedElectricalPlotBId = id;
-          break;
-        case _TelemetryGroup.eletrica:
-          _selectedElectricalPlotBId = id;
-          break;
-        case _TelemetryGroup.mecanica:
-          _selectedMechanicalPlotBId = id;
-          break;
-      }
-    });
+    switch (_selectedGroup) {
+      case _TelemetryGroup.grandezas:
+        widget.controller.setElectricalPlotBId(id);
+        break;
+      case _TelemetryGroup.eletrica:
+        widget.controller.setElectricalPlotBId(id);
+        break;
+      case _TelemetryGroup.mecanica:
+        widget.controller.setMechanicalPlotBId(id);
+        break;
+    }
   }
 
   Widget _buildChartForPlot(
@@ -1068,6 +1074,29 @@ class _InicioTabState extends State<InicioTab> {
         .map((TelemetrySample sample) => plot.readValue(sample))
         .whereType<double>()
         .toList();
+  }
+
+  _TelemetryGroup _groupFromDashboardTab(String value) {
+    switch (value) {
+      case MotorControlController.dashboardTabElectrical:
+        return _TelemetryGroup.eletrica;
+      case MotorControlController.dashboardTabMechanical:
+        return _TelemetryGroup.mecanica;
+      case MotorControlController.dashboardTabMeasurements:
+      default:
+        return _TelemetryGroup.grandezas;
+    }
+  }
+
+  String _dashboardTabForGroup(_TelemetryGroup group) {
+    switch (group) {
+      case _TelemetryGroup.grandezas:
+        return MotorControlController.dashboardTabMeasurements;
+      case _TelemetryGroup.eletrica:
+        return MotorControlController.dashboardTabElectrical;
+      case _TelemetryGroup.mecanica:
+        return MotorControlController.dashboardTabMechanical;
+    }
   }
 
   List<_TelemetryPlot> _plotsForGroup(_TelemetryGroup group) {

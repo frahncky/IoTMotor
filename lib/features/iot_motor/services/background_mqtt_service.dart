@@ -268,4 +268,3 @@ class _BackgroundConfig {
   String get telemetryWildcardTopic => '$topicPrefix/+/telemetry';
   String get statusWildcardTopic => '$topicPrefix/+/status';
 }
-

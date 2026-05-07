@@ -98,4 +98,20 @@ void main() {
     expect(find.text('Alertas de Telemetria'), findsOneWidget);
     expect(find.text('Formato da Telemetria'), findsOneWidget);
   });
+
+  testWidgets('medições não estouram em tela estreita', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MotorControlApp());
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Medi\u00e7\u00f5es'), findsOneWidget);
+    expect(find.text('Aparente'), findsOneWidget);
+    expect(find.text('Temperatura'), findsOneWidget);
+  });
 }

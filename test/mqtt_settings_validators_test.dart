@@ -49,6 +49,11 @@ void main() {
       currentMax: '10',
       vibrationMax: '1.5',
       temperatureMax: '70',
+      dashboardTab: MotorAppSettings.dashboardTabElectrical,
+      electricalPlotAId: 'power',
+      electricalPlotBId: 'energy',
+      mechanicalPlotAId: 'temperature',
+      mechanicalPlotBId: 'vibration',
     );
 
     final MotorAppSettings? restored = MotorAppSettings.fromMap(
@@ -62,5 +67,39 @@ void main() {
     expect(restored.useTls, isTrue);
     expect(restored.telemetryAlertsEnabled, isTrue);
     expect(restored.temperatureMax, '70');
+    expect(restored.dashboardTab, MotorAppSettings.dashboardTabElectrical);
+    expect(restored.electricalPlotAId, 'power');
+    expect(restored.electricalPlotBId, 'energy');
+    expect(restored.mechanicalPlotAId, 'temperature');
+    expect(restored.mechanicalPlotBId, 'vibration');
+  });
+
+  test('MotorAppSettings usa defaults para preferencias antigas', () {
+    final MotorAppSettings? restored =
+        MotorAppSettings.fromMap(const <String, dynamic>{
+          'broker': 'broker.hivemq.com',
+          'port': '1883',
+          'client_id': 'iotmotor_app',
+          'topic_prefix': 'iotmotor',
+        });
+
+    expect(restored, isNotNull);
+    expect(restored!.dashboardTab, MotorAppSettings.dashboardTabMeasurements);
+    expect(
+      restored.electricalPlotAId,
+      MotorAppSettings.defaultElectricalPlotAId,
+    );
+    expect(
+      restored.electricalPlotBId,
+      MotorAppSettings.defaultElectricalPlotBId,
+    );
+    expect(
+      restored.mechanicalPlotAId,
+      MotorAppSettings.defaultMechanicalPlotAId,
+    );
+    expect(
+      restored.mechanicalPlotBId,
+      MotorAppSettings.defaultMechanicalPlotBId,
+    );
   });
 }

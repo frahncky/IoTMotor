@@ -67,29 +67,46 @@ class GrandezasTab extends StatelessWidget {
                             grid.maxWidth.isFinite
                                 ? grid.maxWidth
                                 : MediaQuery.sizeOf(context).width;
-                        final double maxHeight = grid.maxHeight.isFinite ? grid.maxHeight : MediaQuery.sizeOf(context).height;
-                        final int columns = _columnsForWidth(maxWidth);
+                        final double maxHeight =
+                            grid.maxHeight.isFinite
+                                ? grid.maxHeight
+                                : MediaQuery.sizeOf(context).height;
                         const double spacing = 8;
+                        final int columns = _columnsForSpace(
+                          width: maxWidth,
+                          height: maxHeight,
+                          itemCount: magnitudes.length,
+                          spacing: spacing,
+                        );
                         final int rows = (magnitudes.length / columns).ceil();
-                        // Calcula altura mínima necessária para todos os cards sem rolagem (mais compacto)
-                        final double cardHeight = ((maxHeight - (rows - 1) * spacing) / rows).clamp(90, 200);
-                        final double cardWidth = (maxWidth - spacing * (columns - 1)) / columns;
+                        final double preferredHeight =
+                            maxWidth >= 760 ? 82 : 76;
+                        final double cardHeight =
+                            ((maxHeight - (rows - 1) * spacing) / rows).clamp(
+                              56.0,
+                              preferredHeight,
+                            );
+                        final double cardWidth =
+                            (maxWidth - spacing * (columns - 1)) / columns;
                         final double aspectRatio = cardWidth / cardHeight;
-
-                        // Se todos os cards cabem, não rola
-                        final bool needsScroll = (rows * 300 + (rows - 1) * spacing) > maxHeight;
+                        final bool needsScroll =
+                            rows * cardHeight + (rows - 1) * spacing >
+                            maxHeight + 0.1;
 
                         return GridView.builder(
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: columns,
-                            crossAxisSpacing: spacing,
-                            mainAxisSpacing: spacing,
-                            childAspectRatio: aspectRatio,
-                          ),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: columns,
+                                crossAxisSpacing: spacing,
+                                mainAxisSpacing: spacing,
+                                childAspectRatio: aspectRatio,
+                              ),
                           itemCount: magnitudes.length,
-                          physics: needsScroll ? null : const NeverScrollableScrollPhysics(),
-                          shrinkWrap: !needsScroll,
-                          itemBuilder: (context, index) {
+                          physics:
+                              needsScroll
+                                  ? const BouncingScrollPhysics()
+                                  : const NeverScrollableScrollPhysics(),
+                          itemBuilder: (BuildContext context, int index) {
                             return _MagnitudeCard(magnitude: magnitudes[index]);
                           },
                         );
@@ -107,15 +124,50 @@ class GrandezasTab extends StatelessWidget {
 
   int _columnsForWidth(double width) {
     if (width >= 1080) {
-      return 6;
-    }
-    if (width >= 8060) {
       return 5;
+    }
+    if (width >= 760) {
+      return 4;
     }
     if (width >= 520) {
       return 3;
     }
     return 2;
+  }
+
+  int _columnsForSpace({
+    required double width,
+    required double height,
+    required int itemCount,
+    required double spacing,
+  }) {
+    int columns = _columnsForWidth(width);
+    final int maxColumns = _maxColumnsForWidth(width, itemCount);
+
+    while (height.isFinite && columns < maxColumns) {
+      final int rows = (itemCount / columns).ceil();
+      final double minimumHeight = rows * 56 + (rows - 1) * spacing;
+      if (minimumHeight <= height) {
+        break;
+      }
+      columns++;
+    }
+
+    return columns.clamp(1, itemCount);
+  }
+
+  int _maxColumnsForWidth(double width, int itemCount) {
+    int maxColumns;
+    if (width >= 1080) {
+      maxColumns = 6;
+    } else if (width >= 760) {
+      maxColumns = 5;
+    } else if (width >= 360) {
+      maxColumns = 3;
+    } else {
+      maxColumns = 2;
+    }
+    return maxColumns.clamp(1, itemCount);
   }
 
   List<_MagnitudeInfo> _buildMagnitudes(TelemetrySample? sample) {
@@ -280,70 +332,101 @@ class _MagnitudeCard extends StatelessWidget {
     final TextTheme textTheme = Theme.of(context).textTheme;
     final String value = _formatValue(magnitude.value, magnitude.decimalDigits);
 
-    return Container(
-      constraints: const BoxConstraints(minHeight: 78),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceSoft.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: magnitude.color.withValues(alpha: 0.58)),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: magnitude.color.withValues(alpha: 0.11),
-            blurRadius: 9,
-            offset: const Offset(0, 3),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool dense =
+            constraints.maxHeight < 74 || constraints.maxWidth < 140;
+        final double horizontalPadding = dense ? 6 : 8;
+        final double verticalPadding = dense ? 5 : 8;
+        final double contentWidth = math.max(
+          1,
+          constraints.maxWidth - horizontalPadding * 2,
+        );
+        return Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: verticalPadding,
           ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          Icon(magnitude.icon, color: magnitude.color, size: 20),
-          const SizedBox(height: 3),
-          Text(
-            magnitude.label,
-            style: textTheme.labelMedium?.copyWith(
-              color: AppTheme.inkSoft,
-              fontWeight: FontWeight.w800,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceSoft.withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: magnitude.color.withValues(alpha: 0.58)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: magnitude.color.withValues(alpha: 0.11),
+                blurRadius: 9,
+                offset: const Offset(0, 3),
+              ),
+            ],
           ),
-          const SizedBox(height: 1),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Text(
-                  value,
-                  style: textTheme.titleMedium?.copyWith(
-                    color: magnitude.color,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w900,
-                    fontSize: magnitude.compactValue ? 14 : 16,
-                  ),
-                ),
-                if (magnitude.unit.isNotEmpty) ...<Widget>[
-                  const SizedBox(width: 4),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 1),
-                    child: Text(
-                      magnitude.unit,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: SizedBox(
+                width: contentWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      magnitude.icon,
+                      color: magnitude.color,
+                      size: dense ? 17 : 20,
+                    ),
+                    SizedBox(height: dense ? 1 : 3),
+                    Text(
+                      magnitude.label,
                       style: textTheme.labelMedium?.copyWith(
                         color: AppTheme.inkSoft,
                         fontWeight: FontWeight.w800,
+                        fontSize: dense ? 11 : null,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: dense ? 0 : 1),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: <Widget>[
+                          Text(
+                            value,
+                            style: textTheme.titleMedium?.copyWith(
+                              color: magnitude.color,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w900,
+                              fontSize:
+                                  dense
+                                      ? 13
+                                      : (magnitude.compactValue ? 14 : 16),
+                            ),
+                          ),
+                          if (magnitude.unit.isNotEmpty) ...<Widget>[
+                            const SizedBox(width: 4),
+                            Padding(
+                              padding: EdgeInsets.only(bottom: dense ? 0 : 1),
+                              child: Text(
+                                magnitude.unit,
+                                style: textTheme.labelMedium?.copyWith(
+                                  color: AppTheme.inkSoft,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: dense ? 10 : null,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

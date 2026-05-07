@@ -41,7 +41,7 @@ class MotorControlController extends ChangeNotifier {
     _service.onStreamError = _handleStreamError;
 
     _connectedDevicesTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _notifyConnectedDevicesIfChanged();
+      _notifyConnectionHealthIfChanged();
     });
     unawaited(loadPersistedSettings());
     unawaited(loadPersistedHistory());
@@ -65,6 +65,13 @@ class MotorControlController extends ChangeNotifier {
   static const String historyStateOn = 'on';
   static const String historyStateOff = 'off';
   static const String historyStateUnknown = 'unknown';
+  static const String dashboardTabMeasurements =
+      MotorAppSettings.dashboardTabMeasurements;
+  static const String dashboardTabElectrical =
+      MotorAppSettings.dashboardTabElectrical;
+  static const String dashboardTabMechanical =
+      MotorAppSettings.dashboardTabMechanical;
+  static const Duration telemetryStaleTimeout = Duration(minutes: 5);
   static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
   static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
   static const Duration _historyPersistDelay = Duration(milliseconds: 700);
@@ -106,6 +113,11 @@ class MotorControlController extends ChangeNotifier {
   bool isBusy = false;
   bool useTls = false;
   bool telemetryAlertsEnabled = true;
+  String dashboardTab = dashboardTabMeasurements;
+  String electricalPlotAId = MotorAppSettings.defaultElectricalPlotAId;
+  String electricalPlotBId = MotorAppSettings.defaultElectricalPlotBId;
+  String mechanicalPlotAId = MotorAppSettings.defaultMechanicalPlotAId;
+  String mechanicalPlotBId = MotorAppSettings.defaultMechanicalPlotBId;
 
   String connectionMessage = 'Desconectado';
   String statusMessage = 'Aguardando conexao e dados.';
@@ -120,9 +132,12 @@ class MotorControlController extends ChangeNotifier {
   final Map<String, bool> _motorOnByDevice = <String, bool>{};
   final Map<String, String> _modeByDevice = <String, String>{};
   final Map<String, DateTime> _lastSeenByDevice = <String, DateTime>{};
+  final Map<String, DateTime> _lastTelemetryReceivedByDevice =
+      <String, DateTime>{};
   final List<TelemetryAlert> _alertHistory = <TelemetryAlert>[];
   final Set<String> _activeAlertKeys = <String>{};
   Set<String> _lastConnectedDevices = <String>{};
+  bool _lastTelemetryStale = false;
   Timer? _connectedDevicesTimer;
   Timer? _settingsPersistTimer;
   Timer? _historyPersistTimer;
@@ -246,6 +261,45 @@ class MotorControlController extends ChangeNotifier {
   }
 
   int get connectedDeviceCount => connectedDeviceIds.length;
+
+  DateTime? get latestTelemetryReceivedAt {
+    DateTime? latest;
+    for (final DateTime receivedAt in _lastTelemetryReceivedByDevice.values) {
+      if (latest == null || receivedAt.isAfter(latest)) {
+        latest = receivedAt;
+      }
+    }
+    return latest;
+  }
+
+  bool get hasStaleTelemetry {
+    if (!isConnected) {
+      return false;
+    }
+    final DateTime? latest = latestTelemetryReceivedAt;
+    if (latest == null) {
+      return false;
+    }
+    return DateTime.now().difference(latest) >= telemetryStaleTimeout;
+  }
+
+  String get telemetryStatusSummary {
+    if (!isConnected) {
+      return 'sem conexao';
+    }
+
+    final DateTime? latest = latestTelemetryReceivedAt;
+    if (latest == null) {
+      return 'aguardando leituras';
+    }
+
+    final Duration age = DateTime.now().difference(latest);
+    final String ageText = _formatTelemetryAge(age);
+    if (age >= telemetryStaleTimeout) {
+      return 'atrasada $ageText';
+    }
+    return 'ativa $ageText';
+  }
 
   String get brokerStatusLabel {
     if (isBusy && !isConnected) {
@@ -469,7 +523,9 @@ class MotorControlController extends ChangeNotifier {
     isBusy = false;
     isConnected = false;
     _lastSeenByDevice.clear();
+    _lastTelemetryReceivedByDevice.clear();
     _lastConnectedDevices = <String>{};
+    _lastTelemetryStale = false;
     connectionMessage = 'Desconectado';
     statusMessage = 'Conexao encerrada pelo usuario.';
     _notify();
@@ -545,6 +601,23 @@ class MotorControlController extends ChangeNotifier {
       currentMaxController.text = settings.currentMax;
       vibrationMaxController.text = settings.vibrationMax;
       temperatureMaxController.text = settings.temperatureMax;
+      dashboardTab = _normalizeDashboardTab(settings.dashboardTab);
+      electricalPlotAId = _normalizePlotId(
+        settings.electricalPlotAId,
+        MotorAppSettings.defaultElectricalPlotAId,
+      );
+      electricalPlotBId = _normalizePlotId(
+        settings.electricalPlotBId,
+        MotorAppSettings.defaultElectricalPlotBId,
+      );
+      mechanicalPlotAId = _normalizePlotId(
+        settings.mechanicalPlotAId,
+        MotorAppSettings.defaultMechanicalPlotAId,
+      );
+      mechanicalPlotBId = _normalizePlotId(
+        settings.mechanicalPlotBId,
+        MotorAppSettings.defaultMechanicalPlotBId,
+      );
       _notify();
     } catch (_) {
       // Keep defaults if storage is unavailable or invalid.
@@ -709,6 +782,8 @@ class MotorControlController extends ChangeNotifier {
     _statusByDevice.clear();
     _motorOnByDevice.clear();
     _modeByDevice.clear();
+    _lastTelemetryReceivedByDevice.clear();
+    _lastTelemetryStale = false;
     _clearHistoryFilters(shouldNotify: false);
     statusMessage = 'Historico limpo para todos os dispositivos.';
     _historyPersistTimer?.cancel();
@@ -760,6 +835,68 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
+  void setDashboardTab(String value) {
+    final String normalized = _normalizeDashboardTab(value);
+    if (dashboardTab == normalized) {
+      return;
+    }
+    dashboardTab = normalized;
+    _scheduleSettingsPersist();
+    _notify();
+  }
+
+  void setElectricalPlotAId(String value) {
+    final String normalized = _normalizePlotId(
+      value,
+      MotorAppSettings.defaultElectricalPlotAId,
+    );
+    if (electricalPlotAId == normalized) {
+      return;
+    }
+    electricalPlotAId = normalized;
+    _scheduleSettingsPersist();
+    _notify();
+  }
+
+  void setElectricalPlotBId(String value) {
+    final String normalized = _normalizePlotId(
+      value,
+      MotorAppSettings.defaultElectricalPlotBId,
+    );
+    if (electricalPlotBId == normalized) {
+      return;
+    }
+    electricalPlotBId = normalized;
+    _scheduleSettingsPersist();
+    _notify();
+  }
+
+  void setMechanicalPlotAId(String value) {
+    final String normalized = _normalizePlotId(
+      value,
+      MotorAppSettings.defaultMechanicalPlotAId,
+    );
+    if (mechanicalPlotAId == normalized) {
+      return;
+    }
+    mechanicalPlotAId = normalized;
+    _scheduleSettingsPersist();
+    _notify();
+  }
+
+  void setMechanicalPlotBId(String value) {
+    final String normalized = _normalizePlotId(
+      value,
+      MotorAppSettings.defaultMechanicalPlotBId,
+    );
+    if (mechanicalPlotBId == normalized) {
+      return;
+    }
+    mechanicalPlotBId = normalized;
+    _scheduleSettingsPersist();
+    _notify();
+  }
+
   void setHistoryDeviceFilter(String value) {
     _historyDeviceFilter = _normalizeHistoryFilter(value);
     _notify();
@@ -789,6 +926,22 @@ class MotorControlController extends ChangeNotifier {
     final String minute = dateTime.minute.toString().padLeft(2, '0');
     final String second = dateTime.second.toString().padLeft(2, '0');
     return '$hour:$minute:$second';
+  }
+
+  String _formatTelemetryAge(Duration age) {
+    if (age.inSeconds < 5) {
+      return 'agora';
+    }
+    if (age.inMinutes < 1) {
+      return 'ha ${age.inSeconds}s';
+    }
+    if (age.inHours < 1) {
+      return 'ha ${age.inMinutes}min';
+    }
+    if (age.inDays < 1) {
+      return 'ha ${age.inHours}h';
+    }
+    return 'ha ${age.inDays}d';
   }
 
   MqttConnectionConfig? _buildConfigFromInputs() {
@@ -838,7 +991,9 @@ class MotorControlController extends ChangeNotifier {
     isBusy = false;
     isConnected = false;
     _lastSeenByDevice.clear();
+    _lastTelemetryReceivedByDevice.clear();
     _lastConnectedDevices = <String>{};
+    _lastTelemetryStale = false;
     connectionMessage = 'Desconectado';
     statusMessage =
         manual
@@ -900,6 +1055,7 @@ class MotorControlController extends ChangeNotifier {
     }
 
     _latestByDevice[deviceId] = sample;
+    _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
 
     _addSampleToHistory(deviceId: deviceId, sample: sample);
@@ -1053,6 +1209,26 @@ class MotorControlController extends ChangeNotifier {
     final String normalized = value.trim();
     if (normalized.isEmpty) {
       return historyFilterAll;
+    }
+    return normalized;
+  }
+
+  String _normalizeDashboardTab(String value) {
+    final String normalized = value.trim();
+    switch (normalized) {
+      case dashboardTabElectrical:
+      case dashboardTabMechanical:
+      case dashboardTabMeasurements:
+        return normalized;
+      default:
+        return dashboardTabMeasurements;
+    }
+  }
+
+  String _normalizePlotId(String value, String fallback) {
+    final String normalized = value.trim();
+    if (normalized.isEmpty) {
+      return fallback;
     }
     return normalized;
   }
@@ -1482,12 +1658,24 @@ class MotorControlController extends ChangeNotifier {
     _lastSeenByDevice[deviceId] = DateTime.now();
   }
 
-  void _notifyConnectedDevicesIfChanged() {
+  void _notifyConnectionHealthIfChanged() {
     final Set<String> current = connectedDeviceIds.toSet();
-    if (_hasSameDevices(current, _lastConnectedDevices)) {
+    final bool stale = hasStaleTelemetry;
+    if (_hasSameDevices(current, _lastConnectedDevices) &&
+        stale == _lastTelemetryStale) {
       return;
     }
+
+    if (stale && !_lastTelemetryStale) {
+      final DateTime? latest = latestTelemetryReceivedAt;
+      if (latest != null) {
+        statusMessage =
+            'Telemetria atrasada. Ultima leitura ${_formatTelemetryAge(DateTime.now().difference(latest))}.';
+      }
+    }
+
     _lastConnectedDevices = current;
+    _lastTelemetryStale = stale;
     _notify();
   }
 
@@ -1626,6 +1814,11 @@ class MotorControlController extends ChangeNotifier {
       currentMax: currentMaxController.text.trim(),
       vibrationMax: vibrationMaxController.text.trim(),
       temperatureMax: temperatureMaxController.text.trim(),
+      dashboardTab: dashboardTab,
+      electricalPlotAId: electricalPlotAId,
+      electricalPlotBId: electricalPlotBId,
+      mechanicalPlotAId: mechanicalPlotAId,
+      mechanicalPlotBId: mechanicalPlotBId,
     );
   }
 
