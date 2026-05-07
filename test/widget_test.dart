@@ -35,6 +35,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.history_outlined));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Histórico'), findsWidgets);
+    expect(find.text('Dispositivo'), findsOneWidget);
+    expect(find.text('Periodo'), findsOneWidget);
     expect(find.text('Ainda sem eventos no histórico.'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.settings_outlined));

@@ -3,15 +3,18 @@ import 'dart:collection';
 
 import 'package:flutter/material.dart';
 
+import '../models/motor_app_settings.dart';
 import '../models/motor_command_type.dart';
 import '../models/mqtt_connection_config.dart';
 import '../models/telemetry_alert.dart';
 import '../models/telemetry_history_entry.dart';
 import '../models/telemetry_sample.dart';
 import '../services/background_mqtt_service.dart';
+import '../services/motor_settings_store.dart';
 import '../services/mqtt_settings_validators.dart';
 import '../services/mqtt_motor_service.dart';
 import '../services/start_types_store.dart';
+import '../services/telemetry_history_store.dart';
 
 class MotorControlController extends ChangeNotifier {
   MotorControlController({MqttMotorService? service})
@@ -40,12 +43,27 @@ class MotorControlController extends ChangeNotifier {
     _connectedDevicesTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _notifyConnectedDevicesIfChanged();
     });
+    unawaited(loadPersistedSettings());
+    unawaited(loadPersistedHistory());
     unawaited(loadStartTypes());
   }
 
   static const int maxHistory = 120;
   static const String _autoDeviceId = 'auto';
+  static const String historyFilterAll = 'all';
+  static const String historyPeriodToday = 'today';
+  static const String historyPeriodLastHour = 'last_hour';
+  static const String historyPeriodLast24Hours = 'last_24h';
+  static const String historyMetricVoltage = 'voltage';
+  static const String historyMetricCurrent = 'current';
+  static const String historyMetricVibration = 'vibration';
+  static const String historyMetricTemperature = 'temperature';
+  static const String historyStateOn = 'on';
+  static const String historyStateOff = 'off';
+  static const String historyStateUnknown = 'unknown';
   static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
+  static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
+  static const Duration _historyPersistDelay = Duration(milliseconds: 700);
   static const List<MotorCommandType> _defaultStartTypes = <MotorCommandType>[
     MotorCommandType.directStart,
     MotorCommandType.starDeltaStart,
@@ -60,6 +78,8 @@ class MotorControlController extends ChangeNotifier {
   final MqttMotorService _service;
   bool _disposed = false;
   bool _startTypesLoaded = false;
+  bool _settingsLoaded = false;
+  bool _historyLoaded = false;
   String? _pendingMessage;
 
   late final TextEditingController brokerController;
@@ -96,6 +116,12 @@ class MotorControlController extends ChangeNotifier {
   final Set<String> _activeAlertKeys = <String>{};
   Set<String> _lastConnectedDevices = <String>{};
   Timer? _connectedDevicesTimer;
+  Timer? _settingsPersistTimer;
+  Timer? _historyPersistTimer;
+  String _historyDeviceFilter = historyFilterAll;
+  String _historyPeriodFilter = historyFilterAll;
+  String _historyMetricFilter = historyFilterAll;
+  String _historyStateFilter = historyFilterAll;
   final LinkedHashSet<String> _knownDevices = LinkedHashSet<String>();
   final List<MotorCommandType> _startTypes = <MotorCommandType>[
     ..._defaultStartTypes,
@@ -110,6 +136,25 @@ class MotorControlController extends ChangeNotifier {
       UnmodifiableListView<TelemetryHistoryEntry>(
         _buildCombinedHistoryEntries(),
       );
+
+  UnmodifiableListView<TelemetryHistoryEntry> get filteredHistoryEntries =>
+      UnmodifiableListView<TelemetryHistoryEntry>(
+        _buildFilteredHistoryEntries(),
+      );
+
+  int get historyEntryCount => historyEntries.length;
+  int get filteredHistoryEntryCount => filteredHistoryEntries.length;
+
+  String get historyDeviceFilter => _historyDeviceFilter;
+  String get historyPeriodFilter => _historyPeriodFilter;
+  String get historyMetricFilter => _historyMetricFilter;
+  String get historyStateFilter => _historyStateFilter;
+
+  bool get hasActiveHistoryFilters =>
+      _historyDeviceFilter != historyFilterAll ||
+      _historyPeriodFilter != historyFilterAll ||
+      _historyMetricFilter != historyFilterAll ||
+      _historyStateFilter != historyFilterAll;
 
   UnmodifiableListView<TelemetryAlert> get alerts =>
       UnmodifiableListView<TelemetryAlert>(
@@ -467,6 +512,74 @@ class MotorControlController extends ChangeNotifier {
     return null;
   }
 
+  Future<void> loadPersistedSettings() async {
+    if (_settingsLoaded) {
+      return;
+    }
+    _settingsLoaded = true;
+
+    try {
+      final MotorAppSettings? settings = await loadPersistedMotorSettings();
+      if (settings == null) {
+        return;
+      }
+
+      brokerController.text = settings.broker;
+      portController.text = settings.port;
+      clientIdController.text = settings.clientId;
+      topicPrefixController.text = settings.topicPrefix;
+      usernameController.text = settings.username;
+      passwordController.clear();
+      useTls = settings.useTls;
+      telemetryAlertsEnabled = settings.telemetryAlertsEnabled;
+      voltageMinController.text = settings.voltageMin;
+      voltageMaxController.text = settings.voltageMax;
+      currentMaxController.text = settings.currentMax;
+      vibrationMaxController.text = settings.vibrationMax;
+      temperatureMaxController.text = settings.temperatureMax;
+      _notify();
+    } catch (_) {
+      // Keep defaults if storage is unavailable or invalid.
+    }
+  }
+
+  Future<void> loadPersistedHistory() async {
+    if (_historyLoaded) {
+      return;
+    }
+    _historyLoaded = true;
+
+    try {
+      final List<TelemetryHistoryEntry> persisted =
+          await loadPersistedTelemetryHistory();
+      if (persisted.isEmpty) {
+        return;
+      }
+
+      for (final TelemetryHistoryEntry entry in persisted) {
+        _registerDevice(entry.deviceId);
+        _addSampleToHistory(
+          deviceId: entry.deviceId,
+          sample: entry.sample,
+          persist: false,
+        );
+        final TelemetrySample? latest = _latestByDevice[entry.deviceId];
+        if (latest == null ||
+            entry.sample.timestamp.isAfter(latest.timestamp)) {
+          _latestByDevice[entry.deviceId] = entry.sample;
+          _syncStateFromTelemetry(
+            deviceId: entry.deviceId,
+            sample: entry.sample,
+          );
+        }
+      }
+      statusMessage = 'Historico local carregado (${persisted.length}).';
+      _notify();
+    } catch (_) {
+      // Keep in-memory history empty if storage is unavailable or invalid.
+    }
+  }
+
   Future<void> loadStartTypes() async {
     if (_startTypesLoaded) {
       return;
@@ -588,7 +701,11 @@ class MotorControlController extends ChangeNotifier {
     _statusByDevice.clear();
     _motorOnByDevice.clear();
     _modeByDevice.clear();
+    _clearHistoryFilters(shouldNotify: false);
     statusMessage = 'Historico limpo para todos os dispositivos.';
+    _historyPersistTimer?.cancel();
+    _historyPersistTimer = null;
+    unawaited(clearPersistedTelemetryHistory());
     _notify();
   }
 
@@ -617,6 +734,7 @@ class MotorControlController extends ChangeNotifier {
     } else if (!enabled && portController.text.trim() == '8883') {
       portController.text = '1883';
     }
+    _scheduleSettingsPersist();
     _notify();
   }
 
@@ -625,11 +743,37 @@ class MotorControlController extends ChangeNotifier {
     if (!enabled) {
       _activeAlertKeys.clear();
     }
+    _scheduleSettingsPersist();
     _notify();
   }
 
   void refreshPreview() {
+    _scheduleSettingsPersist();
     _notify();
+  }
+
+  void setHistoryDeviceFilter(String value) {
+    _historyDeviceFilter = _normalizeHistoryFilter(value);
+    _notify();
+  }
+
+  void setHistoryPeriodFilter(String value) {
+    _historyPeriodFilter = _normalizeHistoryFilter(value);
+    _notify();
+  }
+
+  void setHistoryMetricFilter(String value) {
+    _historyMetricFilter = _normalizeHistoryFilter(value);
+    _notify();
+  }
+
+  void setHistoryStateFilter(String value) {
+    _historyStateFilter = _normalizeHistoryFilter(value);
+    _notify();
+  }
+
+  void clearHistoryFilters() {
+    _clearHistoryFilters(shouldNotify: true);
   }
 
   String formatTimestamp(DateTime dateTime) {
@@ -750,14 +894,7 @@ class MotorControlController extends ChangeNotifier {
     _latestByDevice[deviceId] = sample;
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
 
-    final List<TelemetrySample> deviceHistory = _historyByDevice.putIfAbsent(
-      deviceId,
-      () => <TelemetrySample>[],
-    );
-    deviceHistory.add(sample);
-    if (deviceHistory.length > maxHistory) {
-      deviceHistory.removeAt(0);
-    }
+    _addSampleToHistory(deviceId: deviceId, sample: sample);
 
     final TelemetryAlert? alert = _evaluateTelemetryAlerts(
       deviceId: deviceId,
@@ -788,6 +925,12 @@ class MotorControlController extends ChangeNotifier {
     return merged.sublist(merged.length - maxHistory);
   }
 
+  List<TelemetryHistoryEntry> _buildFilteredHistoryEntries() {
+    return _buildCombinedHistoryEntries()
+        .where(_matchesHistoryFilters)
+        .toList(growable: false);
+  }
+
   List<TelemetryHistoryEntry> _buildCombinedHistoryEntries() {
     final List<TelemetryHistoryEntry> merged = <TelemetryHistoryEntry>[];
     for (final MapEntry<String, List<TelemetrySample>> entry
@@ -805,6 +948,107 @@ class MotorControlController extends ChangeNotifier {
       return merged;
     }
     return merged.sublist(merged.length - maxHistory);
+  }
+
+  void _addSampleToHistory({
+    required String deviceId,
+    required TelemetrySample sample,
+    bool persist = true,
+  }) {
+    final List<TelemetrySample> deviceHistory = _historyByDevice.putIfAbsent(
+      deviceId,
+      () => <TelemetrySample>[],
+    );
+    deviceHistory.add(sample);
+    if (deviceHistory.length > maxHistory) {
+      deviceHistory.removeAt(0);
+    }
+    if (persist) {
+      _scheduleHistoryPersist();
+    }
+  }
+
+  bool _matchesHistoryFilters(TelemetryHistoryEntry entry) {
+    if (_historyDeviceFilter != historyFilterAll &&
+        entry.deviceId != _historyDeviceFilter) {
+      return false;
+    }
+    if (!_matchesHistoryPeriod(entry.sample.timestamp)) {
+      return false;
+    }
+    if (!_matchesHistoryMetric(entry.sample)) {
+      return false;
+    }
+    if (!_matchesHistoryState(entry.sample)) {
+      return false;
+    }
+    return true;
+  }
+
+  bool _matchesHistoryPeriod(DateTime timestamp) {
+    if (_historyPeriodFilter == historyFilterAll) {
+      return true;
+    }
+
+    final DateTime now = DateTime.now();
+    switch (_historyPeriodFilter) {
+      case historyPeriodToday:
+        return timestamp.year == now.year &&
+            timestamp.month == now.month &&
+            timestamp.day == now.day;
+      case historyPeriodLastHour:
+        return now.difference(timestamp) <= const Duration(hours: 1);
+      case historyPeriodLast24Hours:
+        return now.difference(timestamp) <= const Duration(hours: 24);
+      default:
+        return true;
+    }
+  }
+
+  bool _matchesHistoryMetric(TelemetrySample sample) {
+    switch (_historyMetricFilter) {
+      case historyMetricVoltage:
+        return sample.voltage != null;
+      case historyMetricCurrent:
+        return sample.current != null;
+      case historyMetricVibration:
+        return sample.vibration != null;
+      case historyMetricTemperature:
+        return sample.temperature != null;
+      default:
+        return true;
+    }
+  }
+
+  bool _matchesHistoryState(TelemetrySample sample) {
+    switch (_historyStateFilter) {
+      case historyStateOn:
+        return sample.motorOn == true;
+      case historyStateOff:
+        return sample.motorOn == false;
+      case historyStateUnknown:
+        return sample.motorOn == null;
+      default:
+        return true;
+    }
+  }
+
+  String _normalizeHistoryFilter(String value) {
+    final String normalized = value.trim();
+    if (normalized.isEmpty) {
+      return historyFilterAll;
+    }
+    return normalized;
+  }
+
+  void _clearHistoryFilters({required bool shouldNotify}) {
+    _historyDeviceFilter = historyFilterAll;
+    _historyPeriodFilter = historyFilterAll;
+    _historyMetricFilter = historyFilterAll;
+    _historyStateFilter = historyFilterAll;
+    if (shouldNotify) {
+      _notify();
+    }
   }
 
   TelemetrySample? _buildCombinedLatestSample() {
@@ -1294,6 +1538,59 @@ class MotorControlController extends ChangeNotifier {
     }
   }
 
+  void _scheduleSettingsPersist() {
+    if (_disposed) {
+      return;
+    }
+    _settingsPersistTimer?.cancel();
+    _settingsPersistTimer = Timer(_settingsPersistDelay, () {
+      unawaited(_persistSettings());
+    });
+  }
+
+  Future<void> _persistSettings() async {
+    try {
+      await savePersistedMotorSettings(_buildSettingsSnapshot());
+    } catch (_) {
+      // Keep app flow active even if settings persistence fails.
+    }
+  }
+
+  MotorAppSettings _buildSettingsSnapshot() {
+    return MotorAppSettings(
+      broker: brokerController.text.trim(),
+      port: portController.text.trim(),
+      clientId: clientIdController.text.trim(),
+      topicPrefix: topicPrefixController.text.trim(),
+      username: usernameController.text.trim(),
+      useTls: useTls,
+      telemetryAlertsEnabled: telemetryAlertsEnabled,
+      voltageMin: voltageMinController.text.trim(),
+      voltageMax: voltageMaxController.text.trim(),
+      currentMax: currentMaxController.text.trim(),
+      vibrationMax: vibrationMaxController.text.trim(),
+      temperatureMax: temperatureMaxController.text.trim(),
+    );
+  }
+
+  void _scheduleHistoryPersist() {
+    if (_disposed) {
+      return;
+    }
+    _historyPersistTimer?.cancel();
+    _historyPersistTimer = Timer(_historyPersistDelay, () {
+      unawaited(_persistHistory());
+    });
+  }
+
+  Future<void> _persistHistory() async {
+    try {
+      await savePersistedTelemetryHistory(_buildCombinedHistoryEntries());
+    } catch (_) {
+      // Keep in-memory history active even if persistence fails.
+    }
+  }
+
   String _normalizeLabel(String raw) {
     final String compact = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
     if (compact.length <= 40) {
@@ -1330,6 +1627,12 @@ class MotorControlController extends ChangeNotifier {
     _disposed = true;
     _connectedDevicesTimer?.cancel();
     _connectedDevicesTimer = null;
+    _settingsPersistTimer?.cancel();
+    _settingsPersistTimer = null;
+    _historyPersistTimer?.cancel();
+    _historyPersistTimer = null;
+    unawaited(_persistSettings());
+    unawaited(_persistHistory());
     _service.disconnect(silent: true);
 
     brokerController.dispose();

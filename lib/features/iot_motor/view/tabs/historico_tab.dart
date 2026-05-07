@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
+import '../../models/telemetry_history_entry.dart';
 import '../../models/telemetry_sample.dart';
 import '../../services/telemetry_history_export.dart';
 import '../widgets/delayed_reveal.dart';
@@ -15,9 +16,10 @@ class HistoricoTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<TelemetrySample> timeline = controller.history.reversed.toList(
-      growable: false,
-    );
+    final List<TelemetryHistoryEntry> timeline = controller
+        .filteredHistoryEntries
+        .reversed
+        .toList(growable: false);
 
     return SingleChildScrollView(
       key: const ValueKey<String>('tab_historico'),
@@ -49,11 +51,16 @@ class HistoricoTab extends StatelessWidget {
 
   Widget _buildHeaderPanel(
     BuildContext context,
-    List<TelemetrySample> timeline,
+    List<TelemetryHistoryEntry> timeline,
   ) {
     final int total = timeline.length;
+    final int overallTotal = controller.historyEntryCount;
     final String lastEntry =
-        total == 0 ? '--' : _formatDateTime(timeline.first.timestamp);
+        total == 0 ? '--' : _formatDateTime(timeline.first.sample.timestamp);
+    final String totalLabel =
+        controller.hasActiveHistoryFilters
+            ? '$total de $overallTotal eventos'
+            : (total == 1 ? '1 evento' : '$total eventos');
 
     return GlassPanel(
       tint: AppTheme.brandMint,
@@ -103,13 +110,15 @@ class HistoricoTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
+          _buildFilterControls(context),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 10,
             runSpacing: 10,
             children: <Widget>[
               Chip(
                 avatar: const Icon(Icons.timeline_rounded, size: 16),
-                label: Text(total == 1 ? '1 evento' : '$total eventos'),
+                label: Text(totalLabel),
               ),
               Chip(
                 avatar: const Icon(Icons.schedule_rounded, size: 16),
@@ -124,13 +133,14 @@ class HistoricoTab extends StatelessWidget {
 
   Widget _buildTimelinePanel(
     BuildContext context,
-    List<TelemetrySample> timeline,
+    List<TelemetryHistoryEntry> timeline,
   ) {
     final List<Widget> items = <Widget>[];
     DateTime? currentSection;
 
     for (int index = 0; index < timeline.length; index++) {
-      final TelemetrySample sample = timeline[index];
+      final TelemetryHistoryEntry entry = timeline[index];
+      final TelemetrySample sample = entry.sample;
       final DateTime sectionDate = DateTime(
         sample.timestamp.year,
         sample.timestamp.month,
@@ -149,7 +159,7 @@ class HistoricoTab extends StatelessWidget {
       items.add(
         _buildTimelineItem(
           context,
-          sample,
+          entry,
           isLatest: index == 0,
           showConnector: index < timeline.length - 1,
         ),
@@ -174,6 +184,7 @@ class HistoricoTab extends StatelessWidget {
   }
 
   Widget _buildEmptyTimeline(BuildContext context) {
+    final bool hasStoredHistory = controller.historyEntryCount > 0;
     return GlassPanel(
       tint: AppTheme.brandBlue,
       child: Container(
@@ -194,14 +205,18 @@ class HistoricoTab extends StatelessWidget {
                 Icon(Icons.history_toggle_off_rounded, color: AppTheme.inkSoft),
                 const SizedBox(width: 8),
                 Text(
-                  'Ainda sem eventos no hist\u00f3rico.',
+                  hasStoredHistory
+                      ? 'Nenhum evento para os filtros selecionados.'
+                      : 'Ainda sem eventos no hist\u00f3rico.',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
               ],
             ),
             const SizedBox(height: 6),
             Text(
-              'Conecte-se ao broker para come\u00e7ar.',
+              hasStoredHistory
+                  ? 'Ajuste ou limpe os filtros para ampliar a busca.'
+                  : 'Conecte-se ao broker para come\u00e7ar.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
@@ -234,10 +249,11 @@ class HistoricoTab extends StatelessWidget {
 
   Widget _buildTimelineItem(
     BuildContext context,
-    TelemetrySample sample, {
+    TelemetryHistoryEntry entry, {
     required bool isLatest,
     required bool showConnector,
   }) {
+    final TelemetrySample sample = entry.sample;
     final _HistoryEventStyle style = _eventStyle(sample);
     final String modeLabel = _resolveModeLabel(sample.mode);
     final List<Widget> metricChips = _metricChips(sample);
@@ -322,16 +338,24 @@ class HistoricoTab extends StatelessWidget {
                   _formatDateTime(sample.timestamp),
                   style: Theme.of(context).textTheme.labelMedium,
                 ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    _MetricChip(
+                      label: entry.deviceId,
+                      color: AppTheme.brandBlue,
+                    ),
+                    ...metricChips,
+                  ],
+                ),
                 if (modeLabel != '--') ...<Widget>[
                   const SizedBox(height: 6),
                   Text(
                     'Modo: $modeLabel',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
-                ],
-                if (metricChips.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 8),
-                  Wrap(spacing: 8, runSpacing: 8, children: metricChips),
                 ],
               ],
             ),
@@ -503,7 +527,7 @@ class HistoricoTab extends StatelessWidget {
   Future<void> _exportHistory(BuildContext context) async {
     try {
       final String result = await exportTelemetryHistoryCsv(
-        controller.historyEntries,
+        controller.filteredHistoryEntries,
       );
       if (!context.mounted) {
         return;
@@ -519,6 +543,108 @@ class HistoricoTab extends StatelessWidget {
         SnackBar(content: Text('Falha ao exportar historico: $error')),
       );
     }
+  }
+
+  Widget _buildFilterControls(BuildContext context) {
+    final List<_FilterOption> deviceOptions = <_FilterOption>[
+      const _FilterOption(
+        MotorControlController.historyFilterAll,
+        'Todos ESPs',
+      ),
+      for (final String deviceId in controller.knownDeviceIds)
+        _FilterOption(deviceId, deviceId),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: AppTheme.surfaceSoft.withValues(alpha: 0.76),
+        border: Border.all(color: AppTheme.inputBorder.withValues(alpha: 0.42)),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          _FilterMenu(
+            icon: Icons.memory_rounded,
+            label: 'Dispositivo',
+            value: controller.historyDeviceFilter,
+            options: deviceOptions,
+            onSelected: controller.setHistoryDeviceFilter,
+          ),
+          _FilterMenu(
+            icon: Icons.calendar_today_rounded,
+            label: 'Periodo',
+            value: controller.historyPeriodFilter,
+            options: const <_FilterOption>[
+              _FilterOption(MotorControlController.historyFilterAll, 'Tudo'),
+              _FilterOption(MotorControlController.historyPeriodToday, 'Hoje'),
+              _FilterOption(
+                MotorControlController.historyPeriodLastHour,
+                'Ultima hora',
+              ),
+              _FilterOption(
+                MotorControlController.historyPeriodLast24Hours,
+                'Ultimas 24h',
+              ),
+            ],
+            onSelected: controller.setHistoryPeriodFilter,
+          ),
+          _FilterMenu(
+            icon: Icons.monitor_heart_outlined,
+            label: 'Metrica',
+            value: controller.historyMetricFilter,
+            options: const <_FilterOption>[
+              _FilterOption(MotorControlController.historyFilterAll, 'Todas'),
+              _FilterOption(
+                MotorControlController.historyMetricVoltage,
+                'Tensao',
+              ),
+              _FilterOption(
+                MotorControlController.historyMetricCurrent,
+                'Corrente',
+              ),
+              _FilterOption(
+                MotorControlController.historyMetricVibration,
+                'Vibracao',
+              ),
+              _FilterOption(
+                MotorControlController.historyMetricTemperature,
+                'Temperatura',
+              ),
+            ],
+            onSelected: controller.setHistoryMetricFilter,
+          ),
+          _FilterMenu(
+            icon: Icons.power_settings_new_rounded,
+            label: 'Estado',
+            value: controller.historyStateFilter,
+            options: const <_FilterOption>[
+              _FilterOption(MotorControlController.historyFilterAll, 'Todos'),
+              _FilterOption(MotorControlController.historyStateOn, 'Ligado'),
+              _FilterOption(
+                MotorControlController.historyStateOff,
+                'Desligado',
+              ),
+              _FilterOption(
+                MotorControlController.historyStateUnknown,
+                'Sem estado',
+              ),
+            ],
+            onSelected: controller.setHistoryStateFilter,
+          ),
+          if (controller.hasActiveHistoryFilters)
+            OutlinedButton.icon(
+              onPressed: controller.clearHistoryFilters,
+              icon: const Icon(Icons.filter_alt_off_outlined, size: 18),
+              label: const Text('Limpar filtros'),
+            ),
+        ],
+      ),
+    );
   }
 }
 
@@ -553,4 +679,94 @@ class _HistoryEventStyle {
 
   final Color color;
   final IconData icon;
+}
+
+class _FilterOption {
+  const _FilterOption(this.value, this.label);
+
+  final String value;
+  final String label;
+}
+
+class _FilterMenu extends StatelessWidget {
+  const _FilterMenu({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.options,
+    required this.onSelected,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final List<_FilterOption> options;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final _FilterOption selected = options.firstWhere(
+      (_FilterOption option) => option.value == value,
+      orElse: () => options.first,
+    );
+
+    return PopupMenuButton<String>(
+      tooltip: label,
+      onSelected: onSelected,
+      itemBuilder:
+          (BuildContext context) => options
+              .map(
+                (_FilterOption option) => PopupMenuItem<String>(
+                  value: option.value,
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(child: Text(option.label)),
+                      if (option.value == selected.value)
+                        Icon(
+                          Icons.check_rounded,
+                          size: 16,
+                          color: AppTheme.brandMint,
+                        ),
+                    ],
+                  ),
+                ),
+              )
+              .toList(growable: false),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: AppTheme.surfaceSoft.withValues(alpha: 0.96),
+          border: Border.all(
+            color: AppTheme.inputBorder.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 17, color: AppTheme.brandMint),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(label, style: Theme.of(context).textTheme.labelMedium),
+                  Text(
+                    selected.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            Icon(Icons.arrow_drop_down_rounded, color: AppTheme.brandMint),
+          ],
+        ),
+      ),
+    );
+  }
 }

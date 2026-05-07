@@ -94,6 +94,27 @@ class TelemetrySample {
     );
   }
 
+  static TelemetrySample? fromStoredMap(Map<String, dynamic> input) {
+    final String timestampText = '${input['timestamp'] ?? ''}'.trim();
+    final DateTime? timestamp = DateTime.tryParse(timestampText);
+    if (timestamp == null) {
+      return null;
+    }
+    return fromDynamicMap(input, timestamp: timestamp);
+  }
+
+  Map<String, dynamic> toStoredMap() {
+    return <String, dynamic>{
+      'timestamp': timestamp.toIso8601String(),
+      if (voltage != null) 'voltage': voltage,
+      if (current != null) 'current': current,
+      if (vibration != null) 'vibration': vibration,
+      if (temperature != null) 'temperature': temperature,
+      if (motorOn != null) 'motor_on': motorOn,
+      if (mode != null && mode!.trim().isNotEmpty) 'mode': mode,
+    };
+  }
+
   static double? _readDouble(Map<String, dynamic> source, List<String> keys) {
     for (final String key in keys) {
       final dynamic value = source[key];
