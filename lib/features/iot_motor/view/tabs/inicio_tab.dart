@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
@@ -299,7 +299,7 @@ class _InicioTabState extends State<InicioTab> {
                                 return;
                               }
                               _openStartTypeActions(
-                                context: context,
+                                context: this.context,
                                 type: type,
                               );
                             });
@@ -336,7 +336,7 @@ class _InicioTabState extends State<InicioTab> {
                             if (!mounted) {
                               return;
                             }
-                            _openStartTypeEditor(context: context);
+                            _openStartTypeEditor(context: this.context);
                           });
                         },
                         child: const Row(
@@ -441,8 +441,12 @@ class _InicioTabState extends State<InicioTab> {
       },
     );
 
+    if (!mounted) {
+      return;
+    }
+
     if (action == 'edit') {
-      await _openStartTypeEditor(context: context, initial: type);
+      await _openStartTypeEditor(context: this.context, initial: type);
       return;
     }
 
@@ -451,7 +455,7 @@ class _InicioTabState extends State<InicioTab> {
     }
 
     final bool? confirm = await showDialog<bool>(
-      context: context,
+      context: this.context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           title: const Text('Excluir partida'),

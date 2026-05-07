@@ -144,7 +144,9 @@ class _MotorControlPageState extends State<MotorControlPage> {
 
   Widget _buildAppBarContent() {
     final String tickerText =
-        'Dispositivos conectados: ${_controller.connectedDevicesSummary} | Broker: ${_controller.brokerStatusLabel} |';
+        'Dispositivos conectados: ${_controller.connectedDevicesSummary} | '
+        'Broker: ${_controller.brokerStatusLabel} | '
+        'Alertas: ${_controller.alertStatusSummary} |';
 
     return DelayedReveal(
       delay: const Duration(milliseconds: 60),

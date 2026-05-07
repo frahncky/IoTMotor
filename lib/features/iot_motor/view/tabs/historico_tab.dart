@@ -4,6 +4,7 @@ import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
 import '../../models/telemetry_sample.dart';
+import '../../services/telemetry_history_export.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
 
@@ -77,15 +78,27 @@ class HistoricoTab extends StatelessWidget {
                   ],
                 ),
               ),
-              FilledButton.icon(
-                onPressed:
-                    total == 0 ? null : () => _confirmClearHistory(context),
-                icon: const Icon(Icons.delete_sweep_rounded, size: 18),
-                label: const Text('Limpar'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppTheme.danger,
-                  foregroundColor: Colors.white,
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    onPressed:
+                        total == 0 ? null : () => _exportHistory(context),
+                    icon: const Icon(Icons.download_outlined, size: 18),
+                    label: const Text('Exportar CSV'),
+                  ),
+                  FilledButton.icon(
+                    onPressed:
+                        total == 0 ? null : () => _confirmClearHistory(context),
+                    icon: const Icon(Icons.delete_sweep_rounded, size: 18),
+                    label: const Text('Limpar'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppTheme.danger,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -485,6 +498,27 @@ class HistoricoTab extends StatelessWidget {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Hist\u00f3rico limpo.')));
+  }
+
+  Future<void> _exportHistory(BuildContext context) async {
+    try {
+      final String result = await exportTelemetryHistoryCsv(
+        controller.historyEntries,
+      );
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result)));
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao exportar historico: $error')),
+      );
+    }
   }
 }
 

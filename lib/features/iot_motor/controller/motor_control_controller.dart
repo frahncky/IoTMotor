@@ -5,8 +5,11 @@ import 'package:flutter/material.dart';
 
 import '../models/motor_command_type.dart';
 import '../models/mqtt_connection_config.dart';
+import '../models/telemetry_alert.dart';
+import '../models/telemetry_history_entry.dart';
 import '../models/telemetry_sample.dart';
 import '../services/background_mqtt_service.dart';
+import '../services/mqtt_settings_validators.dart';
 import '../services/mqtt_motor_service.dart';
 import '../services/start_types_store.dart';
 
@@ -21,6 +24,11 @@ class MotorControlController extends ChangeNotifier {
     usernameController = TextEditingController();
     passwordController = TextEditingController();
     topicPrefixController = TextEditingController(text: 'iotmotor');
+    voltageMinController = TextEditingController(text: '190');
+    voltageMaxController = TextEditingController(text: '240');
+    currentMaxController = TextEditingController(text: '10');
+    vibrationMaxController = TextEditingController(text: '1.5');
+    temperatureMaxController = TextEditingController(text: '70');
 
     _service.onConnected = _handleConnected;
     _service.onDisconnected = _handleDisconnected;
@@ -60,10 +68,16 @@ class MotorControlController extends ChangeNotifier {
   late final TextEditingController usernameController;
   late final TextEditingController passwordController;
   late final TextEditingController topicPrefixController;
+  late final TextEditingController voltageMinController;
+  late final TextEditingController voltageMaxController;
+  late final TextEditingController currentMaxController;
+  late final TextEditingController vibrationMaxController;
+  late final TextEditingController temperatureMaxController;
 
   bool isConnected = false;
   bool isBusy = false;
   bool useTls = false;
+  bool telemetryAlertsEnabled = true;
 
   String connectionMessage = 'Desconectado';
   String statusMessage = 'Aguardando conexao e dados.';
@@ -78,6 +92,8 @@ class MotorControlController extends ChangeNotifier {
   final Map<String, bool> _motorOnByDevice = <String, bool>{};
   final Map<String, String> _modeByDevice = <String, String>{};
   final Map<String, DateTime> _lastSeenByDevice = <String, DateTime>{};
+  final List<TelemetryAlert> _alertHistory = <TelemetryAlert>[];
+  final Set<String> _activeAlertKeys = <String>{};
   Set<String> _lastConnectedDevices = <String>{};
   Timer? _connectedDevicesTimer;
   final LinkedHashSet<String> _knownDevices = LinkedHashSet<String>();
@@ -89,6 +105,81 @@ class MotorControlController extends ChangeNotifier {
 
   UnmodifiableListView<TelemetrySample> get history =>
       UnmodifiableListView<TelemetrySample>(_buildCombinedHistory());
+
+  UnmodifiableListView<TelemetryHistoryEntry> get historyEntries =>
+      UnmodifiableListView<TelemetryHistoryEntry>(
+        _buildCombinedHistoryEntries(),
+      );
+
+  UnmodifiableListView<TelemetryAlert> get alerts =>
+      UnmodifiableListView<TelemetryAlert>(
+        _alertHistory.toList(growable: false),
+      );
+
+  int get pendingAlertsCount =>
+      _alertHistory.where((TelemetryAlert alert) => !alert.acknowledged).length;
+
+  TelemetryAlert? get latestAlert =>
+      _alertHistory.isEmpty ? null : _alertHistory.first;
+
+  String get alertStatusSummary {
+    if (!telemetryAlertsEnabled) {
+      return 'alertas desativados';
+    }
+    if (pendingAlertsCount == 0) {
+      return 'sem alertas pendentes';
+    }
+    return pendingAlertsCount == 1
+        ? '1 alerta pendente'
+        : '$pendingAlertsCount alertas pendentes';
+  }
+
+  String? get alertThresholdsError {
+    final String? voltageMinError = MqttSettingsValidators.validateDecimal(
+      voltageMinController.text,
+      fieldLabel: 'a tensao minima',
+      min: 0,
+      allowZero: false,
+    );
+    if (voltageMinError != null) {
+      return voltageMinError;
+    }
+
+    final String? voltageMaxError = MqttSettingsValidators.validateDecimal(
+      voltageMaxController.text,
+      fieldLabel: 'a tensao maxima',
+      min: 0,
+      allowZero: false,
+    );
+    if (voltageMaxError != null) {
+      return voltageMaxError;
+    }
+
+    final double? minVoltage = _readThreshold(voltageMinController);
+    final double? maxVoltage = _readThreshold(voltageMaxController);
+    if (minVoltage != null && maxVoltage != null && minVoltage >= maxVoltage) {
+      return 'A tensao minima deve ser menor que a maxima.';
+    }
+
+    return MqttSettingsValidators.validateDecimal(
+          currentMaxController.text,
+          fieldLabel: 'o limite de corrente',
+          min: 0,
+          allowZero: false,
+        ) ??
+        MqttSettingsValidators.validateDecimal(
+          vibrationMaxController.text,
+          fieldLabel: 'o limite de vibracao',
+          min: 0,
+          allowZero: false,
+        ) ??
+        MqttSettingsValidators.validateDecimal(
+          temperatureMaxController.text,
+          fieldLabel: 'o limite de temperatura',
+          min: 0,
+          allowZero: false,
+        );
+  }
 
   UnmodifiableListView<String> get knownDeviceIds =>
       UnmodifiableListView<String>(_knownDevices.toList(growable: false));
@@ -501,12 +592,38 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
+  void clearAlerts() {
+    _alertHistory.clear();
+    _activeAlertKeys.clear();
+    _pendingMessage = 'Alertas limpos.';
+    _notify();
+  }
+
+  void acknowledgeAlert(String id) {
+    final int index = _alertHistory.indexWhere(
+      (TelemetryAlert alert) => alert.id == id,
+    );
+    if (index == -1) {
+      return;
+    }
+    _alertHistory[index] = _alertHistory[index].copyWith(acknowledged: true);
+    _notify();
+  }
+
   void setTls(bool enabled) {
     useTls = enabled;
     if (enabled && portController.text.trim() == '1883') {
       portController.text = '8883';
     } else if (!enabled && portController.text.trim() == '8883') {
       portController.text = '1883';
+    }
+    _notify();
+  }
+
+  void setTelemetryAlertsEnabled(bool enabled) {
+    telemetryAlertsEnabled = enabled;
+    if (!enabled) {
+      _activeAlertKeys.clear();
     }
     _notify();
   }
@@ -526,17 +643,19 @@ class MotorControlController extends ChangeNotifier {
     final String host = brokerController.text.trim();
     final String clientId = clientIdController.text.trim();
     final String topicPrefix = topicPrefixController.text.trim();
-    final int? port = int.tryParse(portController.text.trim());
 
-    if (host.isEmpty || clientId.isEmpty || topicPrefix.isEmpty) {
-      _pendingMessage = 'Preencha broker, client id e topic prefix.';
+    final String? validationError = MqttSettingsValidators.firstConnectionError(
+      broker: host,
+      port: portController.text,
+      clientId: clientId,
+      topicPrefix: topicPrefix,
+    );
+    if (validationError != null) {
+      _pendingMessage = validationError;
       return null;
     }
 
-    if (port == null || port <= 0) {
-      _pendingMessage = 'Porta MQTT invalida.';
-      return null;
-    }
+    final int port = int.parse(portController.text.trim());
 
     final String username = usernameController.text.trim();
     final String password = passwordController.text;
@@ -640,7 +759,14 @@ class MotorControlController extends ChangeNotifier {
       deviceHistory.removeAt(0);
     }
 
-    if (deviceId == selectedDeviceId) {
+    final TelemetryAlert? alert = _evaluateTelemetryAlerts(
+      deviceId: deviceId,
+      sample: sample,
+    );
+
+    if (alert != null) {
+      statusMessage = '${alert.title}: ${alert.message}';
+    } else if (deviceId == selectedDeviceId) {
       statusMessage =
           '${_buildDeviceStateSummary(deviceId)} Ultimo pacote em ${formatTimestamp(sample.timestamp)}';
     }
@@ -655,6 +781,25 @@ class MotorControlController extends ChangeNotifier {
     merged.sort(
       (TelemetrySample a, TelemetrySample b) =>
           a.timestamp.compareTo(b.timestamp),
+    );
+    if (merged.length <= maxHistory) {
+      return merged;
+    }
+    return merged.sublist(merged.length - maxHistory);
+  }
+
+  List<TelemetryHistoryEntry> _buildCombinedHistoryEntries() {
+    final List<TelemetryHistoryEntry> merged = <TelemetryHistoryEntry>[];
+    for (final MapEntry<String, List<TelemetrySample>> entry
+        in _historyByDevice.entries) {
+      for (final TelemetrySample sample in entry.value) {
+        merged.add(TelemetryHistoryEntry(deviceId: entry.key, sample: sample));
+      }
+    }
+
+    merged.sort(
+      (TelemetryHistoryEntry a, TelemetryHistoryEntry b) =>
+          a.sample.timestamp.compareTo(b.sample.timestamp),
     );
     if (merged.length <= maxHistory) {
       return merged;
@@ -835,6 +980,165 @@ class MotorControlController extends ChangeNotifier {
     if (normalizedMode.isNotEmpty) {
       _modeByDevice[deviceId] = normalizedMode;
     }
+  }
+
+  TelemetryAlert? _evaluateTelemetryAlerts({
+    required String deviceId,
+    required TelemetrySample sample,
+  }) {
+    if (!telemetryAlertsEnabled) {
+      return null;
+    }
+
+    TelemetryAlert? firstAlert;
+
+    TelemetryAlert? capture(TelemetryAlert? alert) {
+      firstAlert ??= alert;
+      return alert;
+    }
+
+    capture(_evaluateVoltageAlert(deviceId: deviceId, value: sample.voltage));
+    capture(
+      _evaluateUpperLimitAlert(
+        deviceId: deviceId,
+        metricKey: 'current',
+        title: 'Corrente alta',
+        metricLabel: 'corrente',
+        unit: 'A',
+        value: sample.current,
+        limit: _readThreshold(currentMaxController),
+        severity: TelemetryAlertSeverity.critical,
+        digits: 2,
+      ),
+    );
+    capture(
+      _evaluateUpperLimitAlert(
+        deviceId: deviceId,
+        metricKey: 'vibration',
+        title: 'Vibracao elevada',
+        metricLabel: 'vibracao',
+        unit: 'g',
+        value: sample.vibration,
+        limit: _readThreshold(vibrationMaxController),
+        severity: TelemetryAlertSeverity.warning,
+        digits: 3,
+      ),
+    );
+    capture(
+      _evaluateUpperLimitAlert(
+        deviceId: deviceId,
+        metricKey: 'temperature',
+        title: 'Temperatura alta',
+        metricLabel: 'temperatura',
+        unit: 'C',
+        value: sample.temperature,
+        limit: _readThreshold(temperatureMaxController),
+        severity: TelemetryAlertSeverity.critical,
+        digits: 1,
+      ),
+    );
+
+    return firstAlert;
+  }
+
+  TelemetryAlert? _evaluateVoltageAlert({
+    required String deviceId,
+    required double? value,
+  }) {
+    final double? min = _readThreshold(voltageMinController);
+    final double? max = _readThreshold(voltageMaxController);
+    if (value == null || min == null || max == null || min >= max) {
+      return null;
+    }
+
+    final String alertKey = '$deviceId:voltage';
+    final bool outOfRange = value < min || value > max;
+    if (outOfRange) {
+      if (_activeAlertKeys.contains(alertKey)) {
+        return null;
+      }
+      _activeAlertKeys.add(alertKey);
+      final String range =
+          '${min.toStringAsFixed(1)} a ${max.toStringAsFixed(1)} V';
+      return _registerAlert(
+        deviceId: deviceId,
+        metricKey: 'voltage',
+        title: 'Tensao fora da faixa',
+        message:
+            'ESP $deviceId: tensao ${value.toStringAsFixed(1)} V fora da faixa $range.',
+        severity: TelemetryAlertSeverity.warning,
+      );
+    }
+
+    _activeAlertKeys.remove(alertKey);
+    return null;
+  }
+
+  TelemetryAlert? _evaluateUpperLimitAlert({
+    required String deviceId,
+    required String metricKey,
+    required String title,
+    required String metricLabel,
+    required String unit,
+    required double? value,
+    required double? limit,
+    required TelemetryAlertSeverity severity,
+    required int digits,
+  }) {
+    if (value == null || limit == null || limit <= 0) {
+      return null;
+    }
+
+    final String alertKey = '$deviceId:$metricKey';
+    if (value > limit) {
+      if (_activeAlertKeys.contains(alertKey)) {
+        return null;
+      }
+      _activeAlertKeys.add(alertKey);
+      return _registerAlert(
+        deviceId: deviceId,
+        metricKey: metricKey,
+        title: title,
+        message:
+            'ESP $deviceId: $metricLabel ${value.toStringAsFixed(digits)} $unit acima do limite ${limit.toStringAsFixed(digits)} $unit.',
+        severity: severity,
+      );
+    }
+
+    if (_activeAlertKeys.contains(alertKey) && value <= limit * 0.95) {
+      _activeAlertKeys.remove(alertKey);
+    }
+    return null;
+  }
+
+  TelemetryAlert _registerAlert({
+    required String deviceId,
+    required String metricKey,
+    required String title,
+    required String message,
+    required TelemetryAlertSeverity severity,
+  }) {
+    final DateTime now = DateTime.now();
+    final TelemetryAlert alert = TelemetryAlert(
+      id: '${deviceId}_${metricKey}_${now.microsecondsSinceEpoch}',
+      deviceId: deviceId,
+      title: title,
+      message: message,
+      metric: metricKey,
+      severity: severity,
+      createdAt: now,
+    );
+
+    _alertHistory.insert(0, alert);
+    if (_alertHistory.length > 100) {
+      _alertHistory.removeRange(100, _alertHistory.length);
+    }
+    _pendingMessage = '$title: $message';
+    return alert;
+  }
+
+  double? _readThreshold(TextEditingController controller) {
+    return double.tryParse(controller.text.trim().replaceAll(',', '.'));
   }
 
   String _buildDeviceStateSummary(String deviceId, {String? fallback}) {
@@ -1034,6 +1338,11 @@ class MotorControlController extends ChangeNotifier {
     usernameController.dispose();
     passwordController.dispose();
     topicPrefixController.dispose();
+    voltageMinController.dispose();
+    voltageMaxController.dispose();
+    currentMaxController.dispose();
+    vibrationMaxController.dispose();
+    temperatureMaxController.dispose();
     super.dispose();
   }
 }
