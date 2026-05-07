@@ -6,6 +6,7 @@ class MotorAppSettings {
   static const String defaultElectricalPlotBId = 'current';
   static const String defaultMechanicalPlotAId = 'vibration';
   static const String defaultMechanicalPlotBId = 'temperature';
+  static const int defaultHistoryRetentionDays = 30;
 
   const MotorAppSettings({
     required this.broker,
@@ -25,6 +26,7 @@ class MotorAppSettings {
     this.electricalPlotBId = defaultElectricalPlotBId,
     this.mechanicalPlotAId = defaultMechanicalPlotAId,
     this.mechanicalPlotBId = defaultMechanicalPlotBId,
+    this.historyRetentionDays = defaultHistoryRetentionDays,
   });
 
   final String broker;
@@ -44,6 +46,7 @@ class MotorAppSettings {
   final String electricalPlotBId;
   final String mechanicalPlotAId;
   final String mechanicalPlotBId;
+  final int historyRetentionDays;
 
   static MotorAppSettings? fromMap(Map<String, dynamic> map) {
     final String broker = '${map['broker'] ?? ''}'.trim();
@@ -87,6 +90,7 @@ class MotorAppSettings {
         map['mechanical_plot_b'],
         defaultMechanicalPlotBId,
       ),
+      historyRetentionDays: _readRetentionDays(map['history_retention_days']),
     );
   }
 
@@ -109,6 +113,7 @@ class MotorAppSettings {
       'electrical_plot_b': electricalPlotBId,
       'mechanical_plot_a': mechanicalPlotAId,
       'mechanical_plot_b': mechanicalPlotBId,
+      'history_retention_days': historyRetentionDays,
     };
   }
 
@@ -130,5 +135,13 @@ class MotorAppSettings {
       return fallback;
     }
     return value;
+  }
+
+  static int _readRetentionDays(Object? raw) {
+    final int? value = raw is int ? raw : int.tryParse('${raw ?? ''}'.trim());
+    if (value == null) {
+      return defaultHistoryRetentionDays;
+    }
+    return value.clamp(1, 3650);
   }
 }

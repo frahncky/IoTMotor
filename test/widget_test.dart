@@ -89,12 +89,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Histórico'), findsWidgets);
     expect(find.text('Dispositivo'), findsOneWidget);
-    expect(find.text('Periodo'), findsOneWidget);
+    expect(find.text('Período'), findsOneWidget);
     expect(find.text('Ainda sem eventos no histórico.'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.notification_important_outlined));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Alertas'), findsWidgets);
+    expect(find.text('Nenhum alerta registrado.'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Conexão MQTT'), findsOneWidget);
+    expect(find.text('Armazenamento local'), findsOneWidget);
     expect(find.text('Alertas de Telemetria'), findsOneWidget);
     expect(find.text('Formato da Telemetria'), findsOneWidget);
   });

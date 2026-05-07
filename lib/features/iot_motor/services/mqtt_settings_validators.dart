@@ -10,10 +10,10 @@ class MqttSettingsValidators {
       return 'Informe apenas host/IP do broker, sem http:// ou https://.';
     }
     if (broker.contains('/') || broker.contains(' ')) {
-      return 'Broker invalido. Use apenas host ou IP.';
+      return 'Broker inválido. Use apenas host ou IP.';
     }
     if (!_brokerPattern.hasMatch(broker)) {
-      return 'Broker invalido. Use letras, numeros, ponto e hifen.';
+      return 'Broker inválido. Use letras, números, ponto e hífen.';
     }
     return null;
   }
@@ -24,10 +24,10 @@ class MqttSettingsValidators {
       return 'Informe o Client ID.';
     }
     if (clientId.contains(' ')) {
-      return 'Client ID nao pode conter espacos.';
+      return 'Client ID não pode conter espaços.';
     }
     if (clientId.length > 50) {
-      return 'Client ID muito longo (maximo de 50 caracteres).';
+      return 'Client ID muito longo (máximo de 50 caracteres).';
     }
     return null;
   }
@@ -39,7 +39,7 @@ class MqttSettingsValidators {
     }
     final int? parsed = int.tryParse(text);
     if (parsed == null) {
-      return 'Porta invalida. Use apenas numeros.';
+      return 'Porta inválida. Use apenas números.';
     }
     if (parsed < 1 || parsed > 65535) {
       return 'A porta deve estar entre 1 e 65535.';
@@ -53,16 +53,16 @@ class MqttSettingsValidators {
       return 'Informe o topic prefix.';
     }
     if (topic.contains(' ')) {
-      return 'O topico nao pode conter espacos.';
+      return 'O tópico não pode conter espaços.';
     }
     if (topic.startsWith('/') || topic.endsWith('/')) {
-      return 'Evite / no inicio ou no fim do topico.';
+      return 'Evite / no início ou no fim do tópico.';
     }
     if (topic.contains('//')) {
-      return 'O topico contem niveis vazios (//).';
+      return 'O tópico contém níveis vazios (//).';
     }
     if (topic.contains('#') || topic.contains('+')) {
-      return 'Use um prefixo especifico sem curingas (#/+).';
+      return 'Use um prefixo específico sem curingas (#/+).';
     }
     return null;
   }
@@ -81,16 +81,16 @@ class MqttSettingsValidators {
 
     final double? parsed = double.tryParse(text);
     if (parsed == null) {
-      return 'Valor invalido. Use apenas numeros.';
+      return 'Valor inválido. Use apenas números.';
     }
     if (!allowZero && parsed == 0) {
       return 'O valor deve ser maior que zero.';
     }
     if (parsed < min) {
-      return 'O valor minimo permitido e $min.';
+      return 'O valor mínimo permitido é $min.';
     }
     if (max != null && parsed > max) {
-      return 'O valor maximo permitido e $max.';
+      return 'O valor máximo permitido é $max.';
     }
     return null;
   }

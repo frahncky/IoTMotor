@@ -30,11 +30,16 @@ class ConfiguracoesTab extends StatelessWidget {
               const SizedBox(height: 12),
               DelayedReveal(
                 delay: const Duration(milliseconds: 250),
-                child: _buildAlertPanel(context),
+                child: _buildStoragePanel(context),
               ),
               const SizedBox(height: 12),
               DelayedReveal(
                 delay: const Duration(milliseconds: 300),
+                child: _buildAlertPanel(context),
+              ),
+              const SizedBox(height: 12),
+              DelayedReveal(
+                delay: const Duration(milliseconds: 350),
                 child: _buildTelemetryFormatPanel(context),
               ),
             ],
@@ -156,12 +161,6 @@ class ConfiguracoesTab extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: controller.clearHistory,
-                icon: const Icon(Icons.auto_graph_rounded),
-                label: const Text('Limpar hist\u00f3rico'),
-              ),
               const SizedBox(height: 12),
               Container(
                 width: double.infinity,
@@ -185,6 +184,83 @@ class ConfiguracoesTab extends StatelessWidget {
                     color: AppTheme.inkSoft,
                   ),
                 ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStoragePanel(BuildContext context) {
+    return GlassPanel(
+      tint: AppTheme.brandMint,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double fieldWidth = _fieldWidthFor(constraints.maxWidth);
+          final List<int> retentionOptions =
+              <int>{
+                  ...MotorControlController.historyRetentionOptions,
+                  controller.historyRetentionDays,
+                }.toList()
+                ..sort();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(Icons.storage_rounded, color: AppTheme.brandMint),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Armazenamento local',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: <Widget>[
+                  SizedBox(
+                    width: fieldWidth,
+                    child: DropdownButtonFormField<int>(
+                      initialValue: controller.historyRetentionDays,
+                      decoration: const InputDecoration(
+                        labelText: 'Retenção do histórico',
+                        suffixText: 'dias',
+                      ),
+                      items: retentionOptions
+                          .map(
+                            (int days) => DropdownMenuItem<int>(
+                              value: days,
+                              child: Text('$days dias'),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (int? value) {
+                        if (value != null) {
+                          controller.setHistoryRetentionDays(value);
+                        }
+                      },
+                    ),
+                  ),
+                  Chip(
+                    avatar: const Icon(Icons.timeline_rounded, size: 16),
+                    label: Text(controller.historyRetentionSummary),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed:
+                        controller.historyEntryCount == 0
+                            ? null
+                            : controller.clearHistory,
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    label: const Text('Limpar histórico'),
+                  ),
+                ],
               ),
             ],
           );
@@ -239,13 +315,13 @@ class ConfiguracoesTab extends StatelessWidget {
                 children: <Widget>[
                   _textField(
                     width: fieldWidth,
-                    label: 'Tensao minima',
+                    label: 'Tensão mínima',
                     controller: controller.voltageMinController,
                     keyboardType: TextInputType.number,
                     suffixText: 'V',
                     errorText: MqttSettingsValidators.validateDecimal(
                       controller.voltageMinController.text,
-                      fieldLabel: 'a tensao minima',
+                      fieldLabel: 'a tensão mínima',
                       min: 0,
                       allowZero: false,
                     ),
@@ -326,7 +402,7 @@ class ConfiguracoesTab extends StatelessWidget {
                   if (latestAlert != null)
                     Chip(
                       avatar: Icon(_alertIcon(latestAlert.severity), size: 16),
-                      label: Text('Ultimo: ${latestAlert.title}'),
+                      label: Text('Último: ${latestAlert.title}'),
                     ),
                   OutlinedButton.icon(
                     onPressed:
@@ -540,9 +616,9 @@ class ConfiguracoesTab extends StatelessWidget {
       case TelemetryAlertSeverity.info:
         return 'Informativo';
       case TelemetryAlertSeverity.warning:
-        return 'Atencao';
+        return 'Atenção';
       case TelemetryAlertSeverity.critical:
-        return 'Critico';
+        return 'Crítico';
     }
   }
 

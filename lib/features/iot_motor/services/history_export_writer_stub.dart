@@ -1,3 +1,3 @@
 Future<String> writeHistoryCsv(String csv, String fileName) async {
-  throw UnsupportedError('Exportacao CSV nao suportada nesta plataforma.');
+  throw UnsupportedError('Exportação CSV não suportada nesta plataforma.');
 }

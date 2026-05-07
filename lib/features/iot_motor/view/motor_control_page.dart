@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../app/theme/app_theme.dart';
 import '../controller/motor_control_controller.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/settings_tab.dart';
+import 'tabs/alertas_tab.dart';
 import 'tabs/historico_tab.dart';
 import 'tabs/inicio_tab.dart';
 import 'widgets/delayed_reveal.dart';
@@ -116,7 +117,7 @@ class _MotorControlPageState extends State<MotorControlPage> {
               ),
             ),
             PopupMenuItem<int>(
-              value: 2,
+              value: 3,
               child: Row(
                 children: <Widget>[
                   Icon(Icons.settings_suggest_rounded, size: 18),
@@ -136,6 +137,8 @@ class _MotorControlPageState extends State<MotorControlPage> {
       case 1:
         return HistoricoTab(controller: _controller);
       case 2:
+        return AlertasTab(controller: _controller);
+      case 3:
         return ConfiguracoesTab(controller: _controller);
       default:
         return InicioTab(controller: _controller);
@@ -267,6 +270,11 @@ class _MotorControlPageState extends State<MotorControlPage> {
             icon: Icon(Icons.history_outlined),
             selectedIcon: Icon(Icons.history_rounded),
             label: 'Hist\u00f3rico',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.notification_important_outlined),
+            selectedIcon: Icon(Icons.notification_important_rounded),
+            label: 'Alertas',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

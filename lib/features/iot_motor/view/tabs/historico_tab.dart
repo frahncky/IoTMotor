@@ -122,7 +122,7 @@ class HistoricoTab extends StatelessWidget {
               ),
               Chip(
                 avatar: const Icon(Icons.schedule_rounded, size: 16),
-                label: Text('Ultimo registro: $lastEntry'),
+                label: Text('Último registro: $lastEntry'),
               ),
             ],
           ),
@@ -427,7 +427,7 @@ class HistoricoTab extends StatelessWidget {
     }
 
     if (sample.power != null) {
-      chips.add(_MetricChip(label: 'Potencia', color: AppTheme.brandOrange));
+      chips.add(_MetricChip(label: 'Potência', color: AppTheme.brandOrange));
     }
 
     if (sample.powerFactor != null) {
@@ -435,7 +435,7 @@ class HistoricoTab extends StatelessWidget {
     }
 
     if (sample.frequency != null) {
-      chips.add(_MetricChip(label: 'Frequencia', color: AppTheme.brandBlue));
+      chips.add(_MetricChip(label: 'Frequência', color: AppTheme.brandBlue));
     }
 
     if (sample.energy != null) {
@@ -593,31 +593,31 @@ class HistoricoTab extends StatelessWidget {
           ),
           _FilterMenu(
             icon: Icons.calendar_today_rounded,
-            label: 'Periodo',
+            label: 'Período',
             value: controller.historyPeriodFilter,
             options: const <_FilterOption>[
               _FilterOption(MotorControlController.historyFilterAll, 'Tudo'),
               _FilterOption(MotorControlController.historyPeriodToday, 'Hoje'),
               _FilterOption(
                 MotorControlController.historyPeriodLastHour,
-                'Ultima hora',
+                'Última hora',
               ),
               _FilterOption(
                 MotorControlController.historyPeriodLast24Hours,
-                'Ultimas 24h',
+                'Últimas 24h',
               ),
             ],
             onSelected: controller.setHistoryPeriodFilter,
           ),
           _FilterMenu(
             icon: Icons.monitor_heart_outlined,
-            label: 'Metrica',
+            label: 'Métrica',
             value: controller.historyMetricFilter,
             options: const <_FilterOption>[
               _FilterOption(MotorControlController.historyFilterAll, 'Todas'),
               _FilterOption(
                 MotorControlController.historyMetricVoltage,
-                'Tensao',
+                'Tensão',
               ),
               _FilterOption(
                 MotorControlController.historyMetricCurrent,
@@ -625,7 +625,7 @@ class HistoricoTab extends StatelessWidget {
               ),
               _FilterOption(
                 MotorControlController.historyMetricPower,
-                'Potencia',
+                'Potência',
               ),
               _FilterOption(
                 MotorControlController.historyMetricPowerFactor,
@@ -633,7 +633,7 @@ class HistoricoTab extends StatelessWidget {
               ),
               _FilterOption(
                 MotorControlController.historyMetricFrequency,
-                'Frequencia',
+                'Frequência',
               ),
               _FilterOption(
                 MotorControlController.historyMetricEnergy,
@@ -641,7 +641,7 @@ class HistoricoTab extends StatelessWidget {
               ),
               _FilterOption(
                 MotorControlController.historyMetricVibration,
-                'Vibracao',
+                'Vibração',
               ),
               _FilterOption(
                 MotorControlController.historyMetricTemperature,

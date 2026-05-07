@@ -52,7 +52,7 @@ void main() {
     },
   );
 
-  test('filtra historico por dispositivo, metrica e estado', () {
+  test('filtra histórico por dispositivo, métrica e estado', () {
     final _FakeMqttMotorService service = _FakeMqttMotorService();
     final MotorControlController controller = MotorControlController(
       service: service,
@@ -106,7 +106,7 @@ void main() {
     controller.dispose();
   });
 
-  test('mantem preferencias do dashboard e status da telemetria', () {
+  test('mantém preferências do dashboard e status da telemetria', () {
     final _FakeMqttMotorService service = _FakeMqttMotorService();
     final MotorControlController controller = MotorControlController(
       service: service,
@@ -135,11 +135,44 @@ void main() {
     expect(controller.mechanicalPlotAId, 'temperature');
     expect(controller.mechanicalPlotBId, 'vibration');
     expect(controller.electricalPlotAId, 'power');
+    controller.setHistoryRetentionDays(90);
+    expect(controller.historyRetentionDays, 90);
+    expect(controller.historyRetentionSummary, contains('90 dias'));
 
     service.emit('iotmotor/esp-1/telemetry', '{"voltage":220,"current":4}');
 
     expect(controller.latestTelemetryReceivedAt, isNotNull);
     expect(controller.telemetryStatusSummary, startsWith('ativa'));
+
+    controller.dispose();
+  });
+
+  test('reconhece todos os alertas pendentes', () {
+    final _FakeMqttMotorService service = _FakeMqttMotorService();
+    final MotorControlController controller = MotorControlController(
+      service: service,
+    );
+    service.config = const MqttConnectionConfig(
+      host: 'broker.hivemq.com',
+      port: 1883,
+      clientId: 'test_client',
+      topicPrefix: 'iotmotor',
+      deviceId: 'auto',
+      useTls: false,
+    );
+    controller.isConnected = true;
+
+    service.emit(
+      'iotmotor/esp-1/telemetry',
+      '{"voltage":250,"current":12,"temperature":72}',
+    );
+
+    expect(controller.pendingAlertsCount, 3);
+
+    controller.acknowledgeAllAlerts();
+
+    expect(controller.pendingAlertsCount, 0);
+    expect(controller.acknowledgedAlertsCount, 3);
 
     controller.dispose();
   });

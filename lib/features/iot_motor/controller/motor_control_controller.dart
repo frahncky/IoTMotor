@@ -14,6 +14,7 @@ import '../services/motor_settings_store.dart';
 import '../services/mqtt_settings_validators.dart';
 import '../services/mqtt_motor_service.dart';
 import '../services/start_types_store.dart';
+import '../services/telemetry_alert_store.dart';
 import '../services/telemetry_history_store.dart';
 
 class MotorControlController extends ChangeNotifier {
@@ -45,6 +46,7 @@ class MotorControlController extends ChangeNotifier {
     });
     unawaited(loadPersistedSettings());
     unawaited(loadPersistedHistory());
+    unawaited(loadPersistedAlerts());
     unawaited(loadStartTypes());
   }
 
@@ -75,6 +77,8 @@ class MotorControlController extends ChangeNotifier {
   static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
   static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
   static const Duration _historyPersistDelay = Duration(milliseconds: 700);
+  static const Duration _alertsPersistDelay = Duration(milliseconds: 350);
+  static const List<int> historyRetentionOptions = <int>[7, 30, 90, 180, 365];
   static const List<MotorCommandType> _defaultStartTypes = <MotorCommandType>[
     MotorCommandType.directStart,
     MotorCommandType.starDeltaStart,
@@ -95,6 +99,7 @@ class MotorControlController extends ChangeNotifier {
   bool _startTypesLoaded = false;
   bool _settingsLoaded = false;
   bool _historyLoaded = false;
+  bool _alertsLoaded = false;
   String? _pendingMessage;
 
   late final TextEditingController brokerController;
@@ -118,9 +123,10 @@ class MotorControlController extends ChangeNotifier {
   String electricalPlotBId = MotorAppSettings.defaultElectricalPlotBId;
   String mechanicalPlotAId = MotorAppSettings.defaultMechanicalPlotAId;
   String mechanicalPlotBId = MotorAppSettings.defaultMechanicalPlotBId;
+  int historyRetentionDays = MotorAppSettings.defaultHistoryRetentionDays;
 
   String connectionMessage = 'Desconectado';
-  String statusMessage = 'Aguardando conexao e dados.';
+  String statusMessage = 'Aguardando conexão e dados.';
   MotorCommandType? lastCommandType;
   DateTime? lastCommandAt;
 
@@ -141,6 +147,7 @@ class MotorControlController extends ChangeNotifier {
   Timer? _connectedDevicesTimer;
   Timer? _settingsPersistTimer;
   Timer? _historyPersistTimer;
+  Timer? _alertsPersistTimer;
   String _historyDeviceFilter = historyFilterAll;
   String _historyPeriodFilter = historyFilterAll;
   String _historyMetricFilter = historyFilterAll;
@@ -190,6 +197,17 @@ class MotorControlController extends ChangeNotifier {
   TelemetryAlert? get latestAlert =>
       _alertHistory.isEmpty ? null : _alertHistory.first;
 
+  int get acknowledgedAlertsCount =>
+      _alertHistory.where((TelemetryAlert alert) => alert.acknowledged).length;
+
+  int get criticalAlertsCount =>
+      _alertHistory
+          .where(
+            (TelemetryAlert alert) =>
+                alert.severity == TelemetryAlertSeverity.critical,
+          )
+          .length;
+
   String get alertStatusSummary {
     if (!telemetryAlertsEnabled) {
       return 'alertas desativados';
@@ -202,10 +220,16 @@ class MotorControlController extends ChangeNotifier {
         : '$pendingAlertsCount alertas pendentes';
   }
 
+  String get historyRetentionSummary {
+    final int entries = historyEntryCount;
+    final String suffix = entries == 1 ? 'leitura' : 'leituras';
+    return '$historyRetentionDays dias | $entries $suffix';
+  }
+
   String? get alertThresholdsError {
     final String? voltageMinError = MqttSettingsValidators.validateDecimal(
       voltageMinController.text,
-      fieldLabel: 'a tensao minima',
+      fieldLabel: 'a tensão mínima',
       min: 0,
       allowZero: false,
     );
@@ -215,7 +239,7 @@ class MotorControlController extends ChangeNotifier {
 
     final String? voltageMaxError = MqttSettingsValidators.validateDecimal(
       voltageMaxController.text,
-      fieldLabel: 'a tensao maxima',
+      fieldLabel: 'a tensão máxima',
       min: 0,
       allowZero: false,
     );
@@ -226,7 +250,7 @@ class MotorControlController extends ChangeNotifier {
     final double? minVoltage = _readThreshold(voltageMinController);
     final double? maxVoltage = _readThreshold(voltageMaxController);
     if (minVoltage != null && maxVoltage != null && minVoltage >= maxVoltage) {
-      return 'A tensao minima deve ser menor que a maxima.';
+      return 'A tensão mínima deve ser menor que a máxima.';
     }
 
     return MqttSettingsValidators.validateDecimal(
@@ -237,7 +261,7 @@ class MotorControlController extends ChangeNotifier {
         ) ??
         MqttSettingsValidators.validateDecimal(
           vibrationMaxController.text,
-          fieldLabel: 'o limite de vibracao',
+          fieldLabel: 'o limite de vibração',
           min: 0,
           allowZero: false,
         ) ??
@@ -285,7 +309,7 @@ class MotorControlController extends ChangeNotifier {
 
   String get telemetryStatusSummary {
     if (!isConnected) {
-      return 'sem conexao';
+      return 'sem conexão';
     }
 
     final DateTime? latest = latestTelemetryReceivedAt;
@@ -477,7 +501,7 @@ class MotorControlController extends ChangeNotifier {
 
     isBusy = true;
     connectionMessage = 'Conectando em ${config.host}:${config.port}...';
-    statusMessage = 'Iniciando conexao MQTT.';
+    statusMessage = 'Iniciando conexão MQTT.';
     _notify();
 
     final MqttConnectResult result = await _service.connect(config);
@@ -485,7 +509,7 @@ class MotorControlController extends ChangeNotifier {
 
     if (!result.success) {
       isConnected = false;
-      connectionMessage = 'Falha de conexao';
+      connectionMessage = 'Falha de conexão';
       statusMessage = result.message;
       _notify();
       return;
@@ -504,8 +528,8 @@ class MotorControlController extends ChangeNotifier {
 
     statusMessage =
         backgroundReady
-            ? 'Conexao ativa. Monitoramento em segundo plano ativo.'
-            : 'Conexao ativa. Aguardando dados dos ESP32.';
+            ? 'Conexão ativa. Monitoramento em segundo plano ativo.'
+            : 'Conexão ativa. Aguardando dados dos ESP32.';
     _notify();
   }
 
@@ -527,7 +551,7 @@ class MotorControlController extends ChangeNotifier {
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     connectionMessage = 'Desconectado';
-    statusMessage = 'Conexao encerrada pelo usuario.';
+    statusMessage = 'Conexão encerrada pelo usuário.';
     _notify();
   }
 
@@ -563,7 +587,7 @@ class MotorControlController extends ChangeNotifier {
     }
 
     statusMessage =
-        'Solicitacao enviada ($requestId) para ${fields.join(', ')}.';
+        'Solicitação enviada ($requestId) para ${fields.join(', ')}.';
     _notify();
   }
 
@@ -618,6 +642,10 @@ class MotorControlController extends ChangeNotifier {
         settings.mechanicalPlotBId,
         MotorAppSettings.defaultMechanicalPlotBId,
       );
+      historyRetentionDays = _normalizeHistoryRetentionDays(
+        settings.historyRetentionDays,
+      );
+      _pruneTelemetryHistoryByRetention(persist: false);
       _notify();
     } catch (_) {
       // Keep defaults if storage is unavailable or invalid.
@@ -654,10 +682,39 @@ class MotorControlController extends ChangeNotifier {
           );
         }
       }
-      statusMessage = 'Historico local carregado (${persisted.length}).';
+      final int removed = _pruneTelemetryHistoryByRetention(persist: false);
+      if (removed > 0) {
+        _scheduleHistoryPersist();
+      }
+      statusMessage =
+          removed > 0
+              ? 'Histórico local carregado (${persisted.length - removed}).'
+              : 'Histórico local carregado (${persisted.length}).';
       _notify();
     } catch (_) {
       // Keep in-memory history empty if storage is unavailable or invalid.
+    }
+  }
+
+  Future<void> loadPersistedAlerts() async {
+    if (_alertsLoaded) {
+      return;
+    }
+    _alertsLoaded = true;
+
+    try {
+      final List<TelemetryAlert> persisted =
+          await loadPersistedTelemetryAlerts();
+      if (persisted.isEmpty) {
+        return;
+      }
+
+      _alertHistory
+        ..clear()
+        ..addAll(persisted.take(200));
+      _notify();
+    } catch (_) {
+      // Keep in-memory alerts empty if storage is unavailable or invalid.
     }
   }
 
@@ -695,7 +752,7 @@ class MotorControlController extends ChangeNotifier {
 
     final String normalizedMode = _normalizeMode(mode, normalizedLabel);
     if (_containsMode(normalizedMode)) {
-      _pendingMessage = 'Ja existe uma partida com modo "$normalizedMode".';
+      _pendingMessage = 'Já existe uma partida com modo "$normalizedMode".';
       _notify();
       return null;
     }
@@ -723,7 +780,7 @@ class MotorControlController extends ChangeNotifier {
       (MotorCommandType item) => item.id == id,
     );
     if (index == -1) {
-      _pendingMessage = 'Partida nao encontrada para edicao.';
+      _pendingMessage = 'Partida não encontrada para edição.';
       _notify();
       return false;
     }
@@ -737,7 +794,7 @@ class MotorControlController extends ChangeNotifier {
 
     final String normalizedMode = _normalizeMode(mode, normalizedLabel);
     if (_containsMode(normalizedMode, ignoreId: id)) {
-      _pendingMessage = 'Ja existe uma partida com modo "$normalizedMode".';
+      _pendingMessage = 'Já existe uma partida com modo "$normalizedMode".';
       _notify();
       return false;
     }
@@ -763,7 +820,7 @@ class MotorControlController extends ChangeNotifier {
       (MotorCommandType item) => item.id == id,
     );
     if (index == -1) {
-      _pendingMessage = 'Partida nao encontrada para exclusao.';
+      _pendingMessage = 'Partida não encontrada para exclusão.';
       _notify();
       return false;
     }
@@ -785,7 +842,7 @@ class MotorControlController extends ChangeNotifier {
     _lastTelemetryReceivedByDevice.clear();
     _lastTelemetryStale = false;
     _clearHistoryFilters(shouldNotify: false);
-    statusMessage = 'Historico limpo para todos os dispositivos.';
+    statusMessage = 'Histórico limpo para todos os dispositivos.';
     _historyPersistTimer?.cancel();
     _historyPersistTimer = null;
     unawaited(clearPersistedTelemetryHistory());
@@ -796,6 +853,9 @@ class MotorControlController extends ChangeNotifier {
     _alertHistory.clear();
     _activeAlertKeys.clear();
     _pendingMessage = 'Alertas limpos.';
+    _alertsPersistTimer?.cancel();
+    _alertsPersistTimer = null;
+    unawaited(clearPersistedTelemetryAlerts());
     _notify();
   }
 
@@ -807,6 +867,25 @@ class MotorControlController extends ChangeNotifier {
       return;
     }
     _alertHistory[index] = _alertHistory[index].copyWith(acknowledged: true);
+    _scheduleAlertsPersist();
+    _notify();
+  }
+
+  void acknowledgeAllAlerts() {
+    bool changed = false;
+    for (int i = 0; i < _alertHistory.length; i++) {
+      final TelemetryAlert alert = _alertHistory[i];
+      if (alert.acknowledged) {
+        continue;
+      }
+      _alertHistory[i] = alert.copyWith(acknowledged: true);
+      changed = true;
+    }
+    if (!changed) {
+      return;
+    }
+    _pendingMessage = 'Alertas reconhecidos.';
+    _scheduleAlertsPersist();
     _notify();
   }
 
@@ -832,6 +911,21 @@ class MotorControlController extends ChangeNotifier {
 
   void refreshPreview() {
     _scheduleSettingsPersist();
+    _notify();
+  }
+
+  void setHistoryRetentionDays(int days) {
+    final int normalized = _normalizeHistoryRetentionDays(days);
+    if (historyRetentionDays == normalized) {
+      return;
+    }
+    historyRetentionDays = normalized;
+    final int removed = _pruneTelemetryHistoryByRetention();
+    _scheduleSettingsPersist();
+    _pendingMessage =
+        removed > 0
+            ? 'Retenção atualizada. $removed leituras antigas removidas.'
+            : 'Retenção atualizada para $historyRetentionDays dias.';
     _notify();
   }
 
@@ -933,15 +1027,15 @@ class MotorControlController extends ChangeNotifier {
       return 'agora';
     }
     if (age.inMinutes < 1) {
-      return 'ha ${age.inSeconds}s';
+      return 'há ${age.inSeconds}s';
     }
     if (age.inHours < 1) {
-      return 'ha ${age.inMinutes}min';
+      return 'há ${age.inMinutes}min';
     }
     if (age.inDays < 1) {
-      return 'ha ${age.inHours}h';
+      return 'há ${age.inHours}h';
     }
-    return 'ha ${age.inDays}d';
+    return 'há ${age.inDays}d';
   }
 
   MqttConnectionConfig? _buildConfigFromInputs() {
@@ -997,8 +1091,8 @@ class MotorControlController extends ChangeNotifier {
     connectionMessage = 'Desconectado';
     statusMessage =
         manual
-            ? 'Conexao encerrada pelo usuario.'
-            : 'Conexao perdida. Reconexao automatica pode ocorrer.';
+            ? 'Conexão encerrada pelo usuário.'
+            : 'Conexão perdida. Reconexão automática pode ocorrer.';
     _notify();
   }
 
@@ -1069,7 +1163,7 @@ class MotorControlController extends ChangeNotifier {
       statusMessage = '${alert.title}: ${alert.message}';
     } else if (deviceId == selectedDeviceId) {
       statusMessage =
-          '${_buildDeviceStateSummary(deviceId)} Ultimo pacote em ${formatTimestamp(sample.timestamp)}';
+          '${_buildDeviceStateSummary(deviceId)} Último pacote em ${formatTimestamp(sample.timestamp)}';
     }
     _notify();
   }
@@ -1114,6 +1208,37 @@ class MotorControlController extends ChangeNotifier {
     return merged.sublist(merged.length - maxHistory);
   }
 
+  int _pruneTelemetryHistoryByRetention({bool persist = true}) {
+    final DateTime cutoff = DateTime.now().subtract(
+      Duration(days: historyRetentionDays),
+    );
+    int removed = 0;
+    final List<String> emptyDevices = <String>[];
+
+    for (final MapEntry<String, List<TelemetrySample>> entry
+        in _historyByDevice.entries) {
+      final int before = entry.value.length;
+      entry.value.removeWhere(
+        (TelemetrySample sample) => sample.timestamp.isBefore(cutoff),
+      );
+      removed += before - entry.value.length;
+      if (entry.value.isEmpty) {
+        emptyDevices.add(entry.key);
+      }
+    }
+
+    for (final String deviceId in emptyDevices) {
+      _historyByDevice.remove(deviceId);
+      _latestByDevice.remove(deviceId);
+      _lastTelemetryReceivedByDevice.remove(deviceId);
+    }
+
+    if (removed > 0 && persist) {
+      _scheduleHistoryPersist();
+    }
+    return removed;
+  }
+
   void _addSampleToHistory({
     required String deviceId,
     required TelemetrySample sample,
@@ -1127,6 +1252,7 @@ class MotorControlController extends ChangeNotifier {
     if (deviceHistory.length > maxHistory) {
       deviceHistory.removeAt(0);
     }
+    _pruneTelemetryHistoryByRetention(persist: false);
     if (persist) {
       _scheduleHistoryPersist();
     }
@@ -1231,6 +1357,10 @@ class MotorControlController extends ChangeNotifier {
       return fallback;
     }
     return normalized;
+  }
+
+  int _normalizeHistoryRetentionDays(int value) {
+    return value.clamp(1, 3650);
   }
 
   void _clearHistoryFilters({required bool shouldNotify}) {
@@ -1491,8 +1621,8 @@ class MotorControlController extends ChangeNotifier {
       _evaluateUpperLimitAlert(
         deviceId: deviceId,
         metricKey: 'vibration',
-        title: 'Vibracao elevada',
-        metricLabel: 'vibracao',
+        title: 'Vibração elevada',
+        metricLabel: 'vibração',
         unit: 'g',
         value: sample.vibration,
         limit: _readThreshold(vibrationMaxController),
@@ -1539,9 +1669,9 @@ class MotorControlController extends ChangeNotifier {
       return _registerAlert(
         deviceId: deviceId,
         metricKey: 'voltage',
-        title: 'Tensao fora da faixa',
+        title: 'Tensão fora da faixa',
         message:
-            'ESP $deviceId: tensao ${value.toStringAsFixed(1)} V fora da faixa $range.',
+            'ESP $deviceId: tensão ${value.toStringAsFixed(1)} V fora da faixa $range.',
         severity: TelemetryAlertSeverity.warning,
       );
     }
@@ -1610,6 +1740,7 @@ class MotorControlController extends ChangeNotifier {
       _alertHistory.removeRange(100, _alertHistory.length);
     }
     _pendingMessage = '$title: $message';
+    _scheduleAlertsPersist();
     return alert;
   }
 
@@ -1819,6 +1950,7 @@ class MotorControlController extends ChangeNotifier {
       electricalPlotBId: electricalPlotBId,
       mechanicalPlotAId: mechanicalPlotAId,
       mechanicalPlotBId: mechanicalPlotBId,
+      historyRetentionDays: historyRetentionDays,
     );
   }
 
@@ -1837,6 +1969,24 @@ class MotorControlController extends ChangeNotifier {
       await savePersistedTelemetryHistory(_buildCombinedHistoryEntries());
     } catch (_) {
       // Keep in-memory history active even if persistence fails.
+    }
+  }
+
+  void _scheduleAlertsPersist() {
+    if (_disposed) {
+      return;
+    }
+    _alertsPersistTimer?.cancel();
+    _alertsPersistTimer = Timer(_alertsPersistDelay, () {
+      unawaited(_persistAlerts());
+    });
+  }
+
+  Future<void> _persistAlerts() async {
+    try {
+      await savePersistedTelemetryAlerts(_alertHistory);
+    } catch (_) {
+      // Keep in-memory alerts active even if persistence fails.
     }
   }
 
@@ -1880,8 +2030,11 @@ class MotorControlController extends ChangeNotifier {
     _settingsPersistTimer = null;
     _historyPersistTimer?.cancel();
     _historyPersistTimer = null;
+    _alertsPersistTimer?.cancel();
+    _alertsPersistTimer = null;
     unawaited(_persistSettings());
     unawaited(_persistHistory());
+    unawaited(_persistAlerts());
     _service.disconnect(silent: true);
 
     brokerController.dispose();

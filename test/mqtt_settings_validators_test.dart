@@ -4,7 +4,7 @@ import 'package:iotmotor/features/iot_motor/services/mqtt_settings_validators.da
 
 void main() {
   group('MqttSettingsValidators', () {
-    test('aceita configuracao MQTT valida', () {
+    test('aceita configuração MQTT válida', () {
       final String? error = MqttSettingsValidators.firstConnectionError(
         broker: 'broker.hivemq.com',
         port: '1883',
@@ -35,7 +35,7 @@ void main() {
     });
   });
 
-  test('MotorAppSettings serializa configuracoes operacionais', () {
+  test('MotorAppSettings serializa configurações operacionais', () {
     const MotorAppSettings settings = MotorAppSettings(
       broker: 'broker.hivemq.com',
       port: '8883',
@@ -54,6 +54,7 @@ void main() {
       electricalPlotBId: 'energy',
       mechanicalPlotAId: 'temperature',
       mechanicalPlotBId: 'vibration',
+      historyRetentionDays: 90,
     );
 
     final MotorAppSettings? restored = MotorAppSettings.fromMap(
@@ -72,9 +73,10 @@ void main() {
     expect(restored.electricalPlotBId, 'energy');
     expect(restored.mechanicalPlotAId, 'temperature');
     expect(restored.mechanicalPlotBId, 'vibration');
+    expect(restored.historyRetentionDays, 90);
   });
 
-  test('MotorAppSettings usa defaults para preferencias antigas', () {
+  test('MotorAppSettings usa defaults para preferências antigas', () {
     final MotorAppSettings? restored =
         MotorAppSettings.fromMap(const <String, dynamic>{
           'broker': 'broker.hivemq.com',
@@ -100,6 +102,10 @@ void main() {
     expect(
       restored.mechanicalPlotBId,
       MotorAppSettings.defaultMechanicalPlotBId,
+    );
+    expect(
+      restored.historyRetentionDays,
+      MotorAppSettings.defaultHistoryRetentionDays,
     );
   });
 }

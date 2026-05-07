@@ -81,7 +81,7 @@ class MqttMotorService {
       client.disconnect();
       return MqttConnectResult(
         success: false,
-        message: 'Conexao recusada: $code',
+        message: 'Conexão recusada: $code',
       );
     }
 
