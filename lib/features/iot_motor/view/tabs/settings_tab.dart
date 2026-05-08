@@ -1,19 +1,59 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_theme.dart';
+import '../../../../app/providers/esp_local_comm_provider.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/mqtt_settings_validators.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
 
-class ConfiguracoesTab extends StatelessWidget {
+class ConfiguracoesTab extends ConsumerStatefulWidget {
   const ConfiguracoesTab({super.key, required this.controller});
 
   final MotorControlController controller;
 
   @override
+  ConsumerState<ConfiguracoesTab> createState() => _ConfiguracoesTabState();
+}
+
+class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
+  late final TextEditingController _espIpController;
+  late final TextEditingController _retentionController;
+  late final FocusNode _retentionFocusNode;
+  bool _isTestingLocalComm = false;
+
+  MotorControlController get controller => widget.controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _espIpController = TextEditingController();
+    _retentionController = TextEditingController(
+      text: controller.historyRetentionDays.toString(),
+    );
+    _retentionFocusNode = FocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant ConfiguracoesTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncRetentionController();
+  }
+
+  @override
+  void dispose() {
+    _espIpController.dispose();
+    _retentionController.dispose();
+    _retentionFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    _syncRetentionController();
+
     return SingleChildScrollView(
       key: const ValueKey<String>('tab_configuracoes'),
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
@@ -25,7 +65,7 @@ class ConfiguracoesTab extends StatelessWidget {
             children: <Widget>[
               DelayedReveal(
                 delay: const Duration(milliseconds: 200),
-                child: _buildConnectionPanel(context),
+                child: _buildConnectionPanel(context, ref),
               ),
               const SizedBox(height: 12),
               DelayedReveal(
@@ -49,7 +89,7 @@ class ConfiguracoesTab extends StatelessWidget {
     );
   }
 
-  Widget _buildConnectionPanel(BuildContext context) {
+  Widget _buildConnectionPanel(BuildContext context, WidgetRef ref) {
     return GlassPanel(
       tint: AppTheme.brandBlue,
       child: LayoutBuilder(
@@ -59,7 +99,7 @@ class ConfiguracoesTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
-                'Conex\u00e3o MQTT',
+                'Conexão MQTT',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 14),
@@ -102,7 +142,7 @@ class ConfiguracoesTab extends StatelessWidget {
                   ),
                   _textField(
                     width: fieldWidth,
-                    label: 'Usu\u00e1rio (opcional)',
+                    label: 'Usuário (opcional)',
                     controller: controller.usernameController,
                   ),
                   _textField(
@@ -110,6 +150,35 @@ class ConfiguracoesTab extends StatelessWidget {
                     label: 'Senha (opcional)',
                     controller: controller.passwordController,
                     obscureText: true,
+                  ),
+                  SizedBox(
+                    width: fieldWidth,
+                    child: TextFormField(
+                      controller: _espIpController,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'IP do ESP32 (local)',
+                        hintText: 'Ex: 192.168.1.100',
+                      ),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed:
+                        _isTestingLocalComm
+                            ? null
+                            : () => _testLocalCommunication(ref),
+                    icon:
+                        _isTestingLocalComm
+                            ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.wifi_tethering),
+                    label: Text(
+                      _isTestingLocalComm
+                          ? 'Testando...'
+                          : 'Testar comunicação local',
+                    ),
                   ),
                 ],
               ),
@@ -173,10 +242,10 @@ class ConfiguracoesTab extends StatelessWidget {
                   ),
                 ),
                 child: SelectableText(
-                  'T\u00f3pico de comando: ${controller.commandTopic}\n'
-                  'T\u00f3pico de telemetria: ${controller.telemetryTopic}\n'
-                  'T\u00f3pico de status: ${controller.statusTopic}\n'
-                  'T\u00f3pico de solicita\u00e7\u00e3o: ${controller.telemetryRequestTopic}\n'
+                  'Tópico de comando: ${controller.commandTopic}\n'
+                  'Tópico de telemetria: ${controller.telemetryTopic}\n'
+                  'Tópico de status: ${controller.statusTopic}\n'
+                  'Tópico de solicitação: ${controller.telemetryRequestTopic}\n'
                   'Dispositivos conectados: ${controller.connectedDeviceIds.isEmpty ? '--' : controller.connectedDeviceIds.join(', ')}\n'
                   'Dispositivos conhecidos: ${controller.knownDeviceIds.isEmpty ? '--' : controller.knownDeviceIds.join(', ')}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -198,12 +267,6 @@ class ConfiguracoesTab extends StatelessWidget {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final double fieldWidth = _fieldWidthFor(constraints.maxWidth);
-          final List<int> retentionOptions =
-              <int>{
-                  ...MotorControlController.historyRetentionOptions,
-                  controller.historyRetentionDays,
-                }.toList()
-                ..sort();
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -227,31 +290,30 @@ class ConfiguracoesTab extends StatelessWidget {
                 children: <Widget>[
                   SizedBox(
                     width: fieldWidth,
-                    child: DropdownButtonFormField<int>(
-                      initialValue: controller.historyRetentionDays,
+                    child: TextFormField(
+                      controller: _retentionController,
+                      focusNode: _retentionFocusNode,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
                       decoration: const InputDecoration(
                         labelText: 'Retenção do histórico',
                         suffixText: 'dias',
+                        hintText: 'Ex: 30',
                       ),
-                      items: retentionOptions
-                          .map(
-                            (int days) => DropdownMenuItem<int>(
-                              value: days,
-                              child: Text('$days dias'),
-                            ),
-                          )
-                          .toList(growable: false),
-                      onChanged: (int? value) {
-                        if (value != null) {
-                          controller.setHistoryRetentionDays(value);
-                        }
-                      },
+                      onFieldSubmitted: (_) => _applyRetentionDays(),
                     ),
                   ),
                   Chip(
                     avatar: const Icon(Icons.timeline_rounded, size: 16),
                     label: Text(controller.historyRetentionSummary),
                   ),
+                  for (final int days
+                      in MotorControlController.historyRetentionOptions)
+                    ChoiceChip(
+                      label: Text('$days dias'),
+                      selected: controller.historyRetentionDays == days,
+                      onSelected: (_) => _setRetentionDays(days),
+                    ),
                   OutlinedButton.icon(
                     onPressed:
                         controller.historyEntryCount == 0
@@ -267,6 +329,76 @@ class ConfiguracoesTab extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Future<void> _testLocalCommunication(WidgetRef ref) async {
+    final String ip = _espIpController.text.trim();
+    if (ip.isEmpty) {
+      _showSnackBar('Informe o IP do ESP32.');
+      return;
+    }
+
+    setState(() {
+      _isTestingLocalComm = true;
+    });
+
+    try {
+      final response = await ref
+          .read(espLocalCommProvider)
+          .getWifiNetworks(espHost: ip);
+      if (!mounted) {
+        return;
+      }
+
+      if (response.statusCode == 200) {
+        _showSnackBar('Comunicação local com ESP32 OK.');
+      } else {
+        _showSnackBar('Falha ao comunicar: HTTP ${response.statusCode}.');
+      }
+    } catch (error) {
+      if (mounted) {
+        _showSnackBar('Erro na comunicação local: $error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTestingLocalComm = false;
+        });
+      }
+    }
+  }
+
+  void _applyRetentionDays() {
+    final int? days = int.tryParse(_retentionController.text.trim());
+    if (days == null || days <= 0) {
+      _showSnackBar('Informe uma retenção maior que zero.');
+      return;
+    }
+    _setRetentionDays(days);
+  }
+
+  void _setRetentionDays(int days) {
+    controller.setHistoryRetentionDays(days);
+    _retentionController.text = controller.historyRetentionDays.toString();
+  }
+
+  void _syncRetentionController() {
+    if (_retentionFocusNode.hasFocus) {
+      return;
+    }
+    final String value = controller.historyRetentionDays.toString();
+    if (_retentionController.text != value) {
+      _retentionController.text = value;
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildAlertPanel(BuildContext context) {

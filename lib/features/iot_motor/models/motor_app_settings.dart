@@ -29,6 +29,23 @@ class MotorAppSettings {
     this.historyRetentionDays = defaultHistoryRetentionDays,
   });
 
+  factory MotorAppSettings.initial() {
+    return const MotorAppSettings(
+      broker: 'broker.hivemq.com',
+      port: '1883',
+      clientId: 'motor_app',
+      topicPrefix: 'iotmotor',
+      username: '',
+      useTls: false,
+      telemetryAlertsEnabled: true,
+      voltageMin: '190',
+      voltageMax: '240',
+      currentMax: '10',
+      vibrationMax: '1.5',
+      temperatureMax: '70',
+    );
+  }
+
   final String broker;
   final String port;
   final String clientId;
@@ -47,6 +64,49 @@ class MotorAppSettings {
   final String mechanicalPlotAId;
   final String mechanicalPlotBId;
   final int historyRetentionDays;
+
+  MotorAppSettings copyWith({
+    String? broker,
+    String? port,
+    String? clientId,
+    String? topicPrefix,
+    String? username,
+    bool? useTls,
+    bool? telemetryAlertsEnabled,
+    String? voltageMin,
+    String? voltageMax,
+    String? currentMax,
+    String? vibrationMax,
+    String? temperatureMax,
+    String? dashboardTab,
+    String? electricalPlotAId,
+    String? electricalPlotBId,
+    String? mechanicalPlotAId,
+    String? mechanicalPlotBId,
+    int? historyRetentionDays,
+  }) {
+    return MotorAppSettings(
+      broker: broker ?? this.broker,
+      port: port ?? this.port,
+      clientId: clientId ?? this.clientId,
+      topicPrefix: topicPrefix ?? this.topicPrefix,
+      username: username ?? this.username,
+      useTls: useTls ?? this.useTls,
+      telemetryAlertsEnabled:
+          telemetryAlertsEnabled ?? this.telemetryAlertsEnabled,
+      voltageMin: voltageMin ?? this.voltageMin,
+      voltageMax: voltageMax ?? this.voltageMax,
+      currentMax: currentMax ?? this.currentMax,
+      vibrationMax: vibrationMax ?? this.vibrationMax,
+      temperatureMax: temperatureMax ?? this.temperatureMax,
+      dashboardTab: dashboardTab ?? this.dashboardTab,
+      electricalPlotAId: electricalPlotAId ?? this.electricalPlotAId,
+      electricalPlotBId: electricalPlotBId ?? this.electricalPlotBId,
+      mechanicalPlotAId: mechanicalPlotAId ?? this.mechanicalPlotAId,
+      mechanicalPlotBId: mechanicalPlotBId ?? this.mechanicalPlotBId,
+      historyRetentionDays: historyRetentionDays ?? this.historyRetentionDays,
+    );
+  }
 
   static MotorAppSettings? fromMap(Map<String, dynamic> map) {
     final String broker = '${map['broker'] ?? ''}'.trim();
