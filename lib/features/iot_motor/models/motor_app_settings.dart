@@ -7,6 +7,7 @@ class MotorAppSettings {
   static const String defaultMechanicalPlotAId = 'vibration';
   static const String defaultMechanicalPlotBId = 'temperature';
   static const int defaultHistoryRetentionDays = 30;
+  static const int defaultRemoteHistoryRetentionDays = 30;
 
   const MotorAppSettings({
     required this.broker,
@@ -27,6 +28,7 @@ class MotorAppSettings {
     this.mechanicalPlotAId = defaultMechanicalPlotAId,
     this.mechanicalPlotBId = defaultMechanicalPlotBId,
     this.historyRetentionDays = defaultHistoryRetentionDays,
+    this.remoteHistoryRetentionDays = defaultRemoteHistoryRetentionDays,
   });
 
   factory MotorAppSettings.initial() {
@@ -64,6 +66,7 @@ class MotorAppSettings {
   final String mechanicalPlotAId;
   final String mechanicalPlotBId;
   final int historyRetentionDays;
+  final int remoteHistoryRetentionDays;
 
   MotorAppSettings copyWith({
     String? broker,
@@ -84,6 +87,7 @@ class MotorAppSettings {
     String? mechanicalPlotAId,
     String? mechanicalPlotBId,
     int? historyRetentionDays,
+    int? remoteHistoryRetentionDays,
   }) {
     return MotorAppSettings(
       broker: broker ?? this.broker,
@@ -105,6 +109,8 @@ class MotorAppSettings {
       mechanicalPlotAId: mechanicalPlotAId ?? this.mechanicalPlotAId,
       mechanicalPlotBId: mechanicalPlotBId ?? this.mechanicalPlotBId,
       historyRetentionDays: historyRetentionDays ?? this.historyRetentionDays,
+      remoteHistoryRetentionDays:
+          remoteHistoryRetentionDays ?? this.remoteHistoryRetentionDays,
     );
   }
 
@@ -151,6 +157,10 @@ class MotorAppSettings {
         defaultMechanicalPlotBId,
       ),
       historyRetentionDays: _readRetentionDays(map['history_retention_days']),
+      remoteHistoryRetentionDays: _readRetentionDays(
+        map['remote_history_retention_days'] ?? map['remote_retention_days'],
+        fallback: defaultRemoteHistoryRetentionDays,
+      ),
     );
   }
 
@@ -174,6 +184,7 @@ class MotorAppSettings {
       'mechanical_plot_a': mechanicalPlotAId,
       'mechanical_plot_b': mechanicalPlotBId,
       'history_retention_days': historyRetentionDays,
+      'remote_history_retention_days': remoteHistoryRetentionDays,
     };
   }
 
@@ -197,10 +208,13 @@ class MotorAppSettings {
     return value;
   }
 
-  static int _readRetentionDays(Object? raw) {
+  static int _readRetentionDays(
+    Object? raw, {
+    int fallback = defaultHistoryRetentionDays,
+  }) {
     final int? value = raw is int ? raw : int.tryParse('${raw ?? ''}'.trim());
     if (value == null) {
-      return defaultHistoryRetentionDays;
+      return fallback;
     }
     return value.clamp(1, 3650);
   }

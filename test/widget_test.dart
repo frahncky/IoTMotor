@@ -99,10 +99,38 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('MQTT'), findsOneWidget);
+    expect(find.text('Armazenamento'), findsOneWidget);
+    expect(find.text('Alertas'), findsWidgets);
+    expect(find.text('Telemetria'), findsNothing);
     expect(find.text('Conexão MQTT'), findsOneWidget);
-    expect(find.text('Armazenamento local'), findsOneWidget);
+    expect(find.text('Local do app'), findsNothing);
+    expect(find.text('Alertas de Telemetria'), findsNothing);
+    expect(find.text('Formato da Telemetria'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.storage_rounded));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    expect(find.text('Local do app'), findsOneWidget);
+    expect(find.text('Remoto no ESP32'), findsOneWidget);
+    expect(find.text('Retenção local'), findsOneWidget);
+    expect(find.text('Retenção remota (ESP32 SD)'), findsOneWidget);
+    expect(find.text('Dias'), findsWidgets);
+    expect(find.text('Meses'), findsWidgets);
+    expect(find.text('Anos'), findsWidgets);
+    expect(find.text('7 dias'), findsNothing);
+    expect(find.text('90 dias'), findsNothing);
+    expect(find.text('365 dias'), findsNothing);
+    expect(find.text('Aplicar local'), findsOneWidget);
+    expect(find.text('Aplicar no ESP32'), findsOneWidget);
+    expect(find.text('Conexão MQTT'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.notifications_active_rounded));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
     expect(find.text('Alertas de Telemetria'), findsOneWidget);
-    expect(find.text('Formato da Telemetria'), findsOneWidget);
+    expect(find.text('Local do app'), findsNothing);
+    expect(find.text('Formato da Telemetria'), findsNothing);
   });
 
   testWidgets('medições não estouram em tela estreita', (

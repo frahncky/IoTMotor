@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -21,7 +21,7 @@ class MqttConnectResult {
 class MqttMotorService {
   MqttServerClient? _client;
   StreamSubscription<List<MqttReceivedMessage<MqttMessage>>>?
-      _updatesSubscription;
+  _updatesSubscription;
   MqttConnectionConfig? _activeConfig;
 
   bool _disconnectRequested = false;
@@ -146,11 +146,7 @@ class MqttMotorService {
 
     final MqttClientPayloadBuilder builder =
         MqttClientPayloadBuilder()..addString(payload);
-    client.publishMessage(
-      commandTopic,
-      MqttQos.atLeastOnce,
-      builder.payload!,
-    );
+    client.publishMessage(commandTopic, MqttQos.atLeastOnce, builder.payload!);
     return true;
   }
 
@@ -221,6 +217,51 @@ class MqttMotorService {
         MqttClientPayloadBuilder()..addString(payload);
     client.publishMessage(
       config.telemetryRequestTopic,
+      MqttQos.atLeastOnce,
+      builder.payload!,
+    );
+
+    return requestId;
+  }
+
+  String? configureRemoteStorageRetention({
+    required int retentionDays,
+    String? deviceId,
+    String reason = 'storage_retention_update',
+  }) {
+    final MqttServerClient? client = _client;
+    final MqttConnectionConfig? config = _activeConfig;
+    if (client == null ||
+        config == null ||
+        client.connectionStatus?.state != MqttConnectionState.connected) {
+      return null;
+    }
+
+    final DateTime now = DateTime.now();
+    final int normalizedDays = retentionDays.clamp(1, 3650);
+    final String requestId =
+        'storage_${now.millisecondsSinceEpoch}_${now.microsecondsSinceEpoch % 1000}';
+    final String targetDeviceId = deviceId?.trim() ?? '';
+
+    final String payload = jsonEncode(<String, dynamic>{
+      'type': 'storage_config',
+      'request_id': requestId,
+      if (targetDeviceId.isNotEmpty) 'device_id': targetDeviceId,
+      'storage': <String, dynamic>{
+        'medium': 'sdcard',
+        'retention_days': normalizedDays,
+      },
+      'remote_retention_days': normalizedDays,
+      'retention_days': normalizedDays,
+      'reason': reason,
+      'origin': 'flutter_app',
+      'timestamp': now.toIso8601String(),
+    });
+
+    final MqttClientPayloadBuilder builder =
+        MqttClientPayloadBuilder()..addString(payload);
+    client.publishMessage(
+      config.commandRequestTopic,
       MqttQos.atLeastOnce,
       builder.payload!,
     );

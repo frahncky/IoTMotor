@@ -106,7 +106,7 @@ void main() {
     controller.dispose();
   });
 
-  test('mantém preferências do dashboard e status da telemetria', () {
+  test('mantém preferências do dashboard e status da telemetria', () async {
     final _FakeMqttMotorService service = _FakeMqttMotorService();
     final MotorControlController controller = MotorControlController(
       service: service,
@@ -138,6 +138,11 @@ void main() {
     controller.setHistoryRetentionDays(90);
     expect(controller.historyRetentionDays, 90);
     expect(controller.historyRetentionSummary, contains('90 dias'));
+    controller.setRemoteHistoryRetentionDays(180);
+    expect(controller.remoteHistoryRetentionDays, 180);
+    expect(controller.remoteHistoryRetentionSummary, contains('180 dias'));
+    await controller.applyRemoteHistoryRetention();
+    expect(service.configuredRemoteRetentionDays, 180);
 
     service.emit('iotmotor/esp-1/telemetry', '{"voltage":220,"current":4}');
 
@@ -180,6 +185,7 @@ void main() {
 
 class _FakeMqttMotorService extends MqttMotorService {
   MqttConnectionConfig? config;
+  int? configuredRemoteRetentionDays;
 
   @override
   MqttConnectionConfig? get activeConfig => config;
@@ -190,4 +196,14 @@ class _FakeMqttMotorService extends MqttMotorService {
 
   @override
   Future<void> disconnect({bool silent = false}) async {}
+
+  @override
+  String? configureRemoteStorageRetention({
+    required int retentionDays,
+    String? deviceId,
+    String reason = 'storage_retention_update',
+  }) {
+    configuredRemoteRetentionDays = retentionDays;
+    return 'storage_test';
+  }
 }

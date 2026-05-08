@@ -78,7 +78,6 @@ class MotorControlController extends ChangeNotifier {
   static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
   static const Duration _historyPersistDelay = Duration(milliseconds: 700);
   static const Duration _alertsPersistDelay = Duration(milliseconds: 350);
-  static const List<int> historyRetentionOptions = <int>[7, 30, 90, 180, 365];
   static const List<MotorCommandType> _defaultStartTypes = <MotorCommandType>[
     MotorCommandType.directStart,
     MotorCommandType.starDeltaStart,
@@ -124,6 +123,8 @@ class MotorControlController extends ChangeNotifier {
   String mechanicalPlotAId = MotorAppSettings.defaultMechanicalPlotAId;
   String mechanicalPlotBId = MotorAppSettings.defaultMechanicalPlotBId;
   int historyRetentionDays = MotorAppSettings.defaultHistoryRetentionDays;
+  int remoteHistoryRetentionDays =
+      MotorAppSettings.defaultRemoteHistoryRetentionDays;
 
   String connectionMessage = 'Desconectado';
   String statusMessage = 'Aguardando conexão e dados.';
@@ -225,6 +226,9 @@ class MotorControlController extends ChangeNotifier {
     final String suffix = entries == 1 ? 'leitura' : 'leituras';
     return '$historyRetentionDays dias | $entries $suffix';
   }
+
+  String get remoteHistoryRetentionSummary =>
+      '$remoteHistoryRetentionDays dias no ESP32/SD';
 
   String? get alertThresholdsError {
     final String? voltageMinError = MqttSettingsValidators.validateDecimal(
@@ -591,6 +595,25 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> applyRemoteHistoryRetention() async {
+    final String? requestId = _service.configureRemoteStorageRetention(
+      retentionDays: remoteHistoryRetentionDays,
+      reason: 'settings_storage_tab',
+    );
+    if (requestId == null) {
+      _pendingMessage =
+          'Conecte-se ao broker antes de aplicar a retenção remota no ESP32.';
+      _notify();
+      return;
+    }
+
+    statusMessage =
+        'Retenção remota enviada ($requestId): $remoteHistoryRetentionDays dias no ESP32/SD.';
+    _pendingMessage =
+        'Retenção remota enviada para o ESP32: $remoteHistoryRetentionDays dias.';
+    _notify();
+  }
+
   MotorCommandType? startTypeById(String id) {
     for (final MotorCommandType type in _startTypes) {
       if (type.id == id) {
@@ -644,6 +667,9 @@ class MotorControlController extends ChangeNotifier {
       );
       historyRetentionDays = _normalizeHistoryRetentionDays(
         settings.historyRetentionDays,
+      );
+      remoteHistoryRetentionDays = _normalizeHistoryRetentionDays(
+        settings.remoteHistoryRetentionDays,
       );
       _pruneTelemetryHistoryByRetention(persist: false);
       _notify();
@@ -926,6 +952,18 @@ class MotorControlController extends ChangeNotifier {
         removed > 0
             ? 'Retenção atualizada. $removed leituras antigas removidas.'
             : 'Retenção atualizada para $historyRetentionDays dias.';
+    _notify();
+  }
+
+  void setRemoteHistoryRetentionDays(int days) {
+    final int normalized = _normalizeHistoryRetentionDays(days);
+    if (remoteHistoryRetentionDays == normalized) {
+      return;
+    }
+    remoteHistoryRetentionDays = normalized;
+    _scheduleSettingsPersist();
+    _pendingMessage =
+        'Retenção remota ajustada para $remoteHistoryRetentionDays dias.';
     _notify();
   }
 
@@ -1951,6 +1989,7 @@ class MotorControlController extends ChangeNotifier {
       mechanicalPlotAId: mechanicalPlotAId,
       mechanicalPlotBId: mechanicalPlotBId,
       historyRetentionDays: historyRetentionDays,
+      remoteHistoryRetentionDays: remoteHistoryRetentionDays,
     );
   }
 

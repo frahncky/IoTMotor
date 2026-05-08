@@ -55,6 +55,7 @@ void main() {
       mechanicalPlotAId: 'temperature',
       mechanicalPlotBId: 'vibration',
       historyRetentionDays: 90,
+      remoteHistoryRetentionDays: 180,
     );
 
     final MotorAppSettings? restored = MotorAppSettings.fromMap(
@@ -74,6 +75,7 @@ void main() {
     expect(restored.mechanicalPlotAId, 'temperature');
     expect(restored.mechanicalPlotBId, 'vibration');
     expect(restored.historyRetentionDays, 90);
+    expect(restored.remoteHistoryRetentionDays, 180);
   });
 
   test('MotorAppSettings usa defaults para preferências antigas', () {
@@ -106,6 +108,10 @@ void main() {
     expect(
       restored.historyRetentionDays,
       MotorAppSettings.defaultHistoryRetentionDays,
+    );
+    expect(
+      restored.remoteHistoryRetentionDays,
+      MotorAppSettings.defaultRemoteHistoryRetentionDays,
     );
   });
 }
