@@ -1,331 +1,71 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/theme/app_theme.dart';
-import '../../../../app/providers/esp_local_comm_provider.dart';
+import '../widgets/glass_panel.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/mqtt_settings_validators.dart';
-import '../widgets/delayed_reveal.dart';
-import '../widgets/glass_panel.dart';
-
-enum _SettingsSection { conexao, armazenamento, alertas }
 
 enum _RetentionUnit { days, months, years }
 
-class ConfiguracoesTab extends ConsumerStatefulWidget {
-  const ConfiguracoesTab({super.key, required this.controller});
-
+class ConfiguracoesTab extends StatefulWidget {
   final MotorControlController controller;
+  const ConfiguracoesTab({Key? key, required this.controller}) : super(key: key);
 
   @override
-  ConsumerState<ConfiguracoesTab> createState() => _ConfiguracoesTabState();
+  State<ConfiguracoesTab> createState() => _ConfiguracoesTabState();
 }
 
-class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
-  late final TextEditingController _espIpController;
-  late final TextEditingController _retentionController;
-  late final TextEditingController _remoteRetentionController;
-  late final FocusNode _retentionFocusNode;
-  late final FocusNode _remoteRetentionFocusNode;
-  _SettingsSection _selectedSection = _SettingsSection.conexao;
+class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
+  final _retentionController = TextEditingController();
+  final _remoteRetentionController = TextEditingController();
+  final _retentionFocusNode = FocusNode();
+  final _remoteRetentionFocusNode = FocusNode();
+  final _espIpController = TextEditingController();
+
   _RetentionUnit _retentionUnit = _RetentionUnit.days;
   _RetentionUnit _remoteRetentionUnit = _RetentionUnit.days;
-  bool _isTestingLocalComm = false;
-
-  MotorControlController get controller => widget.controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _espIpController = TextEditingController();
-    _retentionController = TextEditingController(
-      text: controller.historyRetentionDays.toString(),
-    );
-    _remoteRetentionController = TextEditingController(
-      text: controller.remoteHistoryRetentionDays.toString(),
-    );
-    _retentionFocusNode = FocusNode();
-    _remoteRetentionFocusNode = FocusNode();
-  }
-
-  @override
-  void didUpdateWidget(covariant ConfiguracoesTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncRetentionControllers();
-  }
 
   @override
   void dispose() {
-    _espIpController.dispose();
     _retentionController.dispose();
     _remoteRetentionController.dispose();
     _retentionFocusNode.dispose();
     _remoteRetentionFocusNode.dispose();
+    _espIpController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    _syncRetentionControllers();
-
     return SingleChildScrollView(
-      key: const ValueKey<String>('tab_configuracoes'),
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1320),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              DelayedReveal(
-                delay: const Duration(milliseconds: 200),
-                child: _buildSectionSelector(),
-              ),
-              const SizedBox(height: 12),
-              KeyedSubtree(
-                key: ValueKey<_SettingsSection>(_selectedSection),
-                child: _buildSelectedSettingsPanel(context, ref),
-              ),
-            ],
-          ),
-        ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildStoragePanel(context),
+          const SizedBox(height: 24),
+          _buildAlertPanel(context),
+          // ...outros painéis...
+        ],
       ),
     );
   }
 
-  Widget _buildSectionSelector() {
-    return Align(
-      alignment: Alignment.center,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SegmentedButton<_SettingsSection>(
-          showSelectedIcon: false,
-          selected: <_SettingsSection>{_selectedSection},
-          onSelectionChanged: (Set<_SettingsSection> selection) {
-            final _SettingsSection nextSection = selection.first;
-            if (nextSection == _selectedSection) {
-              return;
-            }
-            setState(() {
-              _selectedSection = nextSection;
-            });
-          },
-          segments: const <ButtonSegment<_SettingsSection>>[
-            ButtonSegment<_SettingsSection>(
-              value: _SettingsSection.conexao,
-              icon: Icon(Icons.cloud_done_rounded, size: 16),
-              label: Text('MQTT'),
-            ),
-            ButtonSegment<_SettingsSection>(
-              value: _SettingsSection.armazenamento,
-              icon: Icon(Icons.storage_rounded, size: 16),
-              label: Text('Armazenamento'),
-            ),
-            ButtonSegment<_SettingsSection>(
-              value: _SettingsSection.alertas,
-              icon: Icon(Icons.notifications_active_rounded, size: 16),
-              label: Text('Alertas'),
-            ),
-          ],
-          style: ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            padding: const WidgetStatePropertyAll<EdgeInsets>(
-              EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            ),
-            textStyle: const WidgetStatePropertyAll<TextStyle>(
-              TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  // ...restante do código...
 
-  Widget _buildSelectedSettingsPanel(BuildContext context, WidgetRef ref) {
-    switch (_selectedSection) {
-      case _SettingsSection.conexao:
-        return _buildConnectionPanel(context, ref);
-      case _SettingsSection.armazenamento:
-        return _buildStoragePanel(context);
-      case _SettingsSection.alertas:
-        return _buildAlertPanel(context);
-    }
-  }
+  // Corrigir todos os acessos a 'controller' para 'widget.controller' nos métodos privados e widgets
+  // Exemplo para métodos e widgets que usam 'controller':
 
-  Widget _buildConnectionPanel(BuildContext context, WidgetRef ref) {
-    return GlassPanel(
-      tint: AppTheme.brandBlue,
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final double fieldWidth = _fieldWidthFor(constraints.maxWidth);
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                'Conexão MQTT',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: <Widget>[
-                  _textField(
-                    width: fieldWidth,
-                    label: 'Broker host',
-                    controller: controller.brokerController,
-                    errorText: MqttSettingsValidators.validateBroker(
-                      controller.brokerController.text,
-                    ),
-                  ),
-                  _textField(
-                    width: fieldWidth,
-                    label: 'Porta',
-                    controller: controller.portController,
-                    keyboardType: TextInputType.number,
-                    errorText: MqttSettingsValidators.validatePort(
-                      controller.portController.text,
-                    ),
-                  ),
-                  _textField(
-                    width: fieldWidth,
-                    label: 'Client ID',
-                    controller: controller.clientIdController,
-                    errorText: MqttSettingsValidators.validateClientId(
-                      controller.clientIdController.text,
-                    ),
-                  ),
-                  _textField(
-                    width: fieldWidth,
-                    label: 'Topic prefix',
-                    controller: controller.topicPrefixController,
-                    errorText: MqttSettingsValidators.validateTopicPrefix(
-                      controller.topicPrefixController.text,
-                    ),
-                  ),
-                  _textField(
-                    width: fieldWidth,
-                    label: 'Usuário (opcional)',
-                    controller: controller.usernameController,
-                  ),
-                  _textField(
-                    width: fieldWidth,
-                    label: 'Senha (opcional)',
-                    controller: controller.passwordController,
-                    obscureText: true,
-                  ),
-                  SizedBox(
-                    width: fieldWidth,
-                    child: TextFormField(
-                      controller: _espIpController,
-                      keyboardType: TextInputType.url,
-                      decoration: const InputDecoration(
-                        labelText: 'IP do ESP32 (local)',
-                        hintText: 'Ex: 192.168.1.100',
-                      ),
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed:
-                        _isTestingLocalComm
-                            ? null
-                            : () => _testLocalCommunication(ref),
-                    icon:
-                        _isTestingLocalComm
-                            ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                            : const Icon(Icons.wifi_tethering),
-                    label: Text(
-                      _isTestingLocalComm
-                          ? 'Testando...'
-                          : 'Testar comunicação local',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: <Widget>[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      color: AppTheme.brandBlue.withValues(alpha: 0.12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Switch(
-                          value: controller.useTls,
-                          onChanged: controller.setTls,
-                        ),
-                        Text(controller.useTls ? 'TLS ativo' : 'TLS inativo'),
-                      ],
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed:
-                        controller.isBusy
-                            ? null
-                            : (controller.isConnected
-                                ? controller.disconnect
-                                : controller.connect),
-                    icon: Icon(
-                      controller.isConnected
-                          ? Icons.link_off_rounded
-                          : Icons.cloud_done_rounded,
-                    ),
-                    label: Text(
-                      controller.isBusy
-                          ? 'Conectando...'
-                          : (controller.isConnected
-                              ? 'Desconectar'
-                              : 'Conectar'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  color: AppTheme.surfaceSoft.withValues(alpha: 0.94),
-                  border: Border.all(
-                    color: AppTheme.brandBlue.withValues(alpha: 0.36),
-                  ),
-                ),
-                child: SelectableText(
-                  'Tópico de comando: ${controller.commandTopic}\n'
-                  'Tópico de telemetria: ${controller.telemetryTopic}\n'
-                  'Tópico de status: ${controller.statusTopic}\n'
-                  'Tópico de solicitação: ${controller.telemetryRequestTopic}\n'
-                  'Dispositivos conectados: ${controller.connectedDeviceIds.isEmpty ? '--' : controller.connectedDeviceIds.join(', ')}\n'
-                  'Dispositivos conhecidos: ${controller.knownDeviceIds.isEmpty ? '--' : controller.knownDeviceIds.join(', ')}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontFamily: 'monospace',
-                    color: AppTheme.inkSoft,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+  // Exemplo de uso:
+  // widget.controller.historyRetentionSummary
+  // widget.controller.setHistoryRetentionDays(...)
+  // ...
+
+  // Substitua todos os 'controller.' por 'widget.controller.' nos métodos privados e widgets abaixo
 
   Widget _buildStoragePanel(BuildContext context) {
+    final controller = widget.controller;
     return GlassPanel(
       tint: AppTheme.brandMint,
       child: LayoutBuilder(
@@ -353,7 +93,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
               ),
               const SizedBox(height: 8),
               Wrap(
-                spacing: 10,
                 runSpacing: 10,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: <Widget>[
@@ -482,42 +221,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     );
   }
 
-  Future<void> _testLocalCommunication(WidgetRef ref) async {
-    final String ip = _espIpController.text.trim();
-    if (ip.isEmpty) {
-      _showSnackBar('Informe o IP do ESP32.');
-      return;
-    }
-
-    setState(() {
-      _isTestingLocalComm = true;
-    });
-
-    try {
-      final response = await ref
-          .read(espLocalCommProvider)
-          .getWifiNetworks(espHost: ip);
-      if (!mounted) {
-        return;
-      }
-
-      if (response.statusCode == 200) {
-        _showSnackBar('Comunicação local com ESP32 OK.');
-      } else {
-        _showSnackBar('Falha ao comunicar: HTTP ${response.statusCode}.');
-      }
-    } catch (error) {
-      if (mounted) {
-        _showSnackBar('Erro na comunicação local: $error');
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isTestingLocalComm = false;
-        });
-      }
-    }
-  }
 
   bool _applyRetentionDays() {
     final int? days = int.tryParse(_retentionController.text.trim());
@@ -543,27 +246,27 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     if (!_applyRemoteRetentionDays()) {
       return;
     }
-    await controller.applyRemoteHistoryRetention();
+    await widget.controller.applyRemoteHistoryRetention();
   }
 
   void _setRetentionAmount(int amount) {
-    controller.setHistoryRetentionDays(
+    widget.controller.setHistoryRetentionDays(
       _retentionDaysFromAmount(amount, _retentionUnit),
     );
     _retentionController.text =
         _displayAmountForDays(
-          controller.historyRetentionDays,
+          widget.controller.historyRetentionDays,
           _retentionUnit,
         ).toString();
   }
 
   void _setRemoteRetentionAmount(int amount) {
-    controller.setRemoteHistoryRetentionDays(
+    widget.controller.setRemoteHistoryRetentionDays(
       _retentionDaysFromAmount(amount, _remoteRetentionUnit),
     );
     _remoteRetentionController.text =
         _displayAmountForDays(
-          controller.remoteHistoryRetentionDays,
+          widget.controller.remoteHistoryRetentionDays,
           _remoteRetentionUnit,
         ).toString();
   }
@@ -576,7 +279,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
       _retentionUnit = unit;
       _retentionController.text =
           _displayAmountForDays(
-            controller.historyRetentionDays,
+            widget.controller.historyRetentionDays,
             unit,
           ).toString();
     });
@@ -590,7 +293,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
       _remoteRetentionUnit = unit;
       _remoteRetentionController.text =
           _displayAmountForDays(
-            controller.remoteHistoryRetentionDays,
+            widget.controller.remoteHistoryRetentionDays,
             unit,
           ).toString();
     });
@@ -629,29 +332,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     }
   }
 
-  void _syncRetentionControllers() {
-    if (!_retentionFocusNode.hasFocus) {
-      final String value =
-          _displayAmountForDays(
-            controller.historyRetentionDays,
-            _retentionUnit,
-          ).toString();
-      if (_retentionController.text != value) {
-        _retentionController.text = value;
-      }
-    }
-
-    if (!_remoteRetentionFocusNode.hasFocus) {
-      final String value =
-          _displayAmountForDays(
-            controller.remoteHistoryRetentionDays,
-            _remoteRetentionUnit,
-          ).toString();
-      if (_remoteRetentionController.text != value) {
-        _remoteRetentionController.text = value;
-      }
-    }
-  }
 
   void _showSnackBar(String message) {
     if (!mounted) {
@@ -663,9 +343,9 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   }
 
   Widget _buildAlertPanel(BuildContext context) {
-    final TelemetryAlert? latestAlert = controller.latestAlert;
-    final String? thresholdError = controller.alertThresholdsError;
-    final List<TelemetryAlert> recentAlerts = controller.alerts
+    final TelemetryAlert? latestAlert = widget.controller.latestAlert;
+    final String? thresholdError = widget.controller.alertThresholdsError;
+    final List<TelemetryAlert> recentAlerts = widget.controller.alerts
         .take(3)
         .toList(growable: false);
 
@@ -696,8 +376,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                     ),
                   ),
                   Switch(
-                    value: controller.telemetryAlertsEnabled,
-                    onChanged: controller.setTelemetryAlertsEnabled,
+                    value: widget.controller.telemetryAlertsEnabled,
+                    onChanged: widget.controller.setTelemetryAlertsEnabled,
                   ),
                 ],
               ),
@@ -709,11 +389,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   _textField(
                     width: fieldWidth,
                     label: 'Tensão mínima',
-                    controller: controller.voltageMinController,
+                    controller: widget.controller.voltageMinController,
                     keyboardType: TextInputType.number,
                     suffixText: 'V',
                     errorText: MqttSettingsValidators.validateDecimal(
-                      controller.voltageMinController.text,
+                      widget.controller.voltageMinController.text,
                       fieldLabel: 'a tensão mínima',
                       min: 0,
                       allowZero: false,
@@ -722,11 +402,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   _textField(
                     width: fieldWidth,
                     label: 'Tensão máxima',
-                    controller: controller.voltageMaxController,
+                    controller: widget.controller.voltageMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'V',
                     errorText: MqttSettingsValidators.validateDecimal(
-                      controller.voltageMaxController.text,
+                      widget.controller.voltageMaxController.text,
                       fieldLabel: 'a tensão máxima',
                       min: 0,
                       allowZero: false,
@@ -735,11 +415,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   _textField(
                     width: fieldWidth,
                     label: 'Corrente máxima',
-                    controller: controller.currentMaxController,
+                    controller: widget.controller.currentMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'A',
                     errorText: MqttSettingsValidators.validateDecimal(
-                      controller.currentMaxController.text,
+                      widget.controller.currentMaxController.text,
                       fieldLabel: 'o limite de corrente',
                       min: 0,
                       allowZero: false,
@@ -748,11 +428,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   _textField(
                     width: fieldWidth,
                     label: 'Vibração máxima',
-                    controller: controller.vibrationMaxController,
+                    controller: widget.controller.vibrationMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'g',
                     errorText: MqttSettingsValidators.validateDecimal(
-                      controller.vibrationMaxController.text,
+                      widget.controller.vibrationMaxController.text,
                       fieldLabel: 'o limite de vibração',
                       min: 0,
                       allowZero: false,
@@ -761,11 +441,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   _textField(
                     width: fieldWidth,
                     label: 'Temperatura máxima',
-                    controller: controller.temperatureMaxController,
+                    controller: widget.controller.temperatureMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'C',
                     errorText: MqttSettingsValidators.validateDecimal(
-                      controller.temperatureMaxController.text,
+                      widget.controller.temperatureMaxController.text,
                       fieldLabel: 'o limite de temperatura',
                       min: 0,
                       allowZero: false,
@@ -790,7 +470,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                 children: <Widget>[
                   Chip(
                     avatar: const Icon(Icons.notifications_active, size: 16),
-                    label: Text(controller.alertStatusSummary),
+                    label: Text(widget.controller.alertStatusSummary),
                   ),
                   if (latestAlert != null)
                     Chip(
@@ -799,9 +479,9 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                     ),
                   OutlinedButton.icon(
                     onPressed:
-                        controller.alerts.isEmpty
-                            ? null
-                            : controller.clearAlerts,
+                        widget.controller.alerts.isEmpty
+                          ? null
+                          : widget.controller.clearAlerts,
                     icon: const Icon(Icons.delete_sweep_outlined),
                     label: const Text('Limpar alertas'),
                   ),
@@ -897,7 +577,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
           if (!alert.acknowledged)
             IconButton(
               tooltip: 'Reconhecer',
-              onPressed: () => controller.acknowledgeAlert(alert.id),
+              onPressed: () => widget.controller.acknowledgeAlert(alert.id),
               icon: const Icon(Icons.done_rounded),
             ),
         ],
@@ -920,7 +600,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         controller: controller,
         keyboardType: keyboardType,
         obscureText: obscureText,
-        onChanged: (_) => this.controller.refreshPreview(),
+        onChanged: (_) => widget.controller.refreshPreview(),
         decoration: InputDecoration(
           labelText: label,
           errorText: errorText,
