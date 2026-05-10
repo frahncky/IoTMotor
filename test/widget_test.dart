@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:iotmotor/app/iot_motor_app.dart';
+
+Widget _buildTestApp() {
+  return const ProviderScope(child: MotorControlApp());
+}
 
 void main() {
   testWidgets('renderiza tabs de início, histórico e configurações', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MotorControlApp());
+    await tester.pumpWidget(_buildTestApp());
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(
@@ -99,18 +104,9 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('MQTT'), findsOneWidget);
     expect(find.text('Armazenamento'), findsOneWidget);
     expect(find.text('Alertas'), findsWidgets);
     expect(find.text('Telemetria'), findsNothing);
-    expect(find.text('Conexão MQTT'), findsOneWidget);
-    expect(find.text('Local do app'), findsNothing);
-    expect(find.text('Alertas de Telemetria'), findsNothing);
-    expect(find.text('Formato da Telemetria'), findsNothing);
-
-    await tester.tap(find.byIcon(Icons.storage_rounded));
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
     expect(find.text('Local do app'), findsOneWidget);
     expect(find.text('Remoto no ESP32'), findsOneWidget);
     expect(find.text('Retenção local'), findsOneWidget);
@@ -123,13 +119,7 @@ void main() {
     expect(find.text('365 dias'), findsNothing);
     expect(find.text('Aplicar local'), findsOneWidget);
     expect(find.text('Aplicar no ESP32'), findsOneWidget);
-    expect(find.text('Conexão MQTT'), findsNothing);
-
-    await tester.tap(find.byIcon(Icons.notifications_active_rounded));
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
     expect(find.text('Alertas de Telemetria'), findsOneWidget);
-    expect(find.text('Local do app'), findsNothing);
     expect(find.text('Formato da Telemetria'), findsNothing);
   });
 
@@ -141,7 +131,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const MotorControlApp());
+    await tester.pumpWidget(_buildTestApp());
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Medi\u00e7\u00f5es'), findsOneWidget);

@@ -23,7 +23,9 @@ class MotorControlController extends ChangeNotifier {
     // ...existing code for controllers...
     brokerController = TextEditingController(text: 'broker.hivemq.com');
     portController = TextEditingController(text: '1883');
-    clientIdController = TextEditingController(text: 'motor_app_${DateTime.now().millisecondsSinceEpoch % 100000}');
+    clientIdController = TextEditingController(
+      text: 'motor_app_${DateTime.now().millisecondsSinceEpoch % 100000}',
+    );
     usernameController = TextEditingController();
     passwordController = TextEditingController();
     topicPrefixController = TextEditingController(text: 'iotmotor');
@@ -58,8 +60,14 @@ class MotorControlController extends ChangeNotifier {
   }
 
   // Construtor para injetar config MQTT diretamente
-  factory MotorControlController.withMqttConfig(MqttConnectionConfig config, {MqttMotorService? service}) {
-    final controller = MotorControlController(service: service, loadSettings: false);
+  factory MotorControlController.withMqttConfig(
+    MqttConnectionConfig config, {
+    MqttMotorService? service,
+  }) {
+    final controller = MotorControlController(
+      service: service,
+      loadSettings: false,
+    );
     controller.brokerController.text = config.host;
     controller.portController.text = config.port.toString();
     controller.clientIdController.text = config.clientId;
@@ -1217,17 +1225,12 @@ class MotorControlController extends ChangeNotifier {
       sample: sample,
     );
 
-    if (alert != null) {
-      statusMessage = '${alert.title}: ${alert.message}';
-    } else if (deviceId == selectedDeviceId) {
-      statusMessage =
-          '${_buildDeviceStateSummary(deviceId)} Último pacote em ${formatTimestamp(sample.timestamp)}';
-    }
+    statusMessage =
+        alert != null
+            ? '${alert.title}: ${alert.message}'
+            : '${_buildDeviceStateSummary(deviceId)} Último pacote em ${formatTimestamp(sample.timestamp)}';
 
-    // ESCALABILIDADE: Só notifica a UI se o dado for do dispositivo selecionado
-    if (deviceId == selectedDeviceId || _knownDevices.length == 1) {
-      _notify();
-    }
+    _notify();
   }
 
   List<TelemetrySample> _buildCombinedHistory() {
@@ -1289,11 +1292,8 @@ class MotorControlController extends ChangeNotifier {
       }
     }
 
-    for (final String deviceId in emptyDevices) {
-      _historyByDevice.remove(deviceId);
-      _latestByDevice.remove(deviceId);
-      _lastTelemetryReceivedByDevice.remove(deviceId);
-    }
+    // Removido o expurgo de _latestByDevice para manter o último estado conhecido
+    // mesmo que o histórico seja antigo.
 
     if (removed > 0 && persist) {
       _scheduleHistoryPersist();

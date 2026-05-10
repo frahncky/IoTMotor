@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../features/iot_motor/controller/motor_control_controller.dart';
 import '../../features/iot_motor/models/mqtt_connection_config.dart';
 
 class MqttProfileSummary {
@@ -79,98 +80,146 @@ class MqttProfile {
   }
 }
 
-class MqttProfilesNotifier extends StateNotifier<List<MqttProfile>> {
+class MqttProfilesState {
+  final List<MqttProfile> profiles;
+  final String? activeProfileId;
+
+  const MqttProfilesState({required this.profiles, this.activeProfileId});
+}
+
+class MqttProfilesNotifier extends StateNotifier<MqttProfilesState> {
   static const _profilesKey = 'mqtt_profiles_v2';
   static const _activeProfileIdKey = 'mqtt_active_profile_id';
+  static const MqttProfile _defaultProfile = MqttProfile(
+    id: 'default',
+    name: 'Dispositivo principal',
+    config: MqttConnectionConfig(
+      host: 'broker.hivemq.com',
+      port: 1883,
+      clientId: 'motor_app',
+      topicPrefix: 'iotmotor',
+      deviceId: 'default',
+      useTls: false,
+    ),
+  );
+  static const MqttProfilesState _defaultState = MqttProfilesState(
+    profiles: <MqttProfile>[_defaultProfile],
+    activeProfileId: 'default',
+  );
 
   final _secureStorage = const FlutterSecureStorage();
 
-  MqttProfilesNotifier() : super([]) {
+  MqttProfilesNotifier() : super(_defaultState) {
     load();
   }
 
-  String? _activeProfileId;
-  String? get activeProfileId => _activeProfileId;
-
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final rawProfiles = await _secureStorage.read(key: _profilesKey);
-    if (rawProfiles == null || rawProfiles.isEmpty) {
-      // Cria perfil padrão
-      final defaultProfile = MqttProfile(
-        id: 'default',
-        name: 'Dispositivo principal',
-        config: MqttConnectionConfig(
-          host: 'broker.hivemq.com',
-          port: 1883,
-          clientId: 'motor_app',
-          topicPrefix: 'iotmotor',
-          deviceId: 'default',
-          useTls: false,
-        ),
-      );
-      state = [defaultProfile];
-      _activeProfileId = defaultProfile.id;
-      await _persist();
-      return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawProfiles = await _secureStorage.read(key: _profilesKey);
+      if (rawProfiles == null || rawProfiles.isEmpty) {
+        state = _defaultState;
+        await _persist();
+        return;
+      }
+
+      final decoded = jsonDecode(rawProfiles) as List<dynamic>;
+      final profiles =
+          decoded
+              .map((e) => MqttProfile.fromMap(e as Map<String, dynamic>))
+              .toList();
+      if (profiles.isEmpty) {
+        state = _defaultState;
+        await _persist();
+        return;
+      }
+
+      final savedActiveId = prefs.getString(_activeProfileIdKey);
+      final activeId =
+          profiles.any((p) => p.id == savedActiveId)
+              ? savedActiveId
+              : profiles.first.id;
+      state = MqttProfilesState(profiles: profiles, activeProfileId: activeId);
+    } catch (_) {
+      state = _defaultState;
     }
-    final decoded = jsonDecode(rawProfiles) as List<dynamic>;
-    state = decoded.map((e) => MqttProfile.fromMap(e as Map<String, dynamic>)).toList();
-    _activeProfileId = prefs.getString(_activeProfileIdKey) ?? state.first.id;
   }
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    await _secureStorage.write(key: _profilesKey, value: jsonEncode(state.map((e) => e.toMap()).toList()));
-    if (_activeProfileId != null) {
-      await prefs.setString(_activeProfileIdKey, _activeProfileId!);
+    await _secureStorage.write(
+      key: _profilesKey,
+      value: jsonEncode(state.profiles.map((e) => e.toMap()).toList()),
+    );
+    if (state.activeProfileId != null) {
+      await prefs.setString(_activeProfileIdKey, state.activeProfileId!);
     }
   }
 
   void setActiveProfile(String id) async {
-    _activeProfileId = id;
+    if (state.activeProfileId == id) return;
+    state = MqttProfilesState(profiles: state.profiles, activeProfileId: id);
     await _persist();
   }
 
   MqttProfile? get activeProfile =>
-      state.firstWhere((p) => p.id == _activeProfileId, orElse: () => state.first);
+      state.profiles.isEmpty
+          ? null
+          : state.profiles.firstWhere(
+            (p) => p.id == state.activeProfileId,
+            orElse: () => state.profiles.first,
+          );
 
   Future<void> addProfile(MqttProfile profile) async {
-    state = [...state, profile];
-    _activeProfileId = profile.id;
+    state = MqttProfilesState(
+      profiles: [...state.profiles, profile],
+      activeProfileId: profile.id,
+    );
     await _persist();
   }
 
   Future<void> updateProfile(MqttProfile profile) async {
-    state = [
-      for (final p in state)
-        if (p.id == profile.id) profile else p
+    final updatedList = [
+      for (final p in state.profiles)
+        if (p.id == profile.id) profile else p,
     ];
+    state = MqttProfilesState(
+      profiles: updatedList,
+      activeProfileId: state.activeProfileId,
+    );
     await _persist();
   }
 
   Future<void> deleteProfile(String id) async {
-    if (state.length == 1) return;
-    state = state.where((p) => p.id != id).toList();
-    if (_activeProfileId == id) {
-      _activeProfileId = state.first.id;
+    if (state.profiles.length == 1) return;
+    final updatedList = state.profiles.where((p) => p.id != id).toList();
+    String? nextId = state.activeProfileId;
+    if (state.activeProfileId == id) {
+      nextId = updatedList.first.id;
     }
+    state = MqttProfilesState(profiles: updatedList, activeProfileId: nextId);
     await _persist();
   }
 }
 
-final mqttProfilesProvider = StateNotifierProvider<MqttProfilesNotifier, List<MqttProfile>>(
-  (ref) => MqttProfilesNotifier(),
-);
+final mqttProfilesProvider =
+    StateNotifierProvider<MqttProfilesNotifier, MqttProfilesState>(
+      (ref) => MqttProfilesNotifier(),
+    );
 
-/// Provider que gerencia a instância do controller de motor ativa.
-/// Ele é automaticamente recriado quando o perfil ativo muda.
-final motorControlControllerProvider = ChangeNotifierProvider.autoDispose((ref) {
-  final profiles = ref.watch(mqttProfilesProvider);
-  final notifier = ref.read(mqttProfilesProvider.notifier);
-  final activeId = notifier.activeProfileId;
-  
-  final activeProfile = profiles.firstWhere((p) => p.id == activeId, orElse: () => profiles.first);
-  
-  return MotorControlController.withMqttConfig(activeProfile.config);
-});
+final motorControlControllerProvider =
+    ChangeNotifierProvider<MotorControlController>((ref) {
+      final profilesState = ref.watch(mqttProfilesProvider);
+      final activeId = profilesState.activeProfileId;
+
+      if (profilesState.profiles.isEmpty) {
+        throw Exception('Nenhum perfil disponível');
+      }
+
+      final activeProfile = profilesState.profiles.firstWhere(
+        (p) => p.id == activeId,
+        orElse: () => profilesState.profiles.first,
+      );
+
+      return MotorControlController.withMqttConfig(activeProfile.config);
+    });

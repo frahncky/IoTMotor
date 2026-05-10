@@ -1,16 +1,15 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/theme/app_theme.dart';
-import '../controller/motor_control_controller.dart';
+import 'package:iotmotor/app/theme/app_theme.dart';
+import 'package:iotmotor/features/iot_motor/controller/motor_control_controller.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/settings_tab.dart';
 import 'package:iotmotor/app/providers/mqtt_profiles_provider.dart';
-import 'tabs/alertas_tab.dart';
-import 'tabs/historico_tab.dart';
-import 'tabs/inicio_tab.dart';
-import 'widgets/delayed_reveal.dart';
-import 'widgets/glass_panel.dart';
+import 'package:iotmotor/features/iot_motor/view/tabs/alertas_tab.dart';
+import 'package:iotmotor/features/iot_motor/view/tabs/historico_tab.dart';
+import 'package:iotmotor/features/iot_motor/view/tabs/inicio_tab.dart';
+import 'package:iotmotor/features/iot_motor/view/widgets/delayed_reveal.dart';
+import 'package:iotmotor/features/iot_motor/view/widgets/glass_panel.dart';
 
 class MotorControlPage extends ConsumerStatefulWidget {
   const MotorControlPage({super.key});
@@ -27,11 +26,17 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage> {
     final controller = ref.watch(motorControlControllerProvider);
 
     // Escuta mensagens pendentes (SnackBars) vindas do controller
-    ref.listen(motorControlControllerProvider, (previous, next) {
+    ref.listen<MotorControlController>(motorControlControllerProvider, (
+      previous,
+      next,
+    ) {
       final message = next.consumePendingMessage();
       if (message != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+          SnackBar(
+            content: Text(message),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
     });
@@ -47,10 +52,7 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage> {
         surfaceTintColor: Colors.transparent,
         title: Padding(
           padding: const EdgeInsets.fromLTRB(5, 8, 18, 8),
-          child: ListenableBuilder(
-            listenable: controller,
-            builder: (context, _) => _buildAppBarContent(controller),
-          ),
+          child: _buildAppBarContent(controller),
         ),
       ),
       bottomNavigationBar: Padding(
@@ -66,10 +68,9 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage> {
               duration: const Duration(milliseconds: 260),
               switchInCurve: Curves.easeOutCubic,
               switchOutCurve: Curves.easeInCubic,
-              child: ListenableBuilder(
+              child: KeyedSubtree(
                 key: ValueKey<int>(_selectedTab),
-                listenable: controller,
-                builder: (context, _) => _buildCurrentTab(controller),
+                child: _buildCurrentTab(controller),
               ),
             ),
           ),
@@ -139,10 +140,10 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage> {
 
   Widget _buildAppBarContent(MotorControlController controller) {
     final String tickerText =
-      'Dispositivos conectados: ${controller.connectedDevicesSummary} | '
-      'Broker: ${controller.brokerStatusLabel} | '
-      'Telemetria: ${controller.telemetryStatusSummary} | '
-      'Alertas: ${controller.alertStatusSummary} |';
+        'Dispositivos conectados: ${controller.connectedDevicesSummary} | '
+        'Broker: ${controller.brokerStatusLabel} | '
+        'Telemetria: ${controller.telemetryStatusSummary} | '
+        'Alertas: ${controller.alertStatusSummary} |';
 
     return DelayedReveal(
       delay: const Duration(milliseconds: 60),
