@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/telemetry_alert.dart';
-import '../widgets/delayed_reveal.dart';
-import '../widgets/glass_panel.dart';
+import '../../../../shared/delayed_reveal.dart';
+import '../../../../shared/glass_panel.dart';
 
 class AlertasTab extends StatelessWidget {
   const AlertasTab({super.key, required this.controller});

@@ -129,8 +129,13 @@ class MqttProfilesNotifier extends StateNotifier<List<MqttProfile>> {
     await _persist();
   }
 
-  MqttProfile? get activeProfile =>
-      state.firstWhere((p) => p.id == _activeProfileId, orElse: () => state.first);
+  MqttProfile? get activeProfile {
+    if (state.isEmpty) return null;
+    return state.firstWhere(
+      (p) => p.id == _activeProfileId,
+      orElse: () => state.first,
+    );
+  }
 
   Future<void> addProfile(MqttProfile profile) async {
     state = [...state, profile];

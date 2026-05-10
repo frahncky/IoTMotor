@@ -6,6 +6,8 @@ import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/telemetry_sample.dart';
 
+import '../../../../shared/telemetry_chart.dart';
+
 class GrandezasTab extends StatelessWidget {
   const GrandezasTab({
     super.key,

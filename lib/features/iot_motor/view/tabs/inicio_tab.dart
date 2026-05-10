@@ -6,9 +6,9 @@ import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
 import '../../models/telemetry_sample.dart';
-import '../widgets/delayed_reveal.dart';
-import '../widgets/glass_panel.dart';
-import '../widgets/telemetry_chart.dart';
+import '../../../../shared/delayed_reveal.dart';
+import '../../../../shared/glass_panel.dart';
+import '../../../../shared/telemetry_chart.dart';
 import 'grandezas_tab.dart';
 
 enum _TelemetryGroup { grandezas, eletrica, mecanica }

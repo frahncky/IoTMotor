@@ -6,8 +6,8 @@ import '../../models/motor_command_type.dart';
 import '../../models/telemetry_history_entry.dart';
 import '../../models/telemetry_sample.dart';
 import '../../services/telemetry_history_export.dart';
-import '../widgets/delayed_reveal.dart';
-import '../widgets/glass_panel.dart';
+import '../../../../shared/delayed_reveal.dart';
+import '../../../../shared/glass_panel.dart';
 
 class HistoricoTab extends StatelessWidget {
   const HistoricoTab({super.key, required this.controller});

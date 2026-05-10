@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../app/theme/app_theme.dart';
-import '../widgets/glass_panel.dart';
+import '../../../../shared/glass_panel.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/mqtt_settings_validators.dart';
