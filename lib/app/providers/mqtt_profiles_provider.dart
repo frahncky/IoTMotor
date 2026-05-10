@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/iot_motor/models/mqtt_connection_config.dart';
@@ -82,6 +83,8 @@ class MqttProfilesNotifier extends StateNotifier<List<MqttProfile>> {
   static const _profilesKey = 'mqtt_profiles_v2';
   static const _activeProfileIdKey = 'mqtt_active_profile_id';
 
+  final _secureStorage = const FlutterSecureStorage();
+
   MqttProfilesNotifier() : super([]) {
     load();
   }
@@ -91,7 +94,7 @@ class MqttProfilesNotifier extends StateNotifier<List<MqttProfile>> {
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final rawProfiles = prefs.getString(_profilesKey);
+    final rawProfiles = await _secureStorage.read(key: _profilesKey);
     if (rawProfiles == null || rawProfiles.isEmpty) {
       // Cria perfil padrão
       final defaultProfile = MqttProfile(
@@ -118,7 +121,7 @@ class MqttProfilesNotifier extends StateNotifier<List<MqttProfile>> {
 
   Future<void> _persist() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_profilesKey, jsonEncode(state.map((e) => e.toMap()).toList()));
+    await _secureStorage.write(key: _profilesKey, value: jsonEncode(state.map((e) => e.toMap()).toList()));
     if (_activeProfileId != null) {
       await prefs.setString(_activeProfileIdKey, _activeProfileId!);
     }

@@ -37,6 +37,7 @@ dependencies:
   mqtt_client: ^10.5.1
   path_provider: ^2.1.5
   flutter_background_service: ^5.0.7
+  flutter_secure_storage: ^9.2.2
 
   shared_preferences: ^2.2.2
 
@@ -124,4 +125,3 @@ flutter_native_splash:
   android_12:
     color: "#1E5FD8"
     image: assets/logo/android12_icon10_match_name.png
-

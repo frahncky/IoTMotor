@@ -44,7 +44,9 @@ class TelemetryChart extends StatelessWidget {
     final Widget chartBody = Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        LineChart(_buildChartData(context, scale: scale, liveValue: liveValue)),
+        RepaintBoundary(
+          child: LineChart(_buildChartData(context, scale: scale, liveValue: liveValue)),
+        ),
         if (values.isEmpty)
           Center(child: Text('Sem dados', style: textTheme.bodyMedium)),
       ],

@@ -1223,7 +1223,11 @@ class MotorControlController extends ChangeNotifier {
       statusMessage =
           '${_buildDeviceStateSummary(deviceId)} Último pacote em ${formatTimestamp(sample.timestamp)}';
     }
-    _notify();
+
+    // ESCALABILIDADE: Só notifica a UI se o dado for do dispositivo selecionado
+    if (deviceId == selectedDeviceId || _knownDevices.length == 1) {
+      _notify();
+    }
   }
 
   List<TelemetrySample> _buildCombinedHistory() {
