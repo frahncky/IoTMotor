@@ -17,6 +17,7 @@ class ConfiguracoesTab extends StatefulWidget {
 }
 
 class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
+  final _formKey = GlobalKey<FormState>();
   final _retentionController = TextEditingController();
   final _remoteRetentionController = TextEditingController();
   final _retentionFocusNode = FocusNode();
@@ -40,14 +41,17 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildStoragePanel(context),
-          const SizedBox(height: 24),
-          _buildAlertPanel(context),
-          // ...outros painéis...
-        ],
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildStoragePanel(context),
+            const SizedBox(height: 24),
+            _buildAlertPanel(context),
+            // ...outros painéis...
+          ],
+        ),
       ),
     );
   }
@@ -108,6 +112,13 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
                         suffixText: _retentionUnitLabel(_retentionUnit),
                         hintText: 'Ex: 30',
                       ),
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      validator: (value) => MqttSettingsValidators.validateDecimal(
+                        value,
+                        fieldLabel: 'a retenção local',
+                        min: 0,
+                        allowZero: false,
+                      ),
                       onFieldSubmitted: (_) => _applyRetentionDays(),
                     ),
                   ),
@@ -156,6 +167,13 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
                         labelText: 'Retenção remota (ESP32 SD)',
                         suffixText: _retentionUnitLabel(_remoteRetentionUnit),
                         hintText: 'Ex: 30',
+                      ),
+                      autovalidateMode: AutovalidateMode.onUserInteraction,
+                      validator: (value) => MqttSettingsValidators.validateDecimal(
+                        value,
+                        fieldLabel: 'a retenção remota',
+                        min: 0,
+                        allowZero: false,
                       ),
                       onFieldSubmitted: (_) => _applyRemoteRetentionDays(),
                     ),
@@ -223,6 +241,9 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
 
 
   bool _applyRetentionDays() {
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return false;
+    }
     final int? days = int.tryParse(_retentionController.text.trim());
     if (days == null || days <= 0) {
       _showSnackBar('Informe uma retenção local maior que zero.');
@@ -233,6 +254,9 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
   }
 
   bool _applyRemoteRetentionDays() {
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      return false;
+    }
     final int? days = int.tryParse(_remoteRetentionController.text.trim());
     if (days == null || days <= 0) {
       _showSnackBar('Informe uma retenção remota maior que zero.');
@@ -392,8 +416,8 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
                     controller: widget.controller.voltageMinController,
                     keyboardType: TextInputType.number,
                     suffixText: 'V',
-                    errorText: MqttSettingsValidators.validateDecimal(
-                      widget.controller.voltageMinController.text,
+                    validator: (value) => MqttSettingsValidators.validateDecimal(
+                      value,
                       fieldLabel: 'a tensão mínima',
                       min: 0,
                       allowZero: false,
@@ -405,8 +429,8 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
                     controller: widget.controller.voltageMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'V',
-                    errorText: MqttSettingsValidators.validateDecimal(
-                      widget.controller.voltageMaxController.text,
+                    validator: (value) => MqttSettingsValidators.validateDecimal(
+                      value,
                       fieldLabel: 'a tensão máxima',
                       min: 0,
                       allowZero: false,
@@ -418,8 +442,8 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
                     controller: widget.controller.currentMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'A',
-                    errorText: MqttSettingsValidators.validateDecimal(
-                      widget.controller.currentMaxController.text,
+                    validator: (value) => MqttSettingsValidators.validateDecimal(
+                      value,
                       fieldLabel: 'o limite de corrente',
                       min: 0,
                       allowZero: false,
@@ -431,8 +455,8 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
                     controller: widget.controller.vibrationMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'g',
-                    errorText: MqttSettingsValidators.validateDecimal(
-                      widget.controller.vibrationMaxController.text,
+                    validator: (value) => MqttSettingsValidators.validateDecimal(
+                      value,
                       fieldLabel: 'o limite de vibração',
                       min: 0,
                       allowZero: false,
@@ -444,8 +468,8 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
                     controller: widget.controller.temperatureMaxController,
                     keyboardType: TextInputType.number,
                     suffixText: 'C',
-                    errorText: MqttSettingsValidators.validateDecimal(
-                      widget.controller.temperatureMaxController.text,
+                    validator: (value) => MqttSettingsValidators.validateDecimal(
+                      value,
                       fieldLabel: 'o limite de temperatura',
                       min: 0,
                       allowZero: false,
@@ -591,19 +615,24 @@ class _ConfiguracoesTabState extends State<ConfiguracoesTab> {
     required TextEditingController controller,
     TextInputType? keyboardType,
     bool obscureText = false,
-    String? errorText,
+    String? Function(String?)? validator,
     String? suffixText,
   }) {
     return SizedBox(
       width: width,
-      child: TextField(
+      child: TextFormField(
         controller: controller,
         keyboardType: keyboardType,
         obscureText: obscureText,
-        onChanged: (_) => widget.controller.refreshPreview(),
+        textInputAction: TextInputAction.next,
+        onChanged: (_) {
+          setState(() {}); // Atualiza validação local sem reconstruir a página toda
+          widget.controller.refreshPreview();
+        },
+        validator: validator,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
         decoration: InputDecoration(
           labelText: label,
-          errorText: errorText,
           suffixText: suffixText,
         ),
       ),

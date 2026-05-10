@@ -159,3 +159,15 @@ class MqttProfilesNotifier extends StateNotifier<List<MqttProfile>> {
 final mqttProfilesProvider = StateNotifierProvider<MqttProfilesNotifier, List<MqttProfile>>(
   (ref) => MqttProfilesNotifier(),
 );
+
+/// Provider que gerencia a instância do controller de motor ativa.
+/// Ele é automaticamente recriado quando o perfil ativo muda.
+final motorControlControllerProvider = ChangeNotifierProvider.autoDispose((ref) {
+  final profiles = ref.watch(mqttProfilesProvider);
+  final notifier = ref.read(mqttProfilesProvider.notifier);
+  final activeId = notifier.activeProfileId;
+  
+  final activeProfile = profiles.firstWhere((p) => p.id == activeId, orElse: () => profiles.first);
+  
+  return MotorControlController.withMqttConfig(activeProfile.config);
+});

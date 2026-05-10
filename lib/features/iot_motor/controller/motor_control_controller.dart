@@ -18,7 +18,7 @@ import '../services/telemetry_alert_store.dart';
 import '../services/telemetry_history_store.dart';
 
 class MotorControlController extends ChangeNotifier {
-  MotorControlController({MqttMotorService? service})
+  MotorControlController({MqttMotorService? service, bool loadSettings = true})
     : _service = service ?? MqttMotorService() {
     // ...existing code for controllers...
     brokerController = TextEditingController(text: 'broker.hivemq.com');
@@ -43,15 +43,23 @@ class MotorControlController extends ChangeNotifier {
     _connectedDevicesTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _notifyConnectionHealthIfChanged();
     });
-    unawaited(loadPersistedSettings());
-    unawaited(loadPersistedHistory());
-    unawaited(loadPersistedAlerts());
-    unawaited(loadStartTypes());
+    _initializeData(loadSettings);
+  }
+
+  Future<void> _initializeData(bool loadSettings) async {
+    if (loadSettings) {
+      await loadPersistedSettings();
+    }
+    await Future.wait([
+      loadPersistedHistory(),
+      loadPersistedAlerts(),
+      loadStartTypes(),
+    ]);
   }
 
   // Construtor para injetar config MQTT diretamente
   factory MotorControlController.withMqttConfig(MqttConnectionConfig config, {MqttMotorService? service}) {
-    final controller = MotorControlController(service: service);
+    final controller = MotorControlController(service: service, loadSettings: false);
     controller.brokerController.text = config.host;
     controller.portController.text = config.port.toString();
     controller.clientIdController.text = config.clientId;
@@ -950,7 +958,6 @@ class MotorControlController extends ChangeNotifier {
 
   void refreshPreview() {
     _scheduleSettingsPersist();
-    _notify();
   }
 
   void setHistoryRetentionDays(int days) {
