@@ -20,9 +20,10 @@ class GrandezasTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final TelemetrySample? sample = controller.latestSample;
+    final bool isLive = controller.isConnected && controller.recebeuDadoAtual;
+    final TelemetrySample? sample = isLive ? controller.latestSample : null;
     final List<TelemetrySample> history = controller.history;
-    final List<_MagnitudeInfo> magnitudes = _buildMagnitudes(sample, history);
+    final List<_MagnitudeInfo> magnitudes = _buildMagnitudes(sample, isLive ? history : <TelemetrySample>[]);
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints viewport) {
@@ -45,7 +46,7 @@ class GrandezasTab extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Medi\u00e7\u00f5es',
+                            'Medições',
                             style: Theme.of(context).textTheme.titleLarge,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -175,14 +176,16 @@ class GrandezasTab extends StatelessWidget {
     TelemetrySample? sample,
     List<TelemetrySample> history,
   ) {
-    final double? apparent = _apparentPower(sample);
-    final double? reactive = _reactivePower(sample, apparent);
+    // Se não há sample, todos os valores devem ser null
+    final bool hasData = sample != null;
+    final double? apparent = hasData ? _apparentPower(sample) : null;
+    final double? reactive = hasData ? _reactivePower(sample, apparent) : null;
 
     return <_MagnitudeInfo>[
       _MagnitudeInfo(
         label: 'Aparente',
-        value: apparent,
-        trend: _trendFor(history, _apparentPower),
+        value: hasData ? apparent : null,
+        trend: hasData ? _trendFor(history, _apparentPower) : null,
         unit: 'VA',
         decimalDigits: 1,
         icon: Icons.data_usage_rounded,
@@ -190,8 +193,8 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Ativa',
-        value: sample?.power,
-        trend: _trendFor(history, (TelemetrySample item) => item.power),
+        value: hasData ? sample?.power : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.power) : null,
         unit: 'W',
         decimalDigits: 1,
         icon: Icons.flash_on_rounded,
@@ -199,11 +202,11 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Reativa',
-        value: reactive,
-        trend: _trendFor(
+        value: hasData ? reactive : null,
+        trend: hasData ? _trendFor(
           history,
           (TelemetrySample item) => _reactivePower(item, _apparentPower(item)),
-        ),
+        ) : null,
         unit: 'VAr',
         decimalDigits: 1,
         icon: Icons.waves_rounded,
@@ -211,8 +214,8 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'FP',
-        value: sample?.powerFactor,
-        trend: _trendFor(history, (TelemetrySample item) => item.powerFactor),
+        value: hasData ? sample?.powerFactor : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.powerFactor) : null,
         unit: '',
         decimalDigits: 2,
         icon: Icons.speed_rounded,
@@ -220,9 +223,9 @@ class GrandezasTab extends StatelessWidget {
         compactValue: true,
       ),
       _MagnitudeInfo(
-        label: 'Tens\u00e3o',
-        value: sample?.voltage,
-        trend: _trendFor(history, (TelemetrySample item) => item.voltage),
+        label: 'Tensão',
+        value: hasData ? sample?.voltage : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.voltage) : null,
         unit: 'V',
         decimalDigits: 1,
         icon: Icons.electrical_services_rounded,
@@ -230,8 +233,8 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Corrente',
-        value: sample?.current,
-        trend: _trendFor(history, (TelemetrySample item) => item.current),
+        value: hasData ? sample?.current : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.current) : null,
         unit: 'A',
         decimalDigits: 2,
         icon: Icons.bolt_rounded,
@@ -239,35 +242,35 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Energia',
-        value: sample?.energy,
-        trend: _trendFor(history, (TelemetrySample item) => item.energy),
+        value: hasData ? sample?.energy : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.energy) : null,
         unit: 'kWh',
         decimalDigits: 3,
         icon: Icons.battery_charging_full_rounded,
         color: AppTheme.brandMint,
       ),
       _MagnitudeInfo(
-        label: 'Frequ\u00eancia',
-        value: sample?.frequency,
-        trend: _trendFor(history, (TelemetrySample item) => item.frequency),
+        label: 'Freq.',
+        value: hasData ? sample?.frequency : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.frequency) : null,
         unit: 'Hz',
         decimalDigits: 2,
         icon: Icons.ssid_chart_rounded,
         color: AppTheme.brandBlue,
       ),
       _MagnitudeInfo(
-        label: 'Vibra\u00e7\u00e3o',
-        value: sample?.vibration,
-        trend: _trendFor(history, (TelemetrySample item) => item.vibration),
+        label: 'Vibra.',
+        value: hasData ? sample?.vibration : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.vibration) : null,
         unit: 'g',
         decimalDigits: 3,
         icon: Icons.sensors_rounded,
         color: AppTheme.vibrationAccent,
       ),
       _MagnitudeInfo(
-        label: 'Temperatura',
-        value: sample?.temperature,
-        trend: _trendFor(history, (TelemetrySample item) => item.temperature),
+        label: 'Temp.',
+        value: hasData ? sample?.temperature : null,
+        trend: hasData ? _trendFor(history, (TelemetrySample item) => item.temperature) : null,
         unit: '\u00b0C',
         decimalDigits: 1,
         icon: Icons.device_thermostat_rounded,
@@ -336,7 +339,7 @@ class GrandezasTab extends StatelessWidget {
 
     if (delta.abs() <= threshold) {
       return _MagnitudeTrend(
-        label: 'Est\u00e1vel',
+        label: 'Estável',
         icon: Icons.trending_flat_rounded,
         color: AppTheme.online,
       );
@@ -513,7 +516,7 @@ class _MagnitudeCard extends StatelessWidget {
                     if (trend != null) ...<Widget>[
                       SizedBox(height: dense ? 1 : 3),
                       Tooltip(
-                        message: 'Tend\u00eancia: ${trend.label}',
+                        message: 'Tendência: ${trend.label}',
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           mainAxisSize: MainAxisSize.min,

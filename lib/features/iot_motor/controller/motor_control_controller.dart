@@ -26,6 +26,7 @@ class MotorControlController extends ChangeNotifier {
     clientIdController = TextEditingController(
       text: 'motor_app_${DateTime.now().millisecondsSinceEpoch % 100000}',
     );
+    deviceIdController = TextEditingController(text: '');
     usernameController = TextEditingController();
     passwordController = TextEditingController();
     topicPrefixController = TextEditingController(text: 'iotmotor');
@@ -71,6 +72,7 @@ class MotorControlController extends ChangeNotifier {
     controller.brokerController.text = config.host;
     controller.portController.text = config.port.toString();
     controller.clientIdController.text = config.clientId;
+    controller.deviceIdController.text = config.deviceId;
     controller.topicPrefixController.text = config.topicPrefix;
     controller.usernameController.text = config.username ?? '';
     controller.passwordController.text = config.password ?? '';
@@ -133,6 +135,7 @@ class MotorControlController extends ChangeNotifier {
   late final TextEditingController brokerController;
   late final TextEditingController portController;
   late final TextEditingController clientIdController;
+  late final TextEditingController deviceIdController;
   late final TextEditingController usernameController;
   late final TextEditingController passwordController;
   late final TextEditingController topicPrefixController;
@@ -146,6 +149,7 @@ class MotorControlController extends ChangeNotifier {
   bool isBusy = false;
   bool useTls = false;
   bool telemetryAlertsEnabled = true;
+  bool _recebeuDadoAtual = false;
   String dashboardTab = dashboardTabMeasurements;
   String electricalPlotAId = MotorAppSettings.defaultElectricalPlotAId;
   String electricalPlotBId = MotorAppSettings.defaultElectricalPlotBId;
@@ -187,10 +191,14 @@ class MotorControlController extends ChangeNotifier {
     ..._defaultStartTypes,
   ];
 
-  TelemetrySample? get latestSample => _buildCombinedLatestSample();
+  TelemetrySample? get latestSample => _recebeuDadoAtual ? _buildCombinedLatestSample() : null;
+
+  bool get recebeuDadoAtual => _recebeuDadoAtual;
 
   UnmodifiableListView<TelemetrySample> get history =>
-      UnmodifiableListView<TelemetrySample>(_buildCombinedHistory());
+      UnmodifiableListView<TelemetrySample>(
+        _recebeuDadoAtual ? _buildCombinedHistory() : <TelemetrySample>[]
+      );
 
   UnmodifiableListView<TelemetryHistoryEntry> get historyEntries =>
       UnmodifiableListView<TelemetryHistoryEntry>(
@@ -398,6 +406,11 @@ class MotorControlController extends ChangeNotifier {
       );
 
   String get selectedDeviceId {
+    final String manualId = deviceIdController.text.trim();
+    if (manualId.isNotEmpty && manualId != 'auto') {
+      return manualId;
+    }
+
     final String? connectedPrimary = _latestConnectedDeviceId();
     if (connectedPrimary != null) {
       return connectedPrimary;
@@ -583,8 +596,16 @@ class MotorControlController extends ChangeNotifier {
     _lastTelemetryReceivedByDevice.clear();
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
+    _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
+    _recebeuDadoAtual = false; // Garante que a UI não mostre valores antigos
     connectionMessage = 'Desconectado';
     statusMessage = 'Conexão encerrada pelo usuário.';
+    _notify();
+  }
+
+  void setDeviceId(String id) {
+    deviceIdController.text = id;
+    _scheduleSettingsPersist();
     _notify();
   }
 
@@ -1140,6 +1161,7 @@ class MotorControlController extends ChangeNotifier {
   void _handleConnected() {
     isConnected = true;
     isBusy = false;
+    _recebeuDadoAtual = false;
     final MqttConnectionConfig? config = _service.activeConfig;
     if (config != null) {
       connectionMessage = 'Conectado em ${config.host}:${config.port}';
@@ -1150,6 +1172,7 @@ class MotorControlController extends ChangeNotifier {
   void _handleDisconnected({required bool manual}) {
     isBusy = false;
     isConnected = false;
+    _recebeuDadoAtual = false;
     _lastSeenByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
     _lastConnectedDevices = <String>{};
@@ -1169,6 +1192,7 @@ class MotorControlController extends ChangeNotifier {
 
   void _handleAutoReconnected() {
     isConnected = true;
+    _recebeuDadoAtual = false;
     statusMessage = 'Reconectado. Aguardando atualizacoes dos dispositivos...';
     _notify();
   }
@@ -1214,6 +1238,7 @@ class MotorControlController extends ChangeNotifier {
       return;
     }
 
+    _recebeuDadoAtual = true;
     _latestByDevice[deviceId] = sample;
     _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
@@ -2103,6 +2128,7 @@ class MotorControlController extends ChangeNotifier {
     brokerController.dispose();
     portController.dispose();
     clientIdController.dispose();
+    deviceIdController.dispose();
     usernameController.dispose();
     passwordController.dispose();
     topicPrefixController.dispose();

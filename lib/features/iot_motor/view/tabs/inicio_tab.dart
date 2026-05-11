@@ -17,8 +17,8 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
   _TelemetryPlot(
     id: 'voltage',
     group: _TelemetryGroup.eletrica,
-    label: 'Tens\u00e3o',
-    title: 'Tens\u00e3o',
+    label: 'Tensão',
+    title: 'Tensão',
     unit: 'V',
     color: AppTheme.voltageAccent,
     decimalDigits: 1,
@@ -38,7 +38,7 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
     id: 'power',
     group: _TelemetryGroup.eletrica,
     label: 'Ativa',
-    title: 'Pot\u00eancia ativa',
+    title: 'Ativa',
     unit: 'W',
     color: AppTheme.brandOrange,
     decimalDigits: 1,
@@ -48,7 +48,7 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
     id: 'apparent_power',
     group: _TelemetryGroup.eletrica,
     label: 'Aparente',
-    title: 'Pot\u00eancia aparente',
+    title: 'Aparente',
     unit: 'VA',
     color: AppTheme.brandMint,
     decimalDigits: 1,
@@ -58,7 +58,7 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
     id: 'reactive_power',
     group: _TelemetryGroup.eletrica,
     label: 'Reativa',
-    title: 'Pot\u00eancia reativa',
+    title: 'Reativa',
     unit: 'VAr',
     color: AppTheme.brandBlue,
     decimalDigits: 1,
@@ -78,7 +78,7 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
     id: 'power_factor',
     group: _TelemetryGroup.eletrica,
     label: 'FP',
-    title: 'Fator de pot\u00eancia',
+    title: 'FP',
     unit: '',
     color: AppTheme.online,
     decimalDigits: 2,
@@ -87,8 +87,8 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
   _TelemetryPlot(
     id: 'frequency',
     group: _TelemetryGroup.eletrica,
-    label: 'Frequ\u00eancia',
-    title: 'Frequ\u00eancia',
+    label: 'Freq.',
+    title: 'Freq.',
     unit: 'Hz',
     color: AppTheme.brandBlue,
     decimalDigits: 2,
@@ -97,8 +97,8 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
   _TelemetryPlot(
     id: 'vibration',
     group: _TelemetryGroup.mecanica,
-    label: 'Vibra\u00e7\u00e3o',
-    title: 'Vibra\u00e7\u00e3o',
+    label: 'Vibra.',
+    title: 'Vibra.',
     unit: 'g',
     color: AppTheme.vibrationAccent,
     decimalDigits: 3,
@@ -107,9 +107,9 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
   _TelemetryPlot(
     id: 'temperature',
     group: _TelemetryGroup.mecanica,
-    label: 'Temperatura',
-    title: 'Temperatura',
-    unit: '\u00b0C',
+    label: 'Temp.',
+    title: 'Temp.',
+    unit: '°C',
     color: AppTheme.temperatureAccent,
     decimalDigits: 1,
     readValue: (TelemetrySample sample) => sample.temperature,
@@ -861,17 +861,17 @@ class _InicioTabState extends State<InicioTab> {
             ButtonSegment<_TelemetryGroup>(
               value: _TelemetryGroup.grandezas,
               icon: Icon(Icons.speed_rounded, size: 16),
-              label: Text('Medi\u00e7\u00f5es'),
+              label: Text('Medições'),
             ),
             ButtonSegment<_TelemetryGroup>(
               value: _TelemetryGroup.eletrica,
               icon: Icon(Icons.electric_bolt_rounded, size: 16),
-              label: Text('El\u00e9trica'),
+              label: Text('Elétrica'),
             ),
             ButtonSegment<_TelemetryGroup>(
               value: _TelemetryGroup.mecanica,
               icon: Icon(Icons.sensors_rounded, size: 16),
-              label: Text('Mec\u00e2nica'),
+              label: Text('Mecânica'),
             ),
           ],
           style: ButtonStyle(
@@ -947,12 +947,17 @@ class _InicioTabState extends State<InicioTab> {
     required List<_TelemetryPlot> plots,
     required ValueChanged<String> onPlotChanged,
   }) {
+    final bool connected = widget.controller.isConnected;
+    final bool recebeuDadoAtual = widget.controller.recebeuDadoAtual;
+    final List<double> values = _seriesForPlot(plot);
+    // Só mostra valores se já recebeu dado novo na sessão atual
+    final List<double> sessionValues = (connected && recebeuDadoAtual) ? values : <double>[];
     return TelemetryChart(
       title: plot.title,
       color: plot.color,
-      values: _seriesForPlot(plot),
+      values: sessionValues,
       unit: plot.unit,
-      instantValue: sample == null ? null : plot.readValue(sample),
+      instantValue: (connected && recebeuDadoAtual && sample != null) ? plot.readValue(sample) : null,
       decimalDigits: plot.decimalDigits,
       chartHeight: plotHeight,
       titleWidget: _buildPlotTitleMenu(

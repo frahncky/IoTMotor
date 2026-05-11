@@ -47,7 +47,10 @@ Future<void> main(List<String> args) async {
   client.connectionMessage = MqttConnectMessage()
       .withClientIdentifier(clientId)
       .startClean()
-      .withWillQos(MqttQos.atMostOnce);
+      .withWillTopic(statusTopic)
+      .withWillMessage('offline')
+      .withWillRetain()
+      .withWillQos(MqttQos.atLeastOnce);
 
   stdout.writeln(
     'Conectando simulador ${config.deviceId} em ${config.host}:${config.port} '
@@ -93,8 +96,10 @@ Future<void> main(List<String> args) async {
     client.publishMessage(topic, qos, builder.payload!);
   }
 
-  void publishStatus(String value, {MqttQos qos = MqttQos.atMostOnce}) {
-    publishRaw(statusTopic, value, qos: qos);
+  void publishStatus(String value, {MqttQos qos = MqttQos.atMostOnce, bool retain = false}) {
+    final MqttClientPayloadBuilder builder =
+        MqttClientPayloadBuilder()..addString(value);
+    client.publishMessage(statusTopic, qos, builder.payload!, retain: retain);
   }
 
   void publishCommandStateTelemetry({required String origin}) {
@@ -322,7 +327,7 @@ Future<void> main(List<String> args) async {
   client.subscribe(requestCommandTopic, MqttQos.atLeastOnce);
   client.subscribe(directCommandTopic, MqttQos.atLeastOnce);
 
-  publishStatus('online', qos: MqttQos.atLeastOnce);
+  publishStatus('online', qos: MqttQos.atLeastOnce, retain: true);
   publishCapabilities();
 
   Future<void> stopSimulator(String reason) async {
@@ -332,7 +337,7 @@ Future<void> main(List<String> args) async {
     stdout.writeln(reason);
     client.autoReconnect = false;
     client.resubscribeOnAutoReconnect = false;
-    publishStatus('offline', qos: MqttQos.atLeastOnce);
+    publishStatus('offline', qos: MqttQos.atLeastOnce, retain: true);
     await Future<void>.delayed(const Duration(milliseconds: 80));
     await updatesSub?.cancel();
     client.disconnect();
@@ -412,7 +417,7 @@ class _SimConfig {
     final String clientId = (_readArg(args, 'client-id') ?? '').trim();
     final String? username = _readArg(args, 'username');
     final String? password = _readArg(args, 'password');
-    final bool onRequestOnly = args.contains('--on-request-only');
+    final bool onRequestOnly = !args.contains('--periodic');
     final bool acceptCommandRequests = !args.contains('--no-command-request');
     final bool acceptDirectCommands = !args.contains('--no-direct-command');
 
@@ -507,8 +512,9 @@ void _printUsage() {
   stdout.writeln(
     '  --count <n>             Envia n mensagens e encerra (0 = infinito)',
   );
+  stdout.writeln('  --periodic              Ativa o envio periódico de telemetria');
   stdout.writeln(
-    '  --on-request-only       Nao envia periodico; responde apenas requests',
+    '  --on-request-only       Não envia periódico (padrão); responde apenas requests',
   );
   stdout.writeln('  --no-command-request    Ignora request/command');
   stdout.writeln('  --no-direct-command     Ignora <prefix>/<device>/command');

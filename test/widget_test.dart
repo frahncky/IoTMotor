@@ -60,13 +60,13 @@ void main() {
 
     await tester.tap(find.text('Ativa'));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Pot\u00eancia ativa (W)'), findsOneWidget);
+    expect(find.text('Ativa (W)'), findsOneWidget);
 
     await tester.tap(find.text('Mec\u00e2nica'));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Vibra\u00e7\u00e3o (g)'), findsOneWidget);
     expect(find.text('Temperatura (\u00b0C)'), findsOneWidget);
-    expect(find.text('Pot\u00eancia ativa (W)'), findsNothing);
+    expect(find.text('Ativa (W)'), findsNothing);
 
     await tester.tap(find.text('Vibra\u00e7\u00e3o (g)'));
     await tester.pump();
@@ -103,10 +103,17 @@ void main() {
     expect(find.text('Nenhum alerta registrado.'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Armazenamento'), findsOneWidget);
-    expect(find.text('Alertas'), findsWidgets);
-    expect(find.text('Telemetria'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(find.widgetWithText(Tab, 'Conexão'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Perfis'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Armazenamento'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Alertas'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Telemetria'), findsOneWidget);
+    expect(find.text('Conexão MQTT'), findsOneWidget);
+    expect(find.text('Broker host'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.storage_rounded));
+    await tester.pump(const Duration(milliseconds: 900));
     expect(find.text('Local do app'), findsOneWidget);
     expect(find.text('Remoto no ESP32'), findsOneWidget);
     expect(find.text('Retenção local'), findsOneWidget);
@@ -119,8 +126,18 @@ void main() {
     expect(find.text('365 dias'), findsNothing);
     expect(find.text('Aplicar local'), findsOneWidget);
     expect(find.text('Aplicar no ESP32'), findsOneWidget);
+
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Alertas'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(find.widgetWithText(Tab, 'Alertas'));
+    await tester.pump(const Duration(milliseconds: 900));
     expect(find.text('Alertas de Telemetria'), findsOneWidget);
-    expect(find.text('Formato da Telemetria'), findsNothing);
+
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Telemetria'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(find.widgetWithText(Tab, 'Telemetria'));
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(find.text('Formato da Telemetria'), findsOneWidget);
   });
 
   testWidgets('medições não estouram em tela estreita', (
