@@ -27,10 +27,13 @@ jobs:
         run: |
           node --check dashboard-cloudflare/app.js
           node --check dashboard-cloudflare/dual-dashboard.js
+          node --check dashboard-cloudflare/hardware-mirror.js
       - name: Run dashboard tests
         run: node --test dashboard-cloudflare/app.test.cjs dashboard-cloudflare/dual-dashboard.test.cjs
       - name: Check static site files
         run: |
           test -s dashboard-cloudflare/index.html
+          test -s dashboard-cloudflare/hardware.html
           test -s dashboard-cloudflare/_headers
           grep -q 'dual-dashboard.js' dashboard-cloudflare/index.html
+          grep -q 'hardware-mirror.js' dashboard-cloudflare/hardware.html
