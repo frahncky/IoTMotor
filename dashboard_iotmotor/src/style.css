@@ -1,0 +1,344 @@
+/* Tokens em espelho de src/theme.js. O JS estiliza os graficos (Recharts pede
+   cor como valor); o CSS estiliza o chrome. Os dois leem os mesmos valores. */
+:root {
+  --bg:             #0F172A;
+  --surface:        #1B2336;
+  --surface-raised: #243049;
+  --border:         #24304A;
+  --border-strong:  #33415C;
+
+  --text:   #FFFFFF;
+  --muted:  #94A3B8;
+  --faint:  #64748B;
+
+  --accent:      #5EA8FC;
+  --accent-fill: #4C85CC;
+
+  --good: #34D399;
+  --warn: #FBBF24;
+  --bad:  #F87171;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button, input, select {
+  font-family: inherit;
+}
+
+button {
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ─── Botoes ───────────────────────────────────────────────────────────── */
+.primary-button,
+.secondary-button,
+.danger-button {
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 12px;
+}
+
+.primary-button {
+  background: var(--accent-fill);
+  border: 1px solid var(--accent-fill);
+  color: var(--bg);
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.secondary-button {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.secondary-button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.danger-button {
+  background: transparent;
+  border: 1px solid var(--bad);
+  color: var(--bad);
+}
+
+.danger-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 13%, transparent);
+}
+
+/* Comandos do motor: maiores, porque acionam maquina real. */
+.command-button {
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  min-height: 52px;
+  padding: 14px 22px;
+}
+
+.command-start {
+  background: var(--good);
+  border: 1px solid var(--good);
+  color: var(--bg);
+}
+
+.command-star {
+  background: var(--accent-fill);
+  border: 1px solid var(--accent-fill);
+  color: var(--bg);
+}
+
+.command-star:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.command-stop {
+  background: var(--bad);
+  border: 1px solid var(--bad);
+  color: var(--bg);
+}
+
+.command-start:hover:not(:disabled),
+.command-stop:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+/* ─── Motivos da referencia ────────────────────────────────────────────── */
+
+/* Titulo em dois tons: destaque em azul, complemento em branco. */
+.bp-title {
+  font-size: 26px;
+  font-weight: 800;
+  margin: 0;
+  line-height: 1.15;
+}
+
+.bp-title .bp-title-accent {
+  color: var(--accent);
+}
+
+/* Etiqueta superior, em caixa alta e com rastreio largo. */
+.bp-eyebrow {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+/* Cabecalho com a malha tecnica ao fundo, como na peca de referencia. */
+.bp-header {
+  margin-bottom: 24px;
+  overflow: hidden;
+  padding: 4px 0 2px;
+  position: relative;
+}
+
+.bp-header-art {
+  inset: -18px 0 auto auto;
+  opacity: 0.5;
+  pointer-events: none;
+  position: absolute;
+  width: 320px;
+}
+
+/* Selo de icone com circunferencia tracejada. */
+.bp-badge {
+  align-items: center;
+  color: var(--accent);
+  display: inline-grid;
+  flex: none;
+  height: 34px;
+  justify-items: center;
+  position: relative;
+  width: 34px;
+}
+
+.bp-badge > svg,
+.bp-badge > .bp-badge-glyph {
+  grid-area: 1 / 1;
+}
+
+.bp-badge > svg {
+  height: 100%;
+  width: 100%;
+}
+
+.bp-badge-glyph {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* Cabecalho de secao: selo + rotulo + regua que preenche a linha. */
+.bp-section {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+
+.bp-section-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.bp-section-rule {
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+  flex: 1;
+  height: 1px;
+}
+
+/* ─── Grades ───────────────────────────────────────────────────────────── */
+.metric-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.connection-row {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(230px, 2fr) minmax(140px, 1fr) minmax(100px, 0.7fr) minmax(100px, 0.7fr) auto;
+}
+
+.connection-actions {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-settings-row {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-pair {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.live-chart-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.command-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.status-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.status-log {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+
+.status-log-line {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.state-banner {
+  align-items: center;
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 20px 22px;
+}
+
+.state-value {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 900px) {
+  .connection-row,
+  .alert-settings-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bp-header-art {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .connection-row,
+  .alert-settings-row,
+  .settings-pair,
+  .live-chart-grid,
+  .metric-grid,
+  .command-row {
+    grid-template-columns: 1fr;
+  }
+
+  .status-row > span:last-child {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  .bp-title {
+    font-size: 22px;
+  }
+}

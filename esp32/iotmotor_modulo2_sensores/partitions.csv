@@ -1,0 +1,16 @@
+# Modulo 2 — ESP32-S3 DevKitC-1 N8R2 (8 MB), dois slots de OTA.
+#
+# O historico vai para o cartao SD (externo) e a retencao para a NVS, que ocupa
+# poucos bytes. Nao ha sistema de arquivos na flash interna, entao os slots de
+# aplicacao ficam com quase tudo: 3,94 MB cada.
+#
+# Essa folga e deliberada: o algoritmo de aprendizado de maquina previsto para
+# este modulo adiciona o runtime do TFLite Micro e o modelo ao binario. Mesmo
+# dobrando o tamanho atual, sobra espaco no slot.
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x3F0000,
+app1,       app,  ota_1,    0x400000, 0x3F0000,
+coredump,   data, coredump, 0x7F0000, 0x10000,

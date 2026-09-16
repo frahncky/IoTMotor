@@ -1,0 +1,24 @@
+{
+  "name": "iotmotor-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "test": "node --test src/services/mqttService.test.js src/utils.test.js",
+    "preview": "vite preview",
+    "build:cloudflare": "vite build",
+    "deploy:cloudflare": "npm run build:cloudflare && npx wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "mqtt": "^5.15.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.2.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "vite": "^7.1.14"
+  }
+}

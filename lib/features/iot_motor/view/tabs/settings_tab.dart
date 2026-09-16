@@ -5,10 +5,12 @@ import '../../../../app/providers/esp_local_comm_provider.dart';
 import '../../../../app/providers/mqtt_profiles_provider.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
+import '../../models/esp_local_status.dart';
 import '../../models/mqtt_connection_config.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/mqtt_settings_validators.dart';
 import '../widgets/delayed_reveal.dart';
+import '../widgets/esp_provision_sheet.dart';
 import '../widgets/glass_panel.dart';
 
 enum _RetentionUnit { days, months, years }
@@ -332,6 +334,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                             ? 'Testando...'
                             : 'Testar comunicação local',
                       ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => _abrirProvisionamento(),
+                      icon: const Icon(Icons.settings_ethernet_rounded),
+                      label: const Text('Provisionar módulo'),
                     ),
                   ],
                 ),
@@ -1095,6 +1102,19 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     await controller.connect();
   }
 
+  Future<void> _abrirProvisionamento() async {
+    final String ip = _espIpController.text.trim();
+    if (ip.isEmpty) {
+      _showSnackBar('Informe o IP do ESP32.');
+      return;
+    }
+
+    final String? mensagem = await EspProvisionSheet.show(context, espHost: ip);
+    if (mensagem != null && mounted) {
+      _showSnackBar(mensagem);
+    }
+  }
+
   Future<void> _testLocalCommunication(WidgetRef ref) async {
     final String ip = _espIpController.text.trim();
     if (ip.isEmpty) {
@@ -1107,18 +1127,18 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     });
 
     try {
-      final response = await ref
+      // O /health identifica o módulo e a versão; é mais informativo que a
+      // varredura de redes que este botão chamava antes.
+      final EspHealth health = await ref
           .read(espLocalCommProvider)
-          .getWifiNetworks(espHost: ip);
+          .fetchHealth(espHost: ip);
       if (!mounted) {
         return;
       }
 
-      if (response.statusCode == 200) {
-        _showSnackBar('Comunicação local com ESP32 OK.');
-      } else {
-        _showSnackBar('Falha ao comunicar: HTTP ${response.statusCode}.');
-      }
+      _showSnackBar(
+        'Conectado a ${health.deviceId} · firmware ${health.firmwareVersion}.',
+      );
     } catch (error) {
       if (mounted) {
         _showSnackBar('Erro na comunicação local: $error');

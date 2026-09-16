@@ -1,0 +1,16 @@
+# Modulo 1 — ESP32 DevKit V1 (4 MB), dois slots de OTA.
+#
+# O modulo nao usa sistema de arquivos na flash interna: nao ha SPIFFS nem
+# LittleFS no firmware. Por isso o espaco que os esquemas padrao do Arduino
+# reservariam para SPIFFS (1,4 MB) foi para os slots de aplicacao, que passam
+# de 1,25 MB para 1,94 MB cada.
+#
+# Arduino IDE: Ferramentas > Esquema de Particao > "Custom" e copie este arquivo
+# como partitions.csv na pasta do sketch.
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x5000,
+otadata,    data, ota,      0xe000,   0x2000,
+app0,       app,  ota_0,    0x10000,  0x1F0000,
+app1,       app,  ota_1,    0x200000, 0x1F0000,
+coredump,   data, coredump, 0x3F0000, 0x10000,

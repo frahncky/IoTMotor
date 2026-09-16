@@ -94,7 +94,7 @@ class MqttProfilesNotifier extends StateNotifier<MqttProfilesState> {
     id: 'default',
     name: 'Dispositivo principal',
     config: MqttConnectionConfig(
-      host: 'broker.hivemq.com',
+      host: 'test.mosquitto.org',
       port: 1883,
       clientId: 'motor_app',
       topicPrefix: 'iotmotor',

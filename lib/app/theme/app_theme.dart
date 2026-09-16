@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-enum AppVisualVariant { modern, industrial }
+enum AppVisualVariant { modern, industrial, blueprint }
 
 class AppTheme {
-  static const AppVisualVariant activeVariant = AppVisualVariant.industrial;
+  // Troque esta linha para voltar a variante anterior: nada mais depende dela.
+  static const AppVisualVariant activeVariant = AppVisualVariant.blueprint;
 
   static const _AppPalette _modernPalette = _AppPalette(
     brandBlue: Color(0xFF1F8BA5),
@@ -62,9 +63,47 @@ class AppTheme {
     ),
   );
 
+  /// Paleta "blueprint": fundo naval, azul de destaque e texto branco.
+  ///
+  /// As cores de superficie, texto e destaque foram amostradas de uma peca de
+  /// referencia (fundo #0F172A, azul de titulo #5EA8FC, azul das formas
+  /// solidas #4C85CC). Os acentos de grandeza vem da mesma rampa categorica
+  /// usada no dashboard web, para que app e painel falem a mesma lingua visual.
+  ///
+  /// Observacao sobre os nomes: `brandMint` e o slot de acento primario desta
+  /// classe, nao um tom de menta — nas outras variantes ele ja guarda um verde
+  /// (modern) e um amarelo (industrial). Aqui guarda o azul de preenchimento.
+  static const _AppPalette _blueprintPalette = _AppPalette(
+    brandBlue: Color(0xFF5EA8FC),
+    brandMint: Color(0xFF4C85CC),
+    brandOrange: Color(0xFFFBBF24),
+    surfaceSoft: Color(0xFF1B2336),
+    background: Color(0xFF0F172A),
+    ink: Color(0xFFFFFFFF),
+    inkSoft: Color(0xFFCBD5E1),
+    bodySoft: Color(0xFF94A3B8),
+    labelSoft: Color(0xFF94A3B8),
+    inputBorder: Color(0xFF33415C),
+    navMuted: Color(0xFF94A3B8),
+    switchOffTrack: Color(0xFF33415C),
+    online: Color(0xFF34D399),
+    offline: Color(0xFFF87171),
+    danger: Color(0xFFF87171),
+    voltageAccent: Color(0xFF3987E5),
+    currentAccent: Color(0xFFD95926),
+    vibrationAccent: Color(0xFF3987E5),
+    temperatureAccent: Color(0xFFD95926),
+    backgroundGradient: LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: <Color>[Color(0xFF0F172A), Color(0xFF142039), Color(0xFF0F172A)],
+      stops: <double>[0, 0.55, 1],
+    ),
+  );
+
   static ThemeData light() {
     final _AppPalette palette = _paletteFor(activeVariant);
-    final bool isDark = activeVariant == AppVisualVariant.industrial;
+    final bool isDark = activeVariant != AppVisualVariant.modern;
     final Color iconBaseColor =
         isDark ? palette.ink.withValues(alpha: 0.96) : palette.inkSoft;
     final Color iconMutedColor =
@@ -300,6 +339,8 @@ class AppTheme {
         return _modernPalette;
       case AppVisualVariant.industrial:
         return _industrialPalette;
+      case AppVisualVariant.blueprint:
+        return _blueprintPalette;
     }
   }
 

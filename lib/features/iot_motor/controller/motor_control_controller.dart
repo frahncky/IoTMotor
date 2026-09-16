@@ -21,7 +21,7 @@ class MotorControlController extends ChangeNotifier {
   MotorControlController({MqttMotorService? service, bool loadSettings = true})
     : _service = service ?? MqttMotorService() {
     // ...existing code for controllers...
-    brokerController = TextEditingController(text: 'broker.hivemq.com');
+    brokerController = TextEditingController(text: 'test.mosquitto.org');
     portController = TextEditingController(text: '1883');
     clientIdController = TextEditingController(
       text: 'motor_app_${DateTime.now().millisecondsSinceEpoch % 100000}',

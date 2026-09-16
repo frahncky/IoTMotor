@@ -33,7 +33,7 @@ class MotorAppSettings {
 
   factory MotorAppSettings.initial() {
     return const MotorAppSettings(
-      broker: 'broker.hivemq.com',
+      broker: 'test.mosquitto.org',
       port: '1883',
       clientId: 'motor_app',
       topicPrefix: 'iotmotor',
