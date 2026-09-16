@@ -1,0 +1,230 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #121719;
+}
+
+button, input, select {
+  font-family: inherit;
+}
+
+button {
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #79aeb9;
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button {
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 12px;
+}
+
+.primary-button {
+  background: #c5a16c;
+  border: 1px solid #c5a16c;
+  color: #121719;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: #d1b27f;
+}
+
+.secondary-button {
+  background: transparent;
+  border: 1px solid #3b474a;
+  color: #d7dfdd;
+}
+
+.secondary-button:hover:not(:disabled) {
+  border-color: #879593;
+}
+
+.danger-button {
+  background: transparent;
+  border: 1px solid #d17a76;
+  color: #efaaa5;
+}
+
+.danger-button:hover:not(:disabled) {
+  background: #d17a7622;
+}
+
+/* Botoes de comando do motor: maiores, porque acionam maquina real. */
+.command-button {
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  min-height: 52px;
+  padding: 14px 22px;
+}
+
+.command-start {
+  background: #7eae90;
+  border: 1px solid #7eae90;
+  color: #121719;
+}
+
+.command-start:hover:not(:disabled) {
+  background: #93c2a4;
+}
+
+.command-star {
+  background: #79aeb9;
+  border: 1px solid #79aeb9;
+  color: #121719;
+}
+
+.command-star:hover:not(:disabled) {
+  background: #8fc3ce;
+}
+
+.command-stop {
+  background: #d17a76;
+  border: 1px solid #d17a76;
+  color: #121719;
+}
+
+.command-stop:hover:not(:disabled) {
+  background: #e08e8a;
+}
+
+.command-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 16px;
+}
+
+.metric-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.connection-row {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(230px, 2fr) minmax(140px, 1fr) minmax(100px, 0.7fr) minmax(100px, 0.7fr) auto;
+}
+
+.connection-actions {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.alert-settings-row {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-pair {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.live-chart-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.status-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.device-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.status-log {
+  background: #121719;
+  border: 1px solid #2b3538;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+
+.status-log-line {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.state-banner {
+  align-items: center;
+  border-radius: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: space-between;
+  padding: 20px 22px;
+}
+
+.state-value {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 900px) {
+  .connection-row,
+  .alert-settings-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .connection-row,
+  .alert-settings-row,
+  .settings-pair,
+  .live-chart-grid,
+  .device-grid,
+  .metric-grid,
+  .command-row {
+    grid-template-columns: 1fr;
+  }
+
+  .status-row > span:last-child {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+}

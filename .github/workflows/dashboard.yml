@@ -1,0 +1,48 @@
+name: Dashboard
+
+on:
+  push:
+    paths:
+      - 'dashboard_iotmotor/**'
+      - '.github/workflows/dashboard.yml'
+  pull_request:
+    paths:
+      - 'dashboard_iotmotor/**'
+      - '.github/workflows/dashboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dashboard:
+    name: Testes e build do dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: dashboard_iotmotor
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: dashboard_iotmotor/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build dashboard
+        run: npm run build

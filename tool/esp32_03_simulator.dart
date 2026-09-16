@@ -6,7 +6,7 @@ import 'dart:math';
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 
-const String _defaultHost = 'broker.hivemq.com';
+const String _defaultHost = 'test.mosquitto.org';
 const int _defaultPort = 1883;
 const String _defaultTopicPrefix = 'iotmotor';
 const String _defaultDeviceId = 'esp32-03';

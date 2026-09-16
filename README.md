@@ -7,11 +7,15 @@ Aplicativo Flutter para controle e monitoramento de motores via MQTT.
 O sistema e composto por dois modulos ESP32 que dividem os papeis e conversam
 pelo mesmo broker MQTT que o aplicativo.
 
-Os modulos **nao servem pagina web**. A interface e uma so - este projeto Flutter -
-compilada para web (`flutter build web`) e para o celular (`flutter build apk`);
-as duas falam com o broker, nao com o ESP32. O que existe no modulo e apenas
-sinalizacao para quem esta junto da bancada: LCD 20x4 no Modulo 1, LED RGB e
-buzzer no Modulo 2.
+Os modulos **nao servem pagina web**. Existem duas interfaces, e as duas falam
+com o broker, nunca com o ESP32:
+
+- **Aplicativo** — o projeto Flutter deste repositorio (Android, iOS e desktop);
+- **Dashboard web** — `dashboard_iotmotor/`, em React + Vite, publicado no
+  Cloudflare Pages.
+
+O que existe no modulo e apenas sinalizacao para quem esta junto da bancada:
+LCD 20x4 no Modulo 1, LED RGB e buzzer no Modulo 2.
 
 | | Modulo 1 | Modulo 2 |
 | --- | --- | --- |
@@ -32,14 +36,15 @@ dois sketches acima sao os de hardware real.
 ### Fluxo
 
 ```
-   app (celular)  ─┐
-                   ├─►  broker MQTT  ─┬─►  Modulo 1 (esp32-01)  ──► contatores ──► MOTOR
-   app (web)  ─────┘                  │         ▲                                    │
-                                      │         │ vibracao / temperatura             │
-                                      └─►  Modulo 2 (esp32-02)  ◄────── sensores ────┘
+   app Flutter        ──┐  TCP 1883
+                        ├─►  broker MQTT  ─┬─►  Modulo 1 (esp32-01) ─► contatores ─► MOTOR
+   dashboard web (SPA)──┘  WSS 8081        │         ▲                                │
+                                           │         │ vibracao / temperatura         │
+                                           └─►  Modulo 2 (esp32-02) ◄──── sensores ───┘
 ```
 
-Mesmo cliente Flutter nos dois casos; muda so o alvo de compilacao.
+O firmware publica em TCP puro; o navegador nao abre socket TCP, entao o
+dashboard assina os mesmos topicos pelo listener WebSocket seguro do broker.
 
 O Modulo 1 assina `iotmotor/esp32-02/telemetry` e usa vibracao e temperatura como
 **protecao cruzada**: acima dos limites configurados ele abre os contatores e
@@ -65,6 +70,23 @@ O Modulo 1 usa quatro reles e uma maquina de estados nao bloqueante:
 K2 e K3 nunca sao fechados ao mesmo tempo: o intertravamento e aplicado dentro de
 `aplicarContatores()` e tambem na rota `/rele`, que so aceita comandos avulsos com
 o motor parado.
+
+## Interfaces
+
+### Aplicativo Flutter
+
+Android, iOS e desktop. Conecta por MQTT sobre TCP (`MqttServerClient`), guarda
+historico local, exporta CSV/PDF e emite alertas. E o cliente completo.
+
+### Dashboard web
+
+`dashboard_iotmotor/` — React + Vite, publicado no **Cloudflare Pages**. Conecta
+por MQTT sobre WebSocket seguro (`wss://`), que e obrigatorio numa pagina servida
+em HTTPS. Tres abas: Monitoramento, Acionamento e Configuracoes.
+
+Nao e o app Flutter compilado para web: `MqttServerClient` depende de `dart:io`
+e nao roda no navegador. O dashboard e um cliente separado que fala o mesmo
+protocolo. Detalhes de deploy em [`dashboard_iotmotor/README.md`](dashboard_iotmotor/README.md).
 
 ## Mapa de topicos MQTT
 
@@ -111,6 +133,16 @@ Ajuste no topo de cada sketch: `WIFI_SSID`, `WIFI_PASSWORD`, `MQTT_HOST`,
 `MQTT_PORT`, credenciais do broker e `TOPIC_PREFIX`. Em `iotmotor_modulo1_acionamento`
 confira ainda `RELE_ATIVO_EM_NIVEL_BAIXO` (muitos modulos de rele prontos acionam
 em nivel baixo) e os limites das protecoes.
+
+O broker padrao dos tres clientes e `test.mosquitto.org` — publico, sem
+autenticacao. Ele foi escolhido por ter listener WebSocket seguro documentado na
+porta 8081, sem o qual o dashboard em HTTPS nao conecta. Para trocar de broker,
+mude nos tres lugares: `MQTT_HOST` nos dois sketches, o broker padrao do app
+Flutter e a URL no painel web.
+
+> **Atencao:** num broker publico qualquer pessoa que descubra o prefixo de
+> topicos pode publicar em `iotmotor/esp32-01/command` e partir o motor. Para uso
+> alem da bancada, use um broker com usuario, senha e TLS.
 
 Bibliotecas necessarias: PubSubClient, ArduinoJson 6.x, PZEM004Tv30, LiquidCrystal
 I2C, OneWire e DallasTemperature.

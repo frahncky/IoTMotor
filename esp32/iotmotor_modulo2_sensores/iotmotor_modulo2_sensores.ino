@@ -65,7 +65,7 @@ static const unsigned long INTERVALO_RECONEXAO_WIFI = 10000UL;
 // -----------------------------------------------------------------------------
 // MQTT - mesmo contrato usado pelo aplicativo Flutter
 // -----------------------------------------------------------------------------
-static const char*    MQTT_HOST = "broker.hivemq.com";
+static const char*    MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 1883;
 static const char*    MQTT_USER = "";
 static const char*    MQTT_PASS = "";
