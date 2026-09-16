@@ -2,12 +2,16 @@ name: Firmware
 
 on:
   push:
+    # So o branch padrao: num branch de PR o gatilho pull_request ja cobre, e
+    # os dois juntos disparavam o mesmo job duas vezes por push.
+    branches: [main]
     paths:
       - 'esp32/**'
       - '.github/workflows/firmware.yml'
   pull_request:
     paths:
       - 'esp32/**'
+      - '.github/workflows/firmware.yml'
   # Uma tag v* compila e publica os binarios como release.
   create:
   workflow_dispatch:
@@ -114,13 +118,19 @@ jobs:
           sys.exit(1 if falhou else 0)
           PY
 
+      # O portao de verdade e a compilacao com a conferencia de tamanho acima;
+      # este passo e conveniencia. Sobe so as imagens de aplicacao (o `*.bin`
+      # anterior levava tambem bootloader, tabela e .elf, oito arquivos) e nao
+      # derruba o job: a cota de artefato e da conta, nao um defeito do codigo.
       - name: Publica os binarios como artefato
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: iotmotor-firmware
           path: |
-            build/modulo1/*.bin
-            build/modulo2/*.bin
+            build/modulo1/iotmotor_modulo1_acionamento.ino.bin
+            build/modulo2/iotmotor_modulo2_sensores.ino.bin
+          retention-days: 14
           if-no-files-found: error
 
       - name: Anexa os binarios ao release da tag

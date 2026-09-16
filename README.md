@@ -258,10 +258,17 @@ OTA exige dois slots de aplicacao: o firmware roda em um enquanto o outro
 recebe a imagem. Cada sketch traz o seu `partitions.csv`; na IDE, selecione
 Ferramentas > Esquema de Particao > **Custom**.
 
-| | Flash | Slot de OTA | Sobra para o binario atual |
-|---|---|---|---|
-| Modulo 1 | 4 MB | 1,94 MB cada | confortavel |
-| Modulo 2 | 8 MB | 3,94 MB cada | espaco para o TFLite Micro e o modelo |
+Tamanhos medidos na compilacao do CI (core esp32 3.3.11), nao estimados:
+
+| | Flash | Slot de OTA | Binario atual | Ocupacao |
+|---|---|---|---|---|
+| Modulo 1 | 4 MB | 1,94 MB cada | 1.235.952 B | 60,8% |
+| Modulo 2 | 8 MB | 3,94 MB cada | 1.286.160 B | 31,2% |
+
+O Modulo 2 usa menos de um terco do slot: o runtime do TFLite Micro e o modelo
+previstos para ele cabem com folga para mais que dobrar. O workflow refaz essa
+conta a cada compilacao e reprova se o binario nao couber, avisando acima de
+85%.
 
 Nenhum dos dois usa sistema de arquivos na flash interna — o Modulo 2 grava no
 SD e usa NVS para a retencao — entao o espaco que os esquemas padrao dariam ao

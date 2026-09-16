@@ -2,6 +2,8 @@ name: Dashboard
 
 on:
   push:
+    # So o branch padrao: evita duas execucoes por push num branch de PR.
+    branches: [main]
     paths:
       - 'dashboard_iotmotor/**'
       - '.github/workflows/dashboard.yml'
