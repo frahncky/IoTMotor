@@ -1,0 +1,27 @@
+name: Compile ESP32 commands firmware
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'esp32/iotmotor_esp32/iotmotor_esp32_comandos/**'
+      - '.github/workflows/esp32-compile.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 board core
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.2.1 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      - name: Install firmware libraries
+        run: |
+          arduino-cli lib install 'PZEM004Tv30@1.2.1' 'LiquidCrystal I2C' 'PubSubClient' 'ArduinoJson@6.21.5'
+      - name: Compile four-relay ESP32 firmware
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32 esp32/iotmotor_esp32/iotmotor_esp32_comandos
