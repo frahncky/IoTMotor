@@ -1,218 +1,699 @@
-/* IoTMotor — ESP32-01: modulo de comandos e medicao eletrica com PZEM-004T v3.
- * Este sketch de UM rele e destinado apenas a ensaios com motor DESCONECTADO.
- * Broker MQTT publico nao autentica comandos. GPIO32 aterrado por jumper local
- * habilita exclusivamente o teste da saida GPIO2. Remover o jumper ou perder
- * conectividade desliga a saida. NAO substitui intertravamentos/protecao fisica.
- * Partida estrela-triangulo e recusada: requer contatores e intertravamento.
- * PZEM TX -> GPIO16 (RX2); PZEM RX -> GPIO17 (TX2); GND comum; alimente o
- * modulo segundo as especificacoes do fabricante e com seguranca eletrica.
- * REAIS por padrao; DEMO_MODE=1 permite testar graficos com simulacao marcada.
- * Bibliotecas: PubSubClient, ArduinoJson 6.x, PZEM004Tv30.
- */
-#define DEMO_MODE 0
+/*
+  Módulo 1 — ESP32 DevKit V1
+  Fonte: sketch v6 funcional fornecido pelo autor; acrescenta espelho MQTT SOMENTE LEITURA.
+  Web local, PZEM-004T v3/v4, LCD I2C 20x4 e 4 reles.
+  Nao aceita comandos MQTT no broker publico; /rele so funciona na rede local.
+  O estado MQTT dos pinos e LOGICO, nao feedback de contator.
+
+  Correções em relação à v5:
+    1.  PZEM deixou de ser objeto global (Serial2.begin() era chamado antes do
+        boot do core). Agora é criado dentro do setup().
+    2.  lerPzem() aborta na primeira leitura inválida, evitando até 6 timeouts
+        seriais encadeados travando o loop por mais de 1 s.
+    3.  Relés não dão mais pulso indesejado no boot (nível é escrito antes de
+        pinMode(OUTPUT)).
+    4.  LCD não é mais atualizado de dentro do handler HTTP (I2C lento dentro
+        da resposta). Usa-se um pedido de atualização.
+    5.  LCD só reescreve linhas que realmente mudaram — acabou o flicker.
+    6.  Linha 2 do LCD reformatada para caber em 20 colunas.
+    7.  manterWifi() não briga mais com setAutoReconnect() e trata o estado
+        anterior corretamente.
+
+  Bibliotecas:
+    - PZEM004Tv30 (Jakub Mandula) — versão 1.1.2 ou superior
+    - LiquidCrystal I2C (Frank de Brabander)
+    - WiFi, WebServer e ESPmDNS (incluídas no core ESP32)
+
+  Ligações:
+    PZEM TX  -> ESP32 GPIO16 (RX2)
+    PZEM RX  -> ESP32 GPIO17 (TX2)
+    PZEM VCC -> ESP32 5V/VIN
+    PZEM GND -> ESP32 GND
+
+    LCD SDA  -> GPIO21
+    LCD SCL  -> GPIO22
+
+    Relé 1   -> GPIO19
+    Relé 2   -> GPIO18
+    Relé 3   -> GPIO23
+    Relé 4   -> GPIO27
+
+  Dashboard:
+    http://<IP-do-ESP32>/
+    http://modulo1.local/   (se mDNS funcionar na rede)
+*/
+
 #include <WiFi.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <PZEM004Tv30.h>
+#include <math.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <math.h>
-#if !DEMO_MODE
-#include <PZEM004Tv30.h>
-#endif
 
-static const char* WIFI_SSID = "IFMA_IOT";
-static const char* WIFI_PASS = ""; // rede aberta
+// -----------------------------------------------------------------------------
+// Wi-Fi
+// -----------------------------------------------------------------------------
+const char* WIFI_SSID     = "IFMA_IOT";
+const char* WIFI_PASSWORD = "";
+const char* NOME_MDNS     = "modulo1";
+
+const unsigned long TEMPO_MAX_CONEXAO_WIFI   = 15000UL;
+const unsigned long INTERVALO_RECONEXAO_WIFI = 10000UL;
+unsigned long ultimaTentativaWifi = 0;
+bool mdnsAtivo = false;
+
+// -----------------------------------------------------------------------------
+// Relés
+// -----------------------------------------------------------------------------
+constexpr uint8_t NUM_RELES = 4;
+const uint8_t PINOS_RELES[NUM_RELES] = {19, 18, 23, 27};
+bool estadoReles[NUM_RELES] = {false, false, false, false};
+
+// Ajuste conforme o seu módulo de relé:
+// false -> HIGH liga o relé
+// true  -> LOW liga o relé (muito comum em módulos prontos com optoacoplador)
+const bool RELE_ATIVO_EM_NIVEL_BAIXO = false;
+
+constexpr uint8_t nivelLigado()    { return RELE_ATIVO_EM_NIVEL_BAIXO ? LOW : HIGH; }
+constexpr uint8_t nivelDesligado() { return RELE_ATIVO_EM_NIVEL_BAIXO ? HIGH : LOW; }
+
+// -----------------------------------------------------------------------------
+// LCD I2C 20x4
+// -----------------------------------------------------------------------------
+constexpr uint8_t LCD_ENDERECO = 0x27;
+constexpr uint8_t LCD_COLUNAS  = 20;
+constexpr uint8_t LCD_LINHAS   = 4;
+constexpr uint8_t LCD_SDA      = 21;
+constexpr uint8_t LCD_SCL      = 22;
+LiquidCrystal_I2C lcd(LCD_ENDERECO, LCD_COLUNAS, LCD_LINHAS);
+
+// Cache do conteúdo mostrado, para reescrever só o que mudou.
+char lcdCache[LCD_LINHAS][LCD_COLUNAS + 1];
+
+// -----------------------------------------------------------------------------
+// PZEM-004T
+// -----------------------------------------------------------------------------
+constexpr uint8_t PZEM_RX_PIN = 16;   // pino de RECEPÇÃO do ESP32 (vai no TX do PZEM)
+constexpr uint8_t PZEM_TX_PIN = 17;   // pino de TRANSMISSÃO do ESP32 (vai no RX do PZEM)
+const bool PZEM_HABILITADO = true;
+
+// Criado no setup(): construir globalmente faz a biblioteca chamar
+// Serial2.begin() durante a inicialização dos objetos estáticos, antes de o
+// core do ESP32 estar pronto.
+PZEM004Tv30* pzem = nullptr;
+
+float ultimaTensao        = 0.0f;
+float ultimaCorrente      = 0.0f;
+float ultimaPotencia      = 0.0f;
+float ultimaEnergia       = 0.0f;
+float ultimaFrequencia    = 0.0f;
+float ultimoFatorPotencia = 0.0f;
+bool pzemOk = false;
+
+unsigned long ultimaLeituraPzem = 0;
+const unsigned long INTERVALO_LEITURA_PZEM = 3000UL;
+
+unsigned long ultimaAtualizacaoLcd = 0;
+const unsigned long INTERVALO_LCD = 1000UL;
+volatile bool lcdPrecisaAtualizar = false;
+
+// MQTT exclusivamente para espelhar telemetria. Nenhuma assinatura de comandos.
 static const char* MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 1883;
-static const char* TOPIC_PREFIX = "iotmotor";
 static const char* DEVICE_ID = "esp32-01";
-static const uint8_t PIN_TEST_OUTPUT = 2;
-static const uint8_t PIN_BENCH_ARM = 32; // jumper GPIO32 -> GND; NUNCA aplicar tensao externa
-static const unsigned long MQTT_RETRY_MS = 4000UL;
-static const unsigned long WIFI_RETRY_MS = 12000UL;
-static const unsigned long TELEMETRY_MS = 1000UL;
-static const unsigned long PZEM_POLL_MS = 3000UL;
+WiFiClient mqttTransport;
+PubSubClient mqttClient(mqttTransport);
+static const unsigned long MQTT_RETRY_MS = 6000UL;
+static const unsigned long MQTT_PUBLISH_MS = 1000UL;
+unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
+uint32_t sequenciaMqtt = 0;
+char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
 
-WiFiClient wifiClient;
-PubSubClient mqtt(wifiClient);
-char telemetryTopic[96], statusTopic[96], commandTopic[96], capabilitiesTopic[96];
-unsigned long lastWifiAttempt = 0, lastMqttAttempt = 0, lastTelemetry = 0, lastPzemPoll = 0;
-bool outputEnabled = false, pzemOk = false;
-String currentMode = "manual_stop";
-uint32_t sequence = 0;
+// -----------------------------------------------------------------------------
+// Servidor web
+// -----------------------------------------------------------------------------
+WebServer server(80);
 
-struct ElectricalReading {
-  float voltage = NAN, current = NAN, power = NAN;
-  float pf = NAN, frequency = NAN, energy = NAN;
-} electrical;
-#if !DEMO_MODE
-PZEM004Tv30* pzem = nullptr;
-#else
-float demoPhase = 0.0f, demoEnergy = 0.0f;
-#endif
+const char INDEX_HTML[] PROGMEM = R"====(
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Módulo 1 - Painel</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#111827; color:#f3f4f6; margin:0; padding:20px; }
+  h1 { font-size:20px; margin-bottom:4px; }
+  .sub { font-size:13px; margin-bottom:20px; }
+  .status-ok { color:#22c55e; }
+  .status-off { color:#f59e0b; }
+  .cartao { background:#1f2937; border-radius:10px; padding:16px; margin-bottom:16px; }
+  .grade { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .medida { background:#111827; border-radius:8px; padding:10px; text-align:center; }
+  .medida .valor { font-size:20px; font-weight:bold; }
+  .medida .rotulo { font-size:12px; color:#9ca3af; }
+  .rele { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #374151; }
+  .rele:last-child { border-bottom:none; }
+  button { border:none; border-radius:6px; padding:8px 16px; font-size:14px; font-weight:bold; cursor:pointer; }
+  button:disabled { opacity:0.5; cursor:wait; }
+  .btn-on { background:#16a34a; color:white; }
+  .btn-off { background:#dc2626; color:white; }
+</style>
+</head>
+<body>
+  <h1>Módulo 1 — Relés e PZEM</h1>
+  <div class="sub" id="statusPzem">Carregando...</div>
 
-bool benchArmed() { return digitalRead(PIN_BENCH_ARM) == LOW; }
-void off() {
-  digitalWrite(PIN_TEST_OUTPUT, LOW);
-  outputEnabled = false;
-  currentMode = "manual_stop";
+  <div class="cartao">
+    <div class="grade">
+      <div class="medida"><div class="valor" id="vTensao">--</div><div class="rotulo">Tensão (V)</div></div>
+      <div class="medida"><div class="valor" id="vCorrente">--</div><div class="rotulo">Corrente (A)</div></div>
+      <div class="medida"><div class="valor" id="vPotencia">--</div><div class="rotulo">Potência (W)</div></div>
+      <div class="medida"><div class="valor" id="vEnergia">--</div><div class="rotulo">Energia (kWh)</div></div>
+      <div class="medida"><div class="valor" id="vFrequencia">--</div><div class="rotulo">Frequência (Hz)</div></div>
+      <div class="medida"><div class="valor" id="vFP">--</div><div class="rotulo">Fator de potência</div></div>
+    </div>
+  </div>
+
+  <div class="cartao" id="listaReles"></div>
+
+<script>
+var ocupado = false;
+var estadoAtualReles = null;
+
+function texto(id, valor) { document.getElementById(id).innerText = valor; }
+
+async function atualizar() {
+  if (ocupado) return;
+  try {
+    const resp = await fetch('/dados', { cache: 'no-store' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    const dados = await resp.json();
+    const statusEl = document.getElementById('statusPzem');
+
+    statusEl.innerText = dados.pzem_ok
+      ? 'PZEM conectado'
+      : 'PZEM sem leitura (verifique alimentação e ligação serial)';
+    statusEl.className = 'sub ' + (dados.pzem_ok ? 'status-ok' : 'status-off');
+
+    texto('vTensao',     dados.pzem_ok ? Number(dados.tensao).toFixed(1) : '--');
+    texto('vCorrente',   dados.pzem_ok ? Number(dados.corrente).toFixed(2) : '--');
+    texto('vPotencia',   dados.pzem_ok ? Number(dados.potencia).toFixed(0) : '--');
+    texto('vEnergia',    dados.pzem_ok ? Number(dados.energia).toFixed(3) : '--');
+    texto('vFrequencia', dados.pzem_ok ? Number(dados.frequencia).toFixed(1) : '--');
+    texto('vFP',         dados.pzem_ok ? Number(dados.fator_potencia).toFixed(2) : '--');
+
+    // Só redesenha a lista de relés se algo mudou, para não perder o clique.
+    const assinatura = JSON.stringify(dados.reles);
+    if (assinatura !== estadoAtualReles) {
+      estadoAtualReles = assinatura;
+      desenharReles(dados.reles);
+    }
+  } catch (erro) {
+    const statusEl = document.getElementById('statusPzem');
+    statusEl.innerText = 'Erro de comunicação com o ESP32';
+    statusEl.className = 'sub status-off';
+  }
 }
-void status(const char* message) {
-  Serial.printf("[status] %s\n", message);
-  if (mqtt.connected()) mqtt.publish(statusTopic, message, true);
+
+function desenharReles(reles) {
+  const lista = document.getElementById('listaReles');
+  lista.innerHTML = '';
+  reles.forEach(function(ligado, indice) {
+    const canal = indice + 1;
+    const linha = document.createElement('div');
+    linha.className = 'rele';
+
+    const rotulo = document.createElement('span');
+    rotulo.innerText = 'Relé ' + canal + ': ' + (ligado ? 'LIGADO' : 'DESLIGADO');
+
+    const botao = document.createElement('button');
+    botao.className = ligado ? 'btn-off' : 'btn-on';
+    botao.innerText = ligado ? 'Desligar' : 'Ligar';
+    botao.addEventListener('click', function() {
+      acionar(canal, ligado ? 0 : 1, botao);
+    });
+
+    linha.appendChild(rotulo);
+    linha.appendChild(botao);
+    lista.appendChild(linha);
+  });
 }
 
-void pollPzem() {
-#if DEMO_MODE
-  demoPhase += 0.18f;
-  if (demoPhase >= 2.0f * PI) demoPhase -= 2.0f * PI;
-  electrical.voltage = 220.0f + 3.0f * sinf(demoPhase);
-  electrical.current = outputEnabled ? 5.0f + 0.3f * sinf(demoPhase) : 0.08f;
-  electrical.pf = outputEnabled ? 0.86f : 0.97f;
-  electrical.power = electrical.voltage * electrical.current * electrical.pf;
-  electrical.frequency = 60.0f;
-  demoEnergy += electrical.power * PZEM_POLL_MS / 3600000000.0f;
-  electrical.energy = demoEnergy;
+async function acionar(canal, estado, botao) {
+  if (ocupado) return;
+  ocupado = true;
+  if (botao) botao.disabled = true;
+  try {
+    const resp = await fetch('/rele?canal=' + canal + '&estado=' + estado, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(await resp.text());
+    estadoAtualReles = null;
+  } catch (erro) {
+    alert('Falha ao comandar o relé: ' + erro.message);
+  } finally {
+    ocupado = false;
+    if (botao) botao.disabled = false;
+    atualizar();
+  }
+}
+
+atualizar();
+setInterval(atualizar, 2000);
+</script>
+</body>
+</html>
+)====";
+
+// -----------------------------------------------------------------------------
+// Utilidades
+// -----------------------------------------------------------------------------
+void aplicarEstadoRele(uint8_t indice) {
+  if (indice >= NUM_RELES) return;
+  digitalWrite(PINOS_RELES[indice],
+               estadoReles[indice] ? nivelLigado() : nivelDesligado());
+}
+
+void imprimirLinhaCompleta(uint8_t linha, const char* texto) {
+  if (linha >= LCD_LINHAS) return;
+
+  char buffer[LCD_COLUNAS + 1];
+  snprintf(buffer, sizeof(buffer), "%-*.*s", LCD_COLUNAS, LCD_COLUNAS, texto);
+
+  // Evita reescrever (e piscar) uma linha que não mudou.
+  if (strcmp(buffer, lcdCache[linha]) == 0) return;
+  strcpy(lcdCache[linha], buffer);
+
+  lcd.setCursor(0, linha);
+  lcd.print(buffer);
+}
+
+void iniciarMdns() {
+  if (WiFi.status() != WL_CONNECTED || mdnsAtivo) return;
+
+  if (MDNS.begin(NOME_MDNS)) {
+    mdnsAtivo = true;
+    MDNS.addService("http", "tcp", 80);
+    Serial.print("mDNS ativo: http://");
+    Serial.print(NOME_MDNS);
+    Serial.println(".local/");
+  } else {
+    Serial.println("Falha ao iniciar mDNS. Use o endereço IP.");
+  }
+}
+
+void manterWifi() {
+  static bool estavaConectado = false;
+  const bool conectado = (WiFi.status() == WL_CONNECTED);
+
+  if (conectado) {
+    if (!estavaConectado) {
+      estavaConectado = true;
+      Serial.print("Wi-Fi conectado. IP: ");
+      Serial.println(WiFi.localIP());
+      lcdPrecisaAtualizar = true;
+    }
+    iniciarMdns();
+    return;
+  }
+
+  if (estavaConectado) {
+    estavaConectado = false;
+    Serial.println("Wi-Fi desconectado.");
+    if (mdnsAtivo) {
+      MDNS.end();
+      mdnsAtivo = false;
+    }
+    lcdPrecisaAtualizar = true;
+  }
+
+  const unsigned long agora = millis();
+  if (agora - ultimaTentativaWifi >= INTERVALO_RECONEXAO_WIFI) {
+    ultimaTentativaWifi = agora;
+    Serial.println("Tentando reconectar ao Wi-Fi...");
+    // false/false: não desliga o rádio nem apaga as credenciais salvas.
+    WiFi.disconnect(false, false);
+    if (strlen(WIFI_PASSWORD)) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    else WiFi.begin(WIFI_SSID);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// PZEM
+// -----------------------------------------------------------------------------
+void marcarPzemIndisponivel() {
+  if (pzemOk) Serial.println("PZEM perdeu comunicação.");
+  pzemOk = false;
+  lcdPrecisaAtualizar = true;
+}
+
+void lerPzem() {
+  if (!PZEM_HABILITADO || pzem == nullptr) {
+    pzemOk = false;
+    return;
+  }
+
+  // A primeira chamada dispara a leitura Modbus. Se ela falhar, sai imediatamente
+  // em vez de encadear mais cinco timeouts seriais no loop.
+  const float tensao = pzem->voltage();
+  if (!isfinite(tensao)) {
+    marcarPzemIndisponivel();
+    return;
+  }
+
+  const float corrente   = pzem->current();
+  const float potencia   = pzem->power();
+  const float energia    = pzem->energy();
+  const float frequencia = pzem->frequency();
+  const float fp         = pzem->pf();
+
+  if (!isfinite(corrente) || !isfinite(potencia) || !isfinite(energia) ||
+      !isfinite(frequencia) || !isfinite(fp)) {
+    marcarPzemIndisponivel();
+    return;
+  }
+
+  const bool primeiraLeituraValida = !pzemOk;
+
+  ultimaTensao        = tensao;
+  ultimaCorrente      = corrente;
+  ultimaPotencia      = potencia;
+  ultimaEnergia       = energia;
+  ultimaFrequencia    = frequencia;
+  ultimoFatorPotencia = fp;
   pzemOk = true;
-#else
-  if (!pzem) { pzemOk = false; return; }
-  ElectricalReading next;
-  next.voltage = pzem->voltage();
-  next.current = pzem->current();
-  next.power = pzem->power();
-  next.pf = pzem->pf();
-  next.frequency = pzem->frequency();
-  next.energy = pzem->energy();
-  // Tensao e corrente validas comprovam que o instrumento respondeu; zero V
-  // nao autoriza acionamento. Em falha, descarta leitura anterior (nao congela).
-  pzemOk = isfinite(next.voltage) && next.voltage > 0.0f &&
-           isfinite(next.current) && next.current >= 0.0f;
-  electrical = pzemOk ? next : ElectricalReading{};
-#endif
-  Serial.printf("[PZEM] leitura %s, tensao=%.1f V, corrente=%.3f A\n",
-                pzemOk ? "valida" : "indisponivel", electrical.voltage, electrical.current);
-  if (outputEnabled && !pzemOk) { off(); status("sensor_unavailable_stop"); }
+  lcdPrecisaAtualizar = true;
+
+  if (primeiraLeituraValida) {
+    Serial.println("PZEM conectado e respondendo.");
+  }
 }
 
-void publishCapabilities() {
+// -----------------------------------------------------------------------------
+// LCD
+// -----------------------------------------------------------------------------
+void atualizarLcd() {
+  char buffer[48];
+
+  if (WiFi.status() == WL_CONNECTED) {
+    snprintf(buffer, sizeof(buffer), "IP:%s", WiFi.localIP().toString().c_str());
+  } else {
+    snprintf(buffer, sizeof(buffer), "WiFi desconectado");
+  }
+  imprimirLinhaCompleta(0, buffer);
+
+  if (pzemOk) {
+    snprintf(buffer, sizeof(buffer), "V:%5.1f  I:%6.2fA", ultimaTensao, ultimaCorrente);
+  } else {
+    snprintf(buffer, sizeof(buffer), "PZEM sem leitura");
+  }
+  imprimirLinhaCompleta(1, buffer);
+
+  if (pzemOk) {
+    // Cabe em 20 colunas mesmo com potência de 4 dígitos e energia alta.
+    snprintf(buffer, sizeof(buffer), "P:%4.0fW E:%8.2fkWh", ultimaPotencia, ultimaEnergia);
+  } else {
+    buffer[0] = '\0';
+  }
+  imprimirLinhaCompleta(2, buffer);
+
+  snprintf(buffer, sizeof(buffer), "R1:%c R2:%c R3:%c R4:%c",
+           estadoReles[0] ? 'L' : 'D',
+           estadoReles[1] ? 'L' : 'D',
+           estadoReles[2] ? 'L' : 'D',
+           estadoReles[3] ? 'L' : 'D');
+  imprimirLinhaCompleta(3, buffer);
+
+  lcdPrecisaAtualizar = false;
+}
+
+// -----------------------------------------------------------------------------
+// Rotas HTTP
+// -----------------------------------------------------------------------------
+void adicionarCabecalhosComuns() {
+  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  server.sendHeader("Pragma", "no-cache");
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+}
+
+void tratarIndex() {
+  adicionarCabecalhosComuns();
+  server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
+}
+
+void tratarDados() {
+  String resposta;
+  resposta.reserve(320);
+
+  resposta += F("{\"pzem_ok\":");
+  resposta += pzemOk ? F("true") : F("false");
+  resposta += F(",\"tensao\":");
+  resposta += String(pzemOk ? ultimaTensao : 0.0f, 2);
+  resposta += F(",\"corrente\":");
+  resposta += String(pzemOk ? ultimaCorrente : 0.0f, 3);
+  resposta += F(",\"potencia\":");
+  resposta += String(pzemOk ? ultimaPotencia : 0.0f, 1);
+  resposta += F(",\"energia\":");
+  resposta += String(pzemOk ? ultimaEnergia : 0.0f, 3);
+  resposta += F(",\"frequencia\":");
+  resposta += String(pzemOk ? ultimaFrequencia : 0.0f, 1);
+  resposta += F(",\"fator_potencia\":");
+  resposta += String(pzemOk ? ultimoFatorPotencia : 0.0f, 2);
+  resposta += F(",\"wifi_ok\":");
+  resposta += (WiFi.status() == WL_CONNECTED) ? F("true") : F("false");
+  resposta += F(",\"reles\":[");
+
+  for (uint8_t i = 0; i < NUM_RELES; i++) {
+    if (i > 0) resposta += ',';
+    resposta += estadoReles[i] ? F("true") : F("false");
+  }
+
+  resposta += F("]}");
+
+  adicionarCabecalhosComuns();
+  server.send(200, "application/json; charset=utf-8", resposta);
+}
+
+void tratarRele() {
+  adicionarCabecalhosComuns();
+
+  if (!server.hasArg("canal") || !server.hasArg("estado")) {
+    server.send(400, "text/plain; charset=utf-8",
+                "Parametros 'canal' e 'estado' sao obrigatorios.");
+    return;
+  }
+
+  const String canalTexto  = server.arg("canal");
+  const String estadoTexto = server.arg("estado");
+
+  if (estadoTexto != "0" && estadoTexto != "1") {
+    server.send(400, "text/plain; charset=utf-8", "Estado invalido. Use 0 ou 1.");
+    return;
+  }
+
+  const long canal = canalTexto.toInt();
+  if (canal < 1 || canal > static_cast<long>(NUM_RELES) ||
+      canalTexto != String(canal)) {
+    server.send(400, "text/plain; charset=utf-8", "Canal invalido. Use 1, 2, 3 ou 4.");
+    return;
+  }
+
+  const uint8_t indice = static_cast<uint8_t>(canal - 1);
+  estadoReles[indice] = (estadoTexto == "1");
+  aplicarEstadoRele(indice);
+
+  // O LCD é I2C e lento: atualiza no loop, não dentro da resposta HTTP.
+  lcdPrecisaAtualizar = true;
+
+  Serial.print("Rele ");
+  Serial.print(canal);
+  Serial.println(estadoReles[indice] ? " ligado via web." : " desligado via web.");
+
+  server.send(200, "text/plain; charset=utf-8", "OK");
+}
+
+void tratarNaoEncontrado() {
+  adicionarCabecalhosComuns();
+  server.send(404, "text/plain; charset=utf-8", "Rota nao encontrada.");
+}
+
+// -----------------------------------------------------------------------------
+// MQTT: apenas leitura do estado da bancada e copia do buffer do LCD fisico.
+// -----------------------------------------------------------------------------
+void publicarCapacidades() {
+  if (!mqttClient.connected()) return;
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
-  doc["firmware_version"] = "bench-pzem-2.1";
-  doc["demo"] = (DEMO_MODE != 0);
-  doc["bench_arm_required"] = true;
-  doc["star_delta_supported"] = false;
+  doc["role"] = "actuator_local_only";
+  doc["firmware_version"] = "v6-mqtt-mirror-1.0";
+  doc["accepts_direct_command"] = false;
+  doc["accepts_command_request"] = false;
+  doc["relay_commanded_only"] = true;
   JsonArray fields = doc.createNestedArray("fields");
-  for (const char* field : {"voltage","current","power","pf","frequency","energy"}) fields.add(field);
-  char buffer[384];
-  const size_t n = serializeJson(doc, buffer, sizeof(buffer));
-  if (n) mqtt.publish(capabilitiesTopic, (const uint8_t*)buffer, (unsigned int)n, true);
+  for (const char* key : {"voltage", "current", "power", "energy", "frequency", "pf"}) fields.add(key);
+  char payload[384];
+  size_t bytes = serializeJson(doc, payload, sizeof(payload));
+  if (bytes) mqttClient.publish(topicoCapacidades, reinterpret_cast<const uint8_t*>(payload),
+                                static_cast<unsigned int>(bytes), true);
 }
 
-void publishTelemetry() {
-  if (!mqtt.connected()) return;
-  StaticJsonDocument<512> doc;
+void publicarTelemetriaMqtt() {
+  if (!mqttClient.connected()) return;
+  StaticJsonDocument<1024> doc;
   doc["device_id"] = DEVICE_ID;
-  doc["seq"] = ++sequence;
-  doc["demo"] = (DEMO_MODE != 0);
-  doc["data_source"] = DEMO_MODE ? "simulated" : "pzem004t";
+  doc["seq"] = ++sequenciaMqtt;
+  doc["demo"] = false;
+  doc["data_source"] = "pzem004t";
+  doc["pzem_ok"] = pzemOk;
   doc["sensor_ok"] = pzemOk;
-  doc["bench_armed"] = benchArmed();
-  doc["motor_on"] = outputEnabled; // estado solicitado da saida; NAO feedback de contator
-  doc["mode"] = currentMode;
+  doc["relay_commanded_only"] = true;
+  doc["state"] = "manual_relays";
+  doc["mode"] = "manual_relays";
   if (pzemOk) {
-    if (isfinite(electrical.voltage)) doc["voltage"] = electrical.voltage;
-    if (isfinite(electrical.current)) doc["current"] = electrical.current;
-    if (isfinite(electrical.power)) doc["power"] = electrical.power;
-    if (isfinite(electrical.pf)) doc["pf"] = electrical.pf;
-    if (isfinite(electrical.frequency)) doc["frequency"] = electrical.frequency;
-    if (isfinite(electrical.energy)) doc["energy"] = electrical.energy;
+    doc["voltage"] = ultimaTensao;
+    doc["current"] = ultimaCorrente;
+    doc["power"] = ultimaPotencia;
+    doc["energy"] = ultimaEnergia;
+    doc["frequency"] = ultimaFrequencia;
+    doc["pf"] = ultimoFatorPotencia;
   }
-  char buffer[512];
-  size_t n = serializeJson(doc, buffer, sizeof(buffer));
-  bool ok = n && mqtt.publish(telemetryTopic, (const uint8_t*)buffer, (unsigned int)n, false);
-  if (!ok) Serial.printf("[MQTT] erro publicando telemetria (%u bytes), state=%d\n", (unsigned int)n, mqtt.state());
-  else if (sequence % 10 == 1) Serial.printf("[telemetry] seq=%lu, sensor_ok=%d, demo=%d\n", (unsigned long)sequence, pzemOk, DEMO_MODE);
+  JsonArray pins = doc.createNestedArray("relay_pins");
+  JsonArray relays = doc.createNestedArray("relays");
+  for (uint8_t i = 0; i < NUM_RELES; ++i) {
+    pins.add(PINOS_RELES[i]);
+    relays.add(estadoReles[i]);
+  }
+  JsonArray lcdLines = doc.createNestedArray("lcd");
+  for (uint8_t i = 0; i < LCD_LINHAS; ++i) lcdLines.add(lcdCache[i]);
+  char payload[1024];
+  size_t bytes = serializeJson(doc, payload, sizeof(payload));
+  if (!bytes || !mqttClient.publish(topicoTelemetria, reinterpret_cast<const uint8_t*>(payload),
+                                     static_cast<unsigned int>(bytes), false)) {
+    Serial.printf("[MQTT] falha publicando, bytes=%u rc=%d\n", (unsigned int)bytes, mqttClient.state());
+  }
 }
 
-void onMessage(char* topic, byte* payload, unsigned int length) {
-  if (strcmp(topic, commandTopic) != 0) return; // nao aceita broadcast
-  StaticJsonDocument<384> data;
-  if (deserializeJson(data, payload, length)) { status("invalid_command_json"); return; }
-  const char* device = data["device_id"] | "";
-  const char* command = data["command"] | "";
-  const char* mode = data["mode"] | "";
-  if (strcmp(device, DEVICE_ID) != 0) { status("wrong_device_id"); return; }
-  if (strcmp(command, "stop") == 0) { off(); status("motor_stopped"); publishTelemetry(); return; }
-  if (strcmp(command, "start") != 0) { status("unknown_command"); return; }
-  if (strcmp(mode, "star_delta") == 0) { status("unsupported_star_delta_hardware"); return; }
-  if (strcmp(mode, "direct") != 0) { status("unsupported_start_mode"); return; }
-  if (!benchArmed()) { off(); status("physical_arm_required"); return; }
-  if (!pzemOk) { off(); status("pzem_unavailable_start_blocked"); return; }
-  if (!mqtt.connected() || WiFi.status() != WL_CONNECTED) { off(); return; }
-  // Apenas LED/rele SEM motor ligado; nunca controle real pelo broker publico.
-  digitalWrite(PIN_TEST_OUTPUT, HIGH);
-  outputEnabled = true;
-  currentMode = "direct";
-  status("motor_started");
-  publishTelemetry();
+void manterMqtt(unsigned long agora) {
+  if (WiFi.status() != WL_CONNECTED) return;
+  if (mqttClient.connected()) { mqttClient.loop(); return; }
+  if (ultimaTentativaMqtt && agora - ultimaTentativaMqtt < MQTT_RETRY_MS) return;
+  ultimaTentativaMqtt = agora;
+  const String clientId = String("iotmotor_v6_") + String((uint32_t)ESP.getEfuseMac(), HEX);
+  if (mqttClient.connect(clientId.c_str(), topicoStatus, 0, true, "offline")) {
+    mqttClient.publish(topicoStatus, "online", true);
+    publicarCapacidades();
+    Serial.println("[MQTT] conectado; publicacao somente leitura");
+  } else Serial.printf("[MQTT] falha rc=%d\n", mqttClient.state());
 }
 
+// -----------------------------------------------------------------------------
+// Setup
+// -----------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-  pinMode(PIN_TEST_OUTPUT, OUTPUT);
-  pinMode(PIN_BENCH_ARM, INPUT_PULLUP);
-  off();
-  snprintf(telemetryTopic,sizeof(telemetryTopic),"%s/%s/telemetry",TOPIC_PREFIX,DEVICE_ID);
-  snprintf(statusTopic,sizeof(statusTopic),"%s/%s/status",TOPIC_PREFIX,DEVICE_ID);
-  snprintf(commandTopic,sizeof(commandTopic),"%s/%s/command",TOPIC_PREFIX,DEVICE_ID);
-  snprintf(capabilitiesTopic,sizeof(capabilitiesTopic),"%s/%s/capabilities",TOPIC_PREFIX,DEVICE_ID);
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setCallback(onMessage);
-  mqtt.setBufferSize(1024);
-#if !DEMO_MODE
-  pzem = new PZEM004Tv30(Serial2, 16, 17);
-#endif
+  delay(100);
+  Serial.println();
+  Serial.println("=== Modulo 1 / ESP32 v6 ===");
+
+  // Relés: escreve o nível de repouso ANTES de configurar como saída, para não
+  // dar pulso nos relés durante o boot (crítico em módulos ativos em nível baixo).
+  for (uint8_t i = 0; i < NUM_RELES; i++) {
+    digitalWrite(PINOS_RELES[i], nivelDesligado());
+    pinMode(PINOS_RELES[i], OUTPUT);
+    digitalWrite(PINOS_RELES[i], nivelDesligado());
+    estadoReles[i] = false;
+  }
+
+  // LCD
+  for (uint8_t i = 0; i < LCD_LINHAS; i++) lcdCache[i][0] = '\0';
+  Wire.begin(LCD_SDA, LCD_SCL);
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  imprimirLinhaCompleta(0, "Iniciando ESP32...");
+  imprimirLinhaCompleta(1, "Conectando WiFi...");
+
+  // PZEM — criado aqui, com o core já inicializado.
+  if (PZEM_HABILITADO) {
+    pzem = new PZEM004Tv30(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
+  }
+
+  // Wi-Fi em modo estação. O programa não trava indefinidamente se a rede falhar.
   WiFi.mode(WIFI_STA);
-  Serial.printf("[boot] %s Wi-Fi=%s MQTT=%s:%u PZEM=%s\n", DEVICE_ID, WIFI_SSID, MQTT_HOST, MQTT_PORT, DEMO_MODE ? "simulado" : "real");
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);            // evita latência alta no servidor web
+  if (strlen(WIFI_PASSWORD)) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  else WiFi.begin(WIFI_SSID);
+  ultimaTentativaWifi = millis();
+
+  Serial.print("Conectando ao Wi-Fi");
+  const unsigned long inicioConexao = millis();
+  while (WiFi.status() != WL_CONNECTED &&
+         (millis() - inicioConexao) < TEMPO_MAX_CONEXAO_WIFI) {
+    delay(250);
+    Serial.print('.');
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Wi-Fi conectado. IP: ");
+    Serial.println(WiFi.localIP());
+    iniciarMdns();
+  } else {
+    Serial.println("Wi-Fi nao conectado. O ESP32 continuara funcionando e tentara reconectar.");
+  }
+
+  // Configura publicacao MQTT em topicos exclusivos deste modulo.
+  snprintf(topicoTelemetria, sizeof(topicoTelemetria), "iotmotor/%s/telemetry", DEVICE_ID);
+  snprintf(topicoStatus, sizeof(topicoStatus), "iotmotor/%s/status", DEVICE_ID);
+  snprintf(topicoCapacidades, sizeof(topicoCapacidades), "iotmotor/%s/capabilities", DEVICE_ID);
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setBufferSize(1536);
+  // Servidor web
+  server.on("/", HTTP_GET, tratarIndex);
+  server.on("/dados", HTTP_GET, tratarDados);
+  server.on("/rele", HTTP_GET, tratarRele);
+  server.onNotFound(tratarNaoEncontrado);
+  server.begin();
+  Serial.println("Servidor HTTP iniciado na porta 80.");
+
+  // Primeira leitura imediata, sem esperar o primeiro intervalo.
+  lerPzem();
+  ultimaLeituraPzem = millis();
+
+  lcd.clear();
+  for (uint8_t i = 0; i < LCD_LINHAS; i++) lcdCache[i][0] = '\0';
+  atualizarLcd();
+  ultimaAtualizacaoLcd = millis();
 }
 
+// -----------------------------------------------------------------------------
+// Loop
+// -----------------------------------------------------------------------------
 void loop() {
-  unsigned long now = millis();
-  if (outputEnabled && !benchArmed()) { off(); status("bench_disarmed_stop"); }
-  if (WiFi.status() != WL_CONNECTED) {
-    if (outputEnabled) off();
-    if (lastWifiAttempt == 0 || now - lastWifiAttempt >= WIFI_RETRY_MS) {
-      lastWifiAttempt = now;
-      Serial.printf("[WiFi] conectando; status=%d\n", WiFi.status());
-      if (strlen(WIFI_PASS)) WiFi.begin(WIFI_SSID,WIFI_PASS);
-      else WiFi.begin(WIFI_SSID);
-    }
-    delay(10);
-    return;
+  server.handleClient();
+  manterWifi();
+
+  const unsigned long agora = millis();
+
+  if (agora - ultimaLeituraPzem >= INTERVALO_LEITURA_PZEM) {
+    ultimaLeituraPzem = agora;
+    lerPzem();
   }
-  if (!mqtt.connected()) {
-    if (outputEnabled) off();
-    if (lastMqttAttempt == 0 || now - lastMqttAttempt >= MQTT_RETRY_MS) {
-      lastMqttAttempt = now;
-      Serial.printf("[MQTT] IP=%s, conectando %s:%u\n",WiFi.localIP().toString().c_str(),MQTT_HOST,MQTT_PORT);
-      String id = String("iotmotor_bench_") + String((uint32_t)ESP.getEfuseMac(), HEX);
-      if (mqtt.connect(id.c_str(),statusTopic,0,true,"offline")) {
-        mqtt.subscribe(commandTopic);
-        status("online");
-        publishCapabilities();
-        Serial.printf("[MQTT] conectado, topico %s\n",commandTopic);
-      } else Serial.printf("[MQTT] falha state=%d\n",mqtt.state());
-    }
-    delay(10);
-    return;
+
+  if (lcdPrecisaAtualizar || (agora - ultimaAtualizacaoLcd >= INTERVALO_LCD)) {
+    ultimaAtualizacaoLcd = agora;
+    atualizarLcd();
   }
-  mqtt.loop();
-  now = millis();
-  if (lastPzemPoll == 0 || now - lastPzemPoll >= PZEM_POLL_MS) {
-    lastPzemPoll = now;
-    pollPzem();
+
+  manterMqtt(agora);
+  if (mqttClient.connected() && (ultimaPublicacaoMqtt == 0 || agora - ultimaPublicacaoMqtt >= MQTT_PUBLISH_MS)) {
+    ultimaPublicacaoMqtt = agora;
+    publicarTelemetriaMqtt();
   }
-  if (lastTelemetry == 0 || now - lastTelemetry >= TELEMETRY_MS) {
-    lastTelemetry = now;
-    publishTelemetry();
-  }
-  delay(5);
+  delay(2);
 }
