@@ -131,6 +131,7 @@ static const unsigned long MQTT_PUBLISH_MS = 1000UL;
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
 uint32_t sequenciaMqtt = 0;
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
+char topicoComandos[80], topicoResposta[80];
 
 // -----------------------------------------------------------------------------
 // Servidor web
@@ -149,6 +150,7 @@ void aplicarEstadoRele(uint8_t indice) {
 }
 
 #include "iotmotor_profiles.h"
+#include "iotmotor_mqtt_control.h"
 
 void imprimirLinhaCompleta(uint8_t linha, const char* texto) {
   if (linha >= LCD_LINHAS) return;
@@ -325,6 +327,10 @@ void tratarLocalJs() {
   adicionarCabecalhosComuns();
   server.send_P(200,"application/javascript; charset=utf-8",IOTMOTOR_LOCAL_JS);
 }
+void tratarRemoteJs() {
+  adicionarCabecalhosComuns();
+  server.send_P(200,"application/javascript; charset=utf-8",IOTMOTOR_REMOTE_JS);
+}
 
 void tratarDados() {
   StaticJsonDocument<1024> doc;
@@ -362,9 +368,10 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_local_only";
-  doc["firmware_version"] = "v6-lan-profiles-1.0";
-  doc["accepts_direct_command"] = false;
+  doc["firmware_version"] = "v7-signed-mqtt-bench";
+  doc["accepts_direct_command"] = controleMqttConfigurado;
   doc["accepts_command_request"] = false;
+  doc["command_auth"] = "hmac-sha256";
   doc["relay_commanded_only"] = true;
   doc["lan_start_profiles"] = true;
   doc["requires_gpio32_arm"] = true;
@@ -381,6 +388,8 @@ void publicarTelemetriaMqtt() {
   StaticJsonDocument<1024> doc;
   doc["device_id"] = DEVICE_ID;
   doc["seq"] = ++sequenciaMqtt;
+  doc["boot"] = sessaoControle;
+  doc["remote_control_ready"] = controleMqttConfigurado;
   doc["bench_armed"] = bancadaHabilitada();
   doc["start_phase"] = nomeEtapa();
   if (WiFi.status()==WL_CONNECTED) doc["wifi_ip"] = WiFi.localIP().toString();
@@ -423,6 +432,8 @@ void manterMqtt(unsigned long agora) {
   const String clientId = String("iotmotor_v6_") + String((uint32_t)ESP.getEfuseMac(), HEX);
   if (mqttClient.connect(clientId.c_str(), topicoStatus, 0, true, "offline")) {
     mqttClient.publish(topicoStatus, "online", true);
+    if (controleMqttConfigurado && !mqttClient.subscribe(topicoComandos, 1))
+      Serial.println("[MQTT] falha assinando topico de comandos");
     publicarCapacidades();
     Serial.println("[MQTT] conectado; publicacao somente leitura");
   } else Serial.printf("[MQTT] falha rc=%d\n", mqttClient.state());
@@ -487,12 +498,16 @@ void setup() {
     Serial.println("Wi-Fi nao conectado. O ESP32 continuara funcionando e tentara reconectar.");
   }
 
+  iniciarControleMqtt();
   // Configura publicacao MQTT em topicos exclusivos deste modulo.
   snprintf(topicoTelemetria, sizeof(topicoTelemetria), "iotmotor/%s/telemetry", DEVICE_ID);
   snprintf(topicoStatus, sizeof(topicoStatus), "iotmotor/%s/status", DEVICE_ID);
   snprintf(topicoCapacidades, sizeof(topicoCapacidades), "iotmotor/%s/capabilities", DEVICE_ID);
+  snprintf(topicoComandos, sizeof(topicoComandos), "iotmotor/%s/command", DEVICE_ID);
+  snprintf(topicoResposta, sizeof(topicoResposta), "iotmotor/%s/command_ack", DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);
+  mqttClient.setCallback(receberComandoMqtt);
   // Inspecionar Origin em POSTs de energizacao, sem abrir CORS.
   const char* headerNames[] = {"Origin"};
   server.collectHeaders(headerNames, 1);
@@ -501,6 +516,7 @@ void setup() {
   server.on("/dados", HTTP_GET, tratarDados);
   server.on("/dual-dashboard.js", HTTP_GET, tratarDualJs);
   server.on("/local-controls.js", HTTP_GET, tratarLocalJs);
+  server.on("/remote-controls.js", HTTP_GET, tratarRemoteJs);
   server.on("/partida", HTTP_POST, tratarPartidaBancada);
   server.on("/parar", HTTP_POST, tratarPararBancada);
   server.on("/canal", HTTP_POST, tratarCanalBancada);
