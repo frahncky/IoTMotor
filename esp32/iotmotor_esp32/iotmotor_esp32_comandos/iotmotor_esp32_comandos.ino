@@ -4,10 +4,10 @@
 #include <math.h>
 
 // Connection defaults (adjust as needed)
-static const char* WIFI_SSID = "Francisco_wifi 2G";
-static const char* WIFI_PASS = "fr281988";
+static const char* WIFI_SSID = "IFMA_IOT";
+static const char* WIFI_PASS = "";
 
-static const char* MQTT_HOST = "broker.hivemq.com";
+static const char* MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 1883;
 static const char* MQTT_USER = "";
 static const char* MQTT_PASS = "";
