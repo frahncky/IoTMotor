@@ -27,7 +27,8 @@ function parseTelemetry(json){
  const result={deviceId:String(json.device_id||source.device_id||''),demo:json.demo===true||source.demo===true||source.data_source==='simulated',
   dataSource:String(json.data_source||source.data_source||'não informada'),seq:numeric(source.seq),
   benchArmed:source.bench_armed===true,motorOn:typeof source.motor_on==='boolean'?source.motor_on:null,
-  mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak)};
+  mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak),
+  relays:Array.isArray(source.relays)&&source.relays.length===4&&source.relays.every(v=>typeof v==='boolean')?source.relays:null};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
  result.reactive=result.apparent===null?null:result.power!==null?
@@ -52,11 +53,11 @@ function freshness(which){return state.connected&&state.subscribed&&state[which]
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
 function updateControl(){
  const active=freshness('command');const s=state.command.sample;
- $('startBtn').disabled=!(active&&s&&s.benchArmed&&s.voltage!==null&&s.current!==null&&!state.pending);
- $('stopBtn').disabled=!state.connected; // Parada sempre possivel enquanto houver conexao, mesmo se partida estiver pendente.
+ $('startBtn').disabled=true; // Old single-relay prototype retired.
+ $('stopBtn').disabled=true; // LAN-only control lives in local-controls.js.
  $('starBtn').disabled=true; // um rele nao executa estrela-triangulo com intertravamento
  text('armValue',active?(s.benchArmed?'Jumper local presente':'Sem jumper local'):'Sem telemetria elétrica recente');
- text('motorValue',active&&s.motorOn!==null?(s.motorOn?'Saída GPIO2 ligada':'Saída GPIO2 desligada'):'Não confirmado');
+ text('motorValue',active&&Array.isArray(s?.relays)?s.relays.map((on,i)=>`K${i+1}:${on?'L':'D'}`).join(' · '):'Sem estados lógicos recentes');
  text('modeValue',active?s.mode:'—');
 }
 function svg(tag,attrs={},content){const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,v]of Object.entries(attrs))n.setAttribute(key,String(v));if(content!==undefined)n.textContent=String(content);return n;}
@@ -104,7 +105,7 @@ function ingest(which,raw,packet){
  const expected=which==='command'?state.config.commandDevice:state.config.sensorDevice;
  const sample=parseTelemetry(json);if(!sample||sample.deviceId!==expected){diag('Mensagem descartada: device_id diferente do tópico.');return false;}
  const hasFields=METRICS.some(m=>m.source===which&&sample[m.key]!==null);
- if(which==='command'&&!hasFields&&sample.motorOn===null){diag('Mensagem do módulo de comandos sem grandezas nem estado válido.');return false;}
+ if(which==='command'&&!hasFields&&sample.motorOn===null&&!sample.relays){diag('Mensagem do módulo de comandos sem grandezas nem estado válido.');return false;}
  state[which].sample=sample;state[which].at=Date.now();state[which].count++;
  for(const m of METRICS.filter(m=>m.source===which)){
   if(sample[m.key]!==null){const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
@@ -147,20 +148,7 @@ function connect(){
  client.on('error',err=>{if(active())diag(`MQTT: ${String(err.message||err).slice(0,140)}`);});
  client.on('close',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Conexão encerrada','error');render();});
 }
-function command(kind,mode){
- if(!state.client||!state.connected)return;
- if(kind==='start'){
-  if(state.pending||!freshness('command')||!state.command.sample?.benchArmed||state.command.sample.voltage===null||state.command.sample.current===null)return;
-  if(!window.confirm('ENSAIO SEM MOTOR NEM CONTATOR CONECTADO: confirme jumper local GPIO32–GND e sensores de bancada. Enviar partida direta?'))return;
- }
- // Parada pode sobrepor uma partida ainda pendente.
- const data={device_id:state.config.commandDevice,command:kind,mode,origin:'web_bench',timestamp:new Date().toISOString()};
- state.pending={target:kind==='start',at:Date.now()};
- text('commandFeedback',`Enviado pedido de ${kind==='start'?'partida direta':'parada'}; aguardando telemetria do ESP32…`);
- state.client.publish(topic(state.config.commandDevice,'command'),JSON.stringify(data),{qos:0,retain:false},err=>{
-  if(err){state.pending=null;text('commandFeedback',`Falha ao publicar MQTT: ${err.message}`);updateControl();}
- });updateControl();
-}
+function command(kind,mode){ /* Retired GPIO2 prototype: never publish control on a public broker. */ }
 function exportCsv(){
  if(!state.records.length)return;
  const keys=METRICS.map(m=>m.key);

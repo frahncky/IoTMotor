@@ -137,136 +137,7 @@ char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
 // -----------------------------------------------------------------------------
 WebServer server(80);
 
-const char INDEX_HTML[] PROGMEM = R"====(
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Módulo 1 - Painel</title>
-<style>
-  body { font-family: Arial, sans-serif; background:#111827; color:#f3f4f6; margin:0; padding:20px; }
-  h1 { font-size:20px; margin-bottom:4px; }
-  .sub { font-size:13px; margin-bottom:20px; }
-  .status-ok { color:#22c55e; }
-  .status-off { color:#f59e0b; }
-  .cartao { background:#1f2937; border-radius:10px; padding:16px; margin-bottom:16px; }
-  .grade { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-  .medida { background:#111827; border-radius:8px; padding:10px; text-align:center; }
-  .medida .valor { font-size:20px; font-weight:bold; }
-  .medida .rotulo { font-size:12px; color:#9ca3af; }
-  .rele { display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #374151; }
-  .rele:last-child { border-bottom:none; }
-  button { border:none; border-radius:6px; padding:8px 16px; font-size:14px; font-weight:bold; cursor:pointer; }
-  button:disabled { opacity:0.5; cursor:wait; }
-  .btn-on { background:#16a34a; color:white; }
-  .btn-off { background:#dc2626; color:white; }
-</style>
-</head>
-<body>
-  <h1>Módulo 1 — Relés e PZEM</h1>
-  <div class="sub" id="statusPzem">Carregando...</div>
-
-  <div class="cartao">
-    <div class="grade">
-      <div class="medida"><div class="valor" id="vTensao">--</div><div class="rotulo">Tensão (V)</div></div>
-      <div class="medida"><div class="valor" id="vCorrente">--</div><div class="rotulo">Corrente (A)</div></div>
-      <div class="medida"><div class="valor" id="vPotencia">--</div><div class="rotulo">Potência (W)</div></div>
-      <div class="medida"><div class="valor" id="vEnergia">--</div><div class="rotulo">Energia (kWh)</div></div>
-      <div class="medida"><div class="valor" id="vFrequencia">--</div><div class="rotulo">Frequência (Hz)</div></div>
-      <div class="medida"><div class="valor" id="vFP">--</div><div class="rotulo">Fator de potência</div></div>
-    </div>
-  </div>
-
-  <div class="cartao" id="listaReles"></div>
-
-<script>
-var ocupado = false;
-var estadoAtualReles = null;
-
-function texto(id, valor) { document.getElementById(id).innerText = valor; }
-
-async function atualizar() {
-  if (ocupado) return;
-  try {
-    const resp = await fetch('/dados', { cache: 'no-store' });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-
-    const dados = await resp.json();
-    const statusEl = document.getElementById('statusPzem');
-
-    statusEl.innerText = dados.pzem_ok
-      ? 'PZEM conectado'
-      : 'PZEM sem leitura (verifique alimentação e ligação serial)';
-    statusEl.className = 'sub ' + (dados.pzem_ok ? 'status-ok' : 'status-off');
-
-    texto('vTensao',     dados.pzem_ok ? Number(dados.tensao).toFixed(1) : '--');
-    texto('vCorrente',   dados.pzem_ok ? Number(dados.corrente).toFixed(2) : '--');
-    texto('vPotencia',   dados.pzem_ok ? Number(dados.potencia).toFixed(0) : '--');
-    texto('vEnergia',    dados.pzem_ok ? Number(dados.energia).toFixed(3) : '--');
-    texto('vFrequencia', dados.pzem_ok ? Number(dados.frequencia).toFixed(1) : '--');
-    texto('vFP',         dados.pzem_ok ? Number(dados.fator_potencia).toFixed(2) : '--');
-
-    // Só redesenha a lista de relés se algo mudou, para não perder o clique.
-    const assinatura = JSON.stringify(dados.reles);
-    if (assinatura !== estadoAtualReles) {
-      estadoAtualReles = assinatura;
-      desenharReles(dados.reles);
-    }
-  } catch (erro) {
-    const statusEl = document.getElementById('statusPzem');
-    statusEl.innerText = 'Erro de comunicação com o ESP32';
-    statusEl.className = 'sub status-off';
-  }
-}
-
-function desenharReles(reles) {
-  const lista = document.getElementById('listaReles');
-  lista.innerHTML = '';
-  reles.forEach(function(ligado, indice) {
-    const canal = indice + 1;
-    const linha = document.createElement('div');
-    linha.className = 'rele';
-
-    const rotulo = document.createElement('span');
-    rotulo.innerText = 'Relé ' + canal + ': ' + (ligado ? 'LIGADO' : 'DESLIGADO');
-
-    const botao = document.createElement('button');
-    botao.className = ligado ? 'btn-off' : 'btn-on';
-    botao.innerText = ligado ? 'Desligar' : 'Ligar';
-    botao.addEventListener('click', function() {
-      acionar(canal, ligado ? 0 : 1, botao);
-    });
-
-    linha.appendChild(rotulo);
-    linha.appendChild(botao);
-    lista.appendChild(linha);
-  });
-}
-
-async function acionar(canal, estado, botao) {
-  if (ocupado) return;
-  ocupado = true;
-  if (botao) botao.disabled = true;
-  try {
-    const resp = await fetch('/rele?canal=' + canal + '&estado=' + estado, { cache: 'no-store' });
-    if (!resp.ok) throw new Error(await resp.text());
-    estadoAtualReles = null;
-  } catch (erro) {
-    alert('Falha ao comandar o relé: ' + erro.message);
-  } finally {
-    ocupado = false;
-    if (botao) botao.disabled = false;
-    atualizar();
-  }
-}
-
-atualizar();
-setInterval(atualizar, 2000);
-</script>
-</body>
-</html>
-)====";
+#include "iotmotor_site.h"
 
 // -----------------------------------------------------------------------------
 // Utilidades
@@ -276,6 +147,8 @@ void aplicarEstadoRele(uint8_t indice) {
   digitalWrite(PINOS_RELES[indice],
                estadoReles[indice] ? nivelLigado() : nivelDesligado());
 }
+
+#include "iotmotor_profiles.h"
 
 void imprimirLinhaCompleta(uint8_t linha, const char* texto) {
   if (linha >= LCD_LINHAS) return;
@@ -444,75 +317,36 @@ void tratarIndex() {
   server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
 }
 
-void tratarDados() {
-  String resposta;
-  resposta.reserve(320);
-
-  resposta += F("{\"pzem_ok\":");
-  resposta += pzemOk ? F("true") : F("false");
-  resposta += F(",\"tensao\":");
-  resposta += String(pzemOk ? ultimaTensao : 0.0f, 2);
-  resposta += F(",\"corrente\":");
-  resposta += String(pzemOk ? ultimaCorrente : 0.0f, 3);
-  resposta += F(",\"potencia\":");
-  resposta += String(pzemOk ? ultimaPotencia : 0.0f, 1);
-  resposta += F(",\"energia\":");
-  resposta += String(pzemOk ? ultimaEnergia : 0.0f, 3);
-  resposta += F(",\"frequencia\":");
-  resposta += String(pzemOk ? ultimaFrequencia : 0.0f, 1);
-  resposta += F(",\"fator_potencia\":");
-  resposta += String(pzemOk ? ultimoFatorPotencia : 0.0f, 2);
-  resposta += F(",\"wifi_ok\":");
-  resposta += (WiFi.status() == WL_CONNECTED) ? F("true") : F("false");
-  resposta += F(",\"reles\":[");
-
-  for (uint8_t i = 0; i < NUM_RELES; i++) {
-    if (i > 0) resposta += ',';
-    resposta += estadoReles[i] ? F("true") : F("false");
-  }
-
-  resposta += F("]}");
-
+void tratarDualJs() {
   adicionarCabecalhosComuns();
-  server.send(200, "application/json; charset=utf-8", resposta);
+  server.send_P(200,"application/javascript; charset=utf-8",IOTMOTOR_DUAL_JS);
+}
+void tratarLocalJs() {
+  adicionarCabecalhosComuns();
+  server.send_P(200,"application/javascript; charset=utf-8",IOTMOTOR_LOCAL_JS);
 }
 
-void tratarRele() {
+void tratarDados() {
+  StaticJsonDocument<1024> doc;
+  doc["pzem_ok"] = pzemOk;
+  if (pzemOk) {
+    doc["tensao"] = ultimaTensao; doc["corrente"] = ultimaCorrente;
+    doc["potencia"] = ultimaPotencia; doc["energia"] = ultimaEnergia;
+    doc["frequencia"] = ultimaFrequencia; doc["fator_potencia"] = ultimoFatorPotencia;
+  }
+  doc["wifi_ok"] = WiFi.status()==WL_CONNECTED;
+  if (WiFi.status()==WL_CONNECTED) doc["wifi_ip"] = WiFi.localIP().toString();
+  doc["armado"] = bancadaHabilitada();
+  doc["partida_etapa"] = nomeEtapa();
+  doc["partida_modo"] = modoPartida==1?"sequence":"direct";
+  JsonArray reles=doc.createNestedArray("reles");
+  JsonArray pinos=doc.createNestedArray("relay_pins");
+  for (uint8_t i=0;i<NUM_RELES;i++) { reles.add(estadoReles[i]);pinos.add(PINOS_RELES[i]); }
+  JsonArray lcdLines=doc.createNestedArray("lcd");
+  for (uint8_t i=0;i<LCD_LINHAS;i++) lcdLines.add(lcdCache[i]);
+  String resposta; serializeJson(doc,resposta);
   adicionarCabecalhosComuns();
-
-  if (!server.hasArg("canal") || !server.hasArg("estado")) {
-    server.send(400, "text/plain; charset=utf-8",
-                "Parametros 'canal' e 'estado' sao obrigatorios.");
-    return;
-  }
-
-  const String canalTexto  = server.arg("canal");
-  const String estadoTexto = server.arg("estado");
-
-  if (estadoTexto != "0" && estadoTexto != "1") {
-    server.send(400, "text/plain; charset=utf-8", "Estado invalido. Use 0 ou 1.");
-    return;
-  }
-
-  const long canal = canalTexto.toInt();
-  if (canal < 1 || canal > static_cast<long>(NUM_RELES) ||
-      canalTexto != String(canal)) {
-    server.send(400, "text/plain; charset=utf-8", "Canal invalido. Use 1, 2, 3 ou 4.");
-    return;
-  }
-
-  const uint8_t indice = static_cast<uint8_t>(canal - 1);
-  estadoReles[indice] = (estadoTexto == "1");
-  aplicarEstadoRele(indice);
-
-  // O LCD é I2C e lento: atualiza no loop, não dentro da resposta HTTP.
-  lcdPrecisaAtualizar = true;
-
-  Serial.print("Rele ");
-  Serial.print(canal);
-  Serial.println(estadoReles[indice] ? " ligado via web." : " desligado via web.");
-
-  server.send(200, "text/plain; charset=utf-8", "OK");
+  server.send(200,"application/json; charset=utf-8",resposta);
 }
 
 void tratarNaoEncontrado() {
@@ -528,10 +362,12 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_local_only";
-  doc["firmware_version"] = "v6-mqtt-mirror-1.0";
+  doc["firmware_version"] = "v6-lan-profiles-1.0";
   doc["accepts_direct_command"] = false;
   doc["accepts_command_request"] = false;
   doc["relay_commanded_only"] = true;
+  doc["lan_start_profiles"] = true;
+  doc["requires_gpio32_arm"] = true;
   JsonArray fields = doc.createNestedArray("fields");
   for (const char* key : {"voltage", "current", "power", "energy", "frequency", "pf"}) fields.add(key);
   char payload[384];
@@ -545,13 +381,16 @@ void publicarTelemetriaMqtt() {
   StaticJsonDocument<1024> doc;
   doc["device_id"] = DEVICE_ID;
   doc["seq"] = ++sequenciaMqtt;
+  doc["bench_armed"] = bancadaHabilitada();
+  doc["start_phase"] = nomeEtapa();
+  if (WiFi.status()==WL_CONNECTED) doc["wifi_ip"] = WiFi.localIP().toString();
   doc["demo"] = false;
   doc["data_source"] = "pzem004t";
   doc["pzem_ok"] = pzemOk;
   doc["sensor_ok"] = pzemOk;
   doc["relay_commanded_only"] = true;
   doc["state"] = "manual_relays";
-  doc["mode"] = "manual_relays";
+  doc["mode"] = etapaPartida? (modoPartida==1?"star_delta_bench":"direct_bench") : "manual_relays";
   if (pzemOk) {
     doc["voltage"] = ultimaTensao;
     doc["current"] = ultimaCorrente;
@@ -597,6 +436,7 @@ void setup() {
   delay(100);
   Serial.println();
   Serial.println("=== Modulo 1 / ESP32 v6 ===");
+  pinMode(PINO_HABILITACAO_BANCADA, INPUT_PULLUP);
 
   // Relés: escreve o nível de repouso ANTES de configurar como saída, para não
   // dar pulso nos relés durante o boot (crítico em módulos ativos em nível baixo).
@@ -656,7 +496,11 @@ void setup() {
   // Servidor web
   server.on("/", HTTP_GET, tratarIndex);
   server.on("/dados", HTTP_GET, tratarDados);
-  server.on("/rele", HTTP_GET, tratarRele);
+  server.on("/dual-dashboard.js", HTTP_GET, tratarDualJs);
+  server.on("/local-controls.js", HTTP_GET, tratarLocalJs);
+  server.on("/partida", HTTP_POST, tratarPartidaBancada);
+  server.on("/parar", HTTP_POST, tratarPararBancada);
+  server.on("/canal", HTTP_POST, tratarCanalBancada);
   server.onNotFound(tratarNaoEncontrado);
   server.begin();
   Serial.println("Servidor HTTP iniciado na porta 80.");
@@ -679,6 +523,7 @@ void loop() {
   manterWifi();
 
   const unsigned long agora = millis();
+  manterPartidaBancada(agora);
 
   if (agora - ultimaLeituraPzem >= INTERVALO_LEITURA_PZEM) {
     ultimaLeituraPzem = agora;
