@@ -331,8 +331,10 @@ Os valores de Wi-Fi e broker sao apenas o padrao de fabrica — depois de
 provisionar pela rede, a NVS manda. `POST /provision/reset` volta aos
 compilados.
 
-Bibliotecas necessarias: PubSubClient, ArduinoJson 6.x, PZEM004Tv30, LiquidCrystal
-I2C, OneWire, DallasTemperature e a IoTMotorNet deste repositorio.
+Bibliotecas necessarias, com o nome do indice do Library Manager:
+`PubSubClient`, `ArduinoJson` (6.x — a 7 removeu `StaticJsonDocument` e
+`containsKey`, usados aqui), `PZEM004Tv30`, `LiquidCrystal_I2C`, `OneWire`,
+`DallasTemperature`, mais a `IoTMotorNet` deste repositorio.
 
 ## Telemetria MQTT
 

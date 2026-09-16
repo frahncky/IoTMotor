@@ -40,13 +40,19 @@ jobs:
           arduino-cli core update-index
           arduino-cli core install esp32:esp32
 
+      # Nomes conforme o indice oficial (o `name=` do library.properties de
+      # cada repositorio registrado), nao o rotulo mostrado na IDE.
+      #
+      # ArduinoJson fica preso na 6.x de proposito: a 7 removeu
+      # StaticJsonDocument, createNestedArray e containsKey, que este firmware
+      # usa. Subir de major exige reescrever o codigo de serializacao.
       - name: Instala as bibliotecas
         run: |
           arduino-cli lib install \
             "PubSubClient" \
-            "ArduinoJson" \
-            "PZEM-004T-v30" \
-            "LiquidCrystal I2C" \
+            "ArduinoJson@6.21.5" \
+            "PZEM004Tv30" \
+            "LiquidCrystal_I2C" \
             "OneWire" \
             "DallasTemperature"
 
