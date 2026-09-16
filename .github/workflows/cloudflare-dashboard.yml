@@ -24,11 +24,13 @@ jobs:
         with:
           node-version: '22'
       - name: Check JavaScript syntax
-        run: node --check dashboard-cloudflare/app.js
-      - name: Run dashboard smoke tests
-        run: node --test dashboard-cloudflare/app.test.cjs
+        run: |
+          node --check dashboard-cloudflare/app.js
+          node --check dashboard-cloudflare/dual-dashboard.js
+      - name: Run dashboard tests
+        run: node --test dashboard-cloudflare/app.test.cjs dashboard-cloudflare/dual-dashboard.test.cjs
       - name: Check static site files
         run: |
           test -s dashboard-cloudflare/index.html
           test -s dashboard-cloudflare/_headers
-          grep -q 'app.js' dashboard-cloudflare/index.html
+          grep -q 'dual-dashboard.js' dashboard-cloudflare/index.html
