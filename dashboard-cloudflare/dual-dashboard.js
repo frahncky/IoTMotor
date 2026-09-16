@@ -53,10 +53,10 @@ function freshness(which){return state.connected&&state.subscribed&&state[which]
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
 function updateControl(){
  const active=freshness('command');const s=state.command.sample;
- $('startBtn').disabled=true; // Old single-relay prototype retired.
- $('stopBtn').disabled=true; // LAN-only control lives in local-controls.js.
+ if(!window.iotmotorLocalControls) $('startBtn').disabled=true; // Local controller owns this button.
+ if(!window.iotmotorLocalControls) $('stopBtn').disabled=true; // Never override local stop.
  $('starBtn').disabled=true; // um rele nao executa estrela-triangulo com intertravamento
- text('armValue',active?(s.benchArmed?'Jumper local presente':'Sem jumper local'):'Sem telemetria elétrica recente');
+ if(!window.iotmotorLocalControls) text('armValue',active?(s.benchArmed?'Jumper local presente':'Sem jumper local'):'Sem telemetria elétrica recente');
  text('motorValue',active&&Array.isArray(s?.relays)?s.relays.map((on,i)=>`K${i+1}:${on?'L':'D'}`).join(' · '):'Sem estados lógicos recentes');
  text('modeValue',active?s.mode:'—');
 }
@@ -165,8 +165,7 @@ function init(){
  text('brokerValue',state.config.broker);buildCards();render();
  $('connectBtn').addEventListener('click',()=>state.client?disconnect():connect());
  $('connectionForm').addEventListener('submit',event=>{event.preventDefault();connect();});
- $('startBtn').addEventListener('click',()=>command('start','direct'));
- $('stopBtn').addEventListener('click',()=>command('stop','manual_stop'));
+ // Original startBtn and stopBtn are wired only by local-controls.js.
  $('exportBtn').addEventListener('click',exportCsv);
  for(const button of document.querySelectorAll('[data-group]'))button.addEventListener('click',()=>{
   state.group=button.dataset.group;for(const b of document.querySelectorAll('[data-group]'))b.setAttribute('aria-pressed',String(button===b));renderCharts();
