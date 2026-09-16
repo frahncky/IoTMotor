@@ -88,6 +88,19 @@ Nao e o app Flutter compilado para web: `MqttServerClient` depende de `dart:io`
 e nao roda no navegador. O dashboard e um cliente separado que fala o mesmo
 protocolo. Detalhes de deploy em [`dashboard_iotmotor/README.md`](dashboard_iotmotor/README.md).
 
+### Identidade visual
+
+As duas interfaces compartilham a mesma paleta — fundo `#0F172A`, superficie
+`#1B2336`, azul de destaque `#5EA8FC` — e os mesmos acentos por grandeza, para
+que quem olha o painel e o app reconheca as mesmas cores nas mesmas medidas.
+
+- No app, isso e a variante `AppVisualVariant.blueprint` em
+  `lib/app/theme/app_theme.dart`. As variantes `modern` e `industrial` continuam
+  no arquivo: trocar `activeVariant` volta ao visual anterior, e nada mais
+  depende dessa linha.
+- No dashboard, os tokens estao em `dashboard_iotmotor/src/theme.js` e
+  `src/style.css`.
+
 ## Mapa de topicos MQTT
 
 Com `topic_prefix` igual a `iotmotor` (padrao do aplicativo):

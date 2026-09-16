@@ -68,6 +68,38 @@ Cada push na branch conectada republica o painel.
 
 Depois de publicar, em `Custom domains`, conecte seu dominio.
 
+## Estilo visual
+
+Os tokens ficam em `src/theme.js` (consumidos pelos graficos, que pedem cor como
+valor) e espelhados como custom properties em `src/style.css` (o chrome). Mudar
+uma cor e mudar nos dois.
+
+| Papel | Cor | Origem |
+|---|---|---|
+| Fundo | `#0F172A` | amostrado da peca de referencia |
+| Card / superficie do grafico | `#1B2336` | idem |
+| Azul de destaque | `#5EA8FC` | titulo da referencia — 7.21:1 sobre o fundo |
+| Azul de preenchimento | `#4C85CC` | formas solidas da referencia |
+| Texto | `#FFFFFF` / `#94A3B8` | — |
+
+As **cores de serie dos graficos nao vieram da referencia**: ela e monocromatica
+em azul, o que nao separa duas series no mesmo grafico. Sao os passos de modo
+escuro de uma rampa categorica validada. Os dois pares que de fato coexistem num
+grafico — (potencia ativa, aparente) e (vibracao RMS, pico) — foram verificados
+para separacao sob daltonismo e contraste sobre o card, e passaram.
+
+Duas regras seguidas de proposito:
+
+- **texto nao veste cor de serie.** Os valores dos cards sao brancos; a
+  identidade da grandeza fica num ponto colorido ao lado do rotulo. Vermelho no
+  valor fica reservado a estado (fora do limite);
+- **legenda so onde ha duas series.** Nos graficos de uma serie, o titulo ja diz
+  o que e.
+
+Motivos herdados da referencia: titulo em dois tons, etiqueta em caixa alta com
+rastreio largo, selos de secao com circunferencia tracejada e a malha tecnica no
+canto do cabecalho (decorativa, some em telas estreitas).
+
 ## O que o painel faz
 
 | Aba | Conteudo |

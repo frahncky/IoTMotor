@@ -19,20 +19,8 @@ import {
   statusLabel,
 } from "./services/mqttService";
 import { fmt, historyToCsv, motorStateLabel, startModeLabel } from "./utils";
+import { C } from "./theme";
 
-// ─── Paleta (tema instrumento tecnico, herdada do painel do EMetrics) ─────────
-const C = {
-  bg:      "#121719",
-  surface: "#1a2023",
-  border:  "#2b3538",
-  text:    "#edf1ef",
-  muted:   "#9aa5a4",
-  amber:   "#c5a16c",
-  cyan:    "#79aeb9",
-  green:   "#7eae90",
-  red:     "#d17a76",
-  purple:  "#a89abc",
-};
 
 const MQTT_SETTINGS_KEY = "iotmotor.mqtt-settings";
 const ALERT_SETTINGS_KEY = "iotmotor.alert-settings";
@@ -70,6 +58,56 @@ function loadSettings(key, fallback) {
   }
 }
 
+// ─── Motivos visuais da referencia ───────────────────────────────────────────
+
+/** Selo de icone com circunferencia tracejada, como os icones da peca. */
+function BlueprintBadge({ children, title }) {
+  return (
+    <span className="bp-badge" role="img" aria-label={title}>
+      <svg viewBox="0 0 34 34" aria-hidden="true">
+        <circle
+          cx="17" cy="17" r="15.5"
+          fill="none" stroke="currentColor" strokeWidth="1.2"
+          strokeDasharray="2.5 3.5" strokeLinecap="round"
+        />
+      </svg>
+      <span className="bp-badge-glyph" aria-hidden="true">{children}</span>
+    </span>
+  );
+}
+
+/** Cabecalho de secao: selo tracejado + rotulo + regua. */
+function BlueprintSection({ badge, badgeTitle, children }) {
+  return (
+    <div className="bp-section">
+      <BlueprintBadge title={badgeTitle}>{badge}</BlueprintBadge>
+      <span className="bp-section-label">{children}</span>
+      <span className="bp-section-rule" aria-hidden="true" />
+    </div>
+  );
+}
+
+/**
+ * Malha tecnica do canto do cabecalho. E decoracao: fica atras do texto, com
+ * opacidade baixa, e some em telas estreitas.
+ */
+function BlueprintArt() {
+  return (
+    <svg className="bp-header-art" viewBox="0 0 320 120" aria-hidden="true" focusable="false">
+      <g stroke={C.borderStrong} strokeWidth="1" fill="none">
+        <path d="M8 60h54M62 26v68M62 26h48M62 60h30M62 94h48" />
+        <path d="M212 60h44M256 26v68M256 26h-40M256 94h-40" strokeDasharray="3 4" />
+        <rect x="110" y="10" width="46" height="30" rx="2" fill={C.surface} />
+        <rect x="110" y="46" width="46" height="30" rx="2" fill={C.surface} />
+        <rect x="110" y="82" width="46" height="30" rx="2" fill={C.surface} />
+      </g>
+      <rect x="166" y="46" width="40" height="28" rx="2" fill={C.accentFill} />
+      <circle cx="286" cy="60" r="11" fill="none" stroke={C.accent} strokeWidth="1.2" strokeDasharray="2.5 3.5" />
+      <circle cx="286" cy="60" r="3.5" fill={C.accent} />
+    </svg>
+  );
+}
+
 // ─── Componentes de UI ───────────────────────────────────────────────────────
 function Card({ title, children, accent, action }) {
   return (
@@ -89,13 +127,28 @@ function Card({ title, children, accent, action }) {
   );
 }
 
-function MetricCard({ label, value, unit, accent = C.text, sub }) {
+function MetricCard({ label, value, unit, tone, alert = false, sub }) {
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16 }}>
-      <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-        {label}
+    <div style={{
+      background: C.surface,
+      border: `1px solid ${alert ? `${C.bad}66` : C.border}`,
+      borderRadius: 10, padding: 16,
+    }}>
+      <div style={{ alignItems: "center", display: "flex", gap: 8 }}>
+        {tone && (
+          <span
+            aria-hidden="true"
+            style={{ background: tone, borderRadius: 2, flex: "none", height: 8, width: 8 }}
+          />
+        )}
+        <span style={{ color: C.muted, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+          {label}
+        </span>
       </div>
-      <div style={{ color: accent, fontFamily: "monospace", fontSize: 23, fontWeight: 750, marginTop: 8 }}>
+      <div style={{
+        color: alert ? C.bad : C.text,
+        fontFamily: "monospace", fontSize: 23, fontWeight: 750, marginTop: 8,
+      }}>
         {value}<span style={{ color: C.muted, fontSize: 13, marginLeft: 5 }}>{unit}</span>
       </div>
       {sub && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>{sub}</div>}
@@ -104,7 +157,7 @@ function MetricCard({ label, value, unit, accent = C.text, sub }) {
 }
 
 function StatusBadge({ label, tone }) {
-  const colors = { good: C.green, warning: C.amber, bad: C.red, muted: C.muted };
+  const colors = { good: C.good, warning: C.warn, bad: C.bad, muted: C.muted };
   const color = colors[tone] || C.muted;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color, fontSize: 12, fontWeight: 700 }}>
@@ -175,7 +228,7 @@ function MonitorTab({
 
   return (
     <>
-      <Card title="Estado do monitoramento" accent={connection.phase === "error" ? `${C.red}66` : undefined}>
+      <Card title="Estado do monitoramento" accent={connection.phase === "error" ? `${C.bad}66` : undefined}>
         <div className="status-row">
           <StatusBadge label={connection.label} tone={mqttTone} />
           <StatusBadge
@@ -193,7 +246,7 @@ function MonitorTab({
         </div>
         <div style={{ color: C.muted, fontSize: 12, marginTop: 10 }}>Ultima leitura: {lastUpdate}</div>
         {connection.message && (
-          <div style={{ color: connection.phase === "error" ? C.red : C.muted, fontSize: 12, marginTop: 8 }}>
+          <div style={{ color: connection.phase === "error" ? C.bad : C.muted, fontSize: 12, marginTop: 8 }}>
             {connection.message}
           </div>
         )}
@@ -227,36 +280,40 @@ function MonitorTab({
         </div>
       </Card>
 
-      <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>
+      <BlueprintSection badge="M1" badgeTitle="Modulo 1">
         {DEVICE_LABELS[DEVICE_ACIONAMENTO]}
-      </div>
+      </BlueprintSection>
       <div className="metric-grid" style={{ marginBottom: 20 }}>
         <MetricCard
           label="Tensao" value={fmt(acionamento?.voltage, 1)} unit="V"
-          accent={outOfRange(acionamento?.voltage, alertSettings.voltageMin, alertSettings.voltageMax) ? C.red : C.cyan}
+          tone={C.blue}
+          alert={outOfRange(acionamento?.voltage, alertSettings.voltageMin, alertSettings.voltageMax)}
         />
         <MetricCard
           label="Corrente" value={fmt(acionamento?.current, 2)} unit="A"
-          accent={acionamento?.current > alertSettings.currentMax ? C.red : C.purple}
+          tone={C.orange}
+          alert={acionamento?.current > alertSettings.currentMax}
         />
-        <MetricCard label="Potencia ativa" value={fmt(acionamento?.power, 0)} unit="W" accent={C.amber} />
-        <MetricCard label="Fator de potencia" value={fmt(acionamento?.pf, 2)} unit="" accent={C.green} />
-        <MetricCard label="Frequencia" value={fmt(acionamento?.frequency, 1)} unit="Hz" accent={C.cyan} />
-        <MetricCard label="Energia acumulada" value={fmt(acionamento?.energy, 3)} unit="kWh" accent={C.green} />
+        <MetricCard label="Potencia ativa" value={fmt(acionamento?.power, 0)} unit="W" tone={C.yellow} />
+        <MetricCard label="Fator de potencia" value={fmt(acionamento?.pf, 2)} unit="" tone={C.aqua} />
+        <MetricCard label="Frequencia" value={fmt(acionamento?.frequency, 1)} unit="Hz" tone={C.accent} />
+        <MetricCard label="Energia acumulada" value={fmt(acionamento?.energy, 3)} unit="kWh" tone={C.aqua} />
       </div>
 
-      <div style={{ color: C.muted, fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>
+      <BlueprintSection badge="M2" badgeTitle="Modulo 2">
         {DEVICE_LABELS[DEVICE_SENSORES]}
-      </div>
+      </BlueprintSection>
       <div className="metric-grid" style={{ marginBottom: 20 }}>
         <MetricCard
           label="Vibracao (RMS)" value={fmt(sensores?.vibration, 3)} unit="g"
-          accent={sensores?.vibration > alertSettings.vibrationMax ? C.red : C.cyan}
+          tone={C.blue}
+          alert={sensores?.vibration > alertSettings.vibrationMax}
         />
-        <MetricCard label="Vibracao (pico)" value={fmt(sensores?.vibrationPeak, 3)} unit="g" accent={C.purple} />
+        <MetricCard label="Vibracao (pico)" value={fmt(sensores?.vibrationPeak, 3)} unit="g" tone={C.magenta} />
         <MetricCard
           label="Temperatura" value={fmt(sensores?.temperature, 1)} unit="°C"
-          accent={sensores?.temperature > alertSettings.temperatureMax ? C.red : C.amber}
+          tone={C.orange}
+          alert={sensores?.temperature > alertSettings.temperatureMax}
           sub={sensores?.sdOk === false ? "SD indisponivel" : sensores?.sdSamples != null ? `${sensores.sdSamples} amostras no SD` : undefined}
         />
       </div>
@@ -268,11 +325,11 @@ function MonitorTab({
               <LineChart data={history} margin={{ top: 8, right: 14, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
                 <XAxis dataKey="time" tick={{ fill: C.muted, fontSize: 10 }} minTickGap={28} />
-                <YAxis tick={{ fill: C.cyan, fontSize: 11 }} tickFormatter={(v) => `${v}V`} domain={["auto", "auto"]} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} tickFormatter={(v) => `${v}V`} domain={["auto", "auto"]} />
                 <Tooltip content={<TT />} />
-                <ReferenceLine y={alertSettings.voltageMin} stroke={C.red} strokeDasharray="4 4" />
-                <ReferenceLine y={alertSettings.voltageMax} stroke={C.red} strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="voltage" name="Tensao" stroke={C.cyan} strokeWidth={2} dot={false} connectNulls />
+                <ReferenceLine y={alertSettings.voltageMin} stroke={C.bad} strokeDasharray="4 4" />
+                <ReferenceLine y={alertSettings.voltageMax} stroke={C.bad} strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="voltage" name="Tensao" stroke={C.blue} strokeWidth={2} dot={false} connectNulls />
                 <Brush dataKey="time" {...brushProps} />
               </LineChart>
             </ResponsiveContainer>
@@ -285,33 +342,33 @@ function MonitorTab({
               <LineChart data={history} margin={{ top: 8, right: 14, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
                 <XAxis dataKey="time" tick={{ fill: C.muted, fontSize: 10 }} minTickGap={28} />
-                <YAxis tick={{ fill: C.purple, fontSize: 11 }} tickFormatter={(v) => `${v}A`} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} tickFormatter={(v) => `${v}A`} />
                 <Tooltip content={<TT />} />
-                <ReferenceLine y={alertSettings.currentMax} stroke={C.red} strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="current" name="Corrente" stroke={C.purple} strokeWidth={2} dot={false} connectNulls />
+                <ReferenceLine y={alertSettings.currentMax} stroke={C.bad} strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="current" name="Corrente" stroke={C.orange} strokeWidth={2} dot={false} connectNulls />
                 <Brush dataKey="time" {...brushProps} />
               </LineChart>
             </ResponsiveContainer>
           ) : <ChartPlaceholder label="Aguardando leituras de corrente." />}
         </Card>
 
-        <Card title="Potencia ativa e energia">
+        <Card title="Potencias — ativa e aparente">
           {history.some((h) => h.power != null) ? (
             <ResponsiveContainer width="100%" height={240}>
               <AreaChart data={history} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="powerFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor={C.amber} stopOpacity={0.5} />
-                    <stop offset="95%" stopColor={C.amber} stopOpacity={0.02} />
+                    <stop offset="5%" stopColor={C.yellow} stopOpacity={0.5} />
+                    <stop offset="95%" stopColor={C.yellow} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
                 <XAxis dataKey="time" tick={{ fill: C.muted, fontSize: 10 }} minTickGap={28} />
-                <YAxis tick={{ fill: C.amber, fontSize: 11 }} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} />
                 <Tooltip content={<TT />} />
                 <Legend wrapperStyle={{ fontSize: 12, color: C.muted }} />
-                <Area type="monotone" dataKey="power" name="Ativa (W)" stroke={C.amber} strokeWidth={2} dot={false} fill="url(#powerFill)" connectNulls />
-                <Line type="monotone" dataKey="apparentPower" name="Aparente (VA)" stroke={C.cyan} strokeWidth={2} dot={false} connectNulls />
+                <Area type="monotone" dataKey="power" name="Ativa (W)" stroke={C.yellow} strokeWidth={2} dot={false} fill="url(#powerFill)" connectNulls />
+                <Line type="monotone" dataKey="apparentPower" name="Aparente (VA)" stroke={C.aqua} strokeWidth={2} dot={false} connectNulls />
                 <Brush dataKey="time" {...brushProps} />
               </AreaChart>
             </ResponsiveContainer>
@@ -324,12 +381,12 @@ function MonitorTab({
               <LineChart data={history} margin={{ top: 8, right: 14, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
                 <XAxis dataKey="time" tick={{ fill: C.muted, fontSize: 10 }} minTickGap={28} />
-                <YAxis tick={{ fill: C.cyan, fontSize: 11 }} tickFormatter={(v) => `${v}g`} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} tickFormatter={(v) => `${v}g`} />
                 <Tooltip content={<TT />} />
                 <Legend wrapperStyle={{ fontSize: 12, color: C.muted }} />
-                <ReferenceLine y={alertSettings.vibrationMax} stroke={C.red} strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="vibration" name="RMS (g)" stroke={C.cyan} strokeWidth={2} dot={false} connectNulls />
-                <Line type="monotone" dataKey="vibrationPeak" name="Pico (g)" stroke={C.purple} strokeWidth={2} dot={false} connectNulls />
+                <ReferenceLine y={alertSettings.vibrationMax} stroke={C.bad} strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="vibration" name="RMS (g)" stroke={C.blue} strokeWidth={2} dot={false} connectNulls />
+                <Line type="monotone" dataKey="vibrationPeak" name="Pico (g)" stroke={C.magenta} strokeWidth={2} dot={false} connectNulls />
                 <Brush dataKey="time" {...brushProps} />
               </LineChart>
             </ResponsiveContainer>
@@ -342,10 +399,10 @@ function MonitorTab({
               <LineChart data={history} margin={{ top: 8, right: 14, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
                 <XAxis dataKey="time" tick={{ fill: C.muted, fontSize: 10 }} minTickGap={28} />
-                <YAxis tick={{ fill: C.amber, fontSize: 11 }} tickFormatter={(v) => `${v}°C`} />
+                <YAxis tick={{ fill: C.muted, fontSize: 11 }} tickFormatter={(v) => `${v}°C`} />
                 <Tooltip content={<TT />} />
-                <ReferenceLine y={alertSettings.temperatureMax} stroke={C.red} strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="temperature" name="Temperatura" stroke={C.amber} strokeWidth={2} dot={false} connectNulls />
+                <ReferenceLine y={alertSettings.temperatureMax} stroke={C.bad} strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="temperature" name="Temperatura" stroke={C.orange} strokeWidth={2} dot={false} connectNulls />
                 <Brush dataKey="time" {...brushProps} />
               </LineChart>
             </ResponsiveContainer>
@@ -358,10 +415,10 @@ function MonitorTab({
               <LineChart data={history} margin={{ top: 8, right: 14, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.border} />
                 <XAxis dataKey="time" tick={{ fill: C.muted, fontSize: 10 }} minTickGap={28} />
-                <YAxis domain={[0, 1.1]} tick={{ fill: C.green, fontSize: 11 }} />
+                <YAxis domain={[0, 1.1]} tick={{ fill: C.muted, fontSize: 11 }} />
                 <Tooltip content={<TT />} />
                 <ReferenceLine y={1} stroke={C.border} strokeDasharray="4 4" />
-                <Line type="monotone" dataKey="pf" name="Fator de potencia" stroke={C.green} strokeWidth={2} dot={false} connectNulls />
+                <Line type="monotone" dataKey="pf" name="Fator de potencia" stroke={C.aqua} strokeWidth={2} dot={false} connectNulls />
                 <Brush dataKey="time" {...brushProps} />
               </LineChart>
             </ResponsiveContainer>
@@ -371,18 +428,18 @@ function MonitorTab({
 
       <Card
         title={`Alertas recentes${alerts.length ? ` (${alerts.length})` : ""}`}
-        accent={alerts.some((a) => a.severity === "critical") ? `${C.red}66` : undefined}
+        accent={alerts.some((a) => a.severity === "critical") ? `${C.bad}66` : undefined}
         action={<button className="secondary-button" onClick={onRequestNotifications}>Ativar notificacoes</button>}
       >
         {alerts.length ? (
           <div style={{ display: "grid", gap: 8 }}>
             {alerts.map((alert) => (
               <div key={alert.id} style={{
-                background: C.bg, borderLeft: `3px solid ${alert.severity === "critical" ? C.red : C.amber}`,
+                background: C.bg, borderLeft: `3px solid ${alert.severity === "critical" ? C.bad : C.warn}`,
                 borderRadius: 6, padding: "10px 12px",
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                  <span style={{ color: alert.severity === "critical" ? C.red : C.amber, fontWeight: 700, fontSize: 12 }}>
+                  <span style={{ color: alert.severity === "critical" ? C.bad : C.warn, fontWeight: 700, fontSize: 12 }}>
                     {alert.title}
                   </span>
                   <span style={{ color: C.muted, fontSize: 11 }}>{alert.createdAt.toLocaleTimeString("pt-BR")}</span>
@@ -407,7 +464,7 @@ function AcionamentoTab({
   const locked = acionamento?.protectionLock === true;
   const podeComandar = connected;
 
-  const bannerColor = locked ? C.red : motorOn ? C.green : C.muted;
+  const bannerColor = locked ? C.bad : motorOn ? C.good : C.muted;
 
   return (
     <>
@@ -439,10 +496,10 @@ function AcionamentoTab({
 
         {locked && (
           <div style={{
-            background: `${C.red}18`, border: `1px solid ${C.red}66`, borderRadius: 8,
+            background: `${C.bad}18`, border: `1px solid ${C.bad}66`, borderRadius: 8,
             color: C.text, fontSize: 13, marginTop: 14, padding: "12px 14px",
           }}>
-            <strong style={{ color: C.red }}>Protecao atuada.</strong>{" "}
+            <strong style={{ color: C.bad }}>Protecao atuada.</strong>{" "}
             O Modulo 1 abriu os contatores e nao aceita nova partida.
             {acionamento?.stopReason ? ` Motivo: ${acionamento.stopReason}.` : ""}{" "}
             Envie <strong>Parar</strong> para rearmar antes de partir de novo.
@@ -474,7 +531,7 @@ function AcionamentoTab({
         </div>
 
         {!connected && (
-          <div style={{ color: C.amber, fontSize: 12, marginTop: 12 }}>
+          <div style={{ color: C.warn, fontSize: 12, marginTop: 12 }}>
             Conecte ao broker na aba Monitoramento para habilitar os comandos.
           </div>
         )}
@@ -489,7 +546,7 @@ function AcionamentoTab({
                 type="radio" name="commandMode" value="device"
                 checked={commandMode === "device"}
                 onChange={() => onCommandModeChange("device")}
-                style={{ accentColor: C.cyan }}
+                style={{ accentColor: C.accent }}
               />
               Direcionado a {DEVICE_ACIONAMENTO}
             </label>
@@ -498,7 +555,7 @@ function AcionamentoTab({
                 type="radio" name="commandMode" value="broadcast"
                 checked={commandMode === "broadcast"}
                 onChange={() => onCommandModeChange("broadcast")}
-                style={{ accentColor: C.cyan }}
+                style={{ accentColor: C.accent }}
               />
               Broadcast em request/command
             </label>
@@ -513,7 +570,7 @@ function AcionamentoTab({
               <div key={entry.id} className="status-log-line">
                 <span style={{ color: C.muted }}>{entry.at.toLocaleTimeString("pt-BR")}</span>
                 <span style={{ color: C.muted }}>{entry.deviceId}</span>
-                <span style={{ color: isProtectionStatus(entry.status) ? C.red : C.green }}>
+                <span style={{ color: isProtectionStatus(entry.status) ? C.bad : C.good }}>
                   {statusLabel(entry.status)}
                 </span>
               </div>
@@ -965,22 +1022,25 @@ export default function App() {
       fontFamily: "'Inter', 'Segoe UI', sans-serif",
       padding: "32px 24px", maxWidth: 1160, margin: "0 auto",
     }}>
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 11, color: C.amber, letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 700, marginBottom: 6 }}>
-          ESP32 + ESP32-S3 · PZEM-004T · MPU6050
-        </div>
-        <h1 style={{ fontSize: 26, fontWeight: 800, margin: 0 }}>IoTMotor — Painel de Operacao</h1>
-        <p style={{ color: C.muted, fontSize: 13, marginTop: 6 }}>{subtitles[tab]}</p>
-      </div>
+      <header className="bp-header">
+        <BlueprintArt />
+        <div className="bp-eyebrow">ESP32 + ESP32-S3 · PZEM-004T · MPU6050</div>
+        <h1 className="bp-title">
+          <span className="bp-title-accent">IoTMotor</span> — Painel de Operacao
+        </h1>
+        <p style={{ color: C.muted, fontSize: 13, marginTop: 6, position: "relative" }}>
+          {subtitles[tab]}
+        </p>
+      </header>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `1px solid ${C.border}` }}>
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: "none", border: "none",
-            color: tab === t.id ? C.amber : C.muted,
+            color: tab === t.id ? C.accent : C.muted,
             fontWeight: tab === t.id ? 700 : 400, fontSize: 14, cursor: "pointer",
             padding: "8px 18px",
-            borderBottom: `2px solid ${tab === t.id ? C.amber : "transparent"}`,
+            borderBottom: `2px solid ${tab === t.id ? C.accent : "transparent"}`,
             marginBottom: -1,
           }}>{t.label}</button>
         ))}
