@@ -29,7 +29,7 @@ jobs:
           node --check dashboard-cloudflare/dual-dashboard.js
           node --check dashboard-cloudflare/hardware-mirror.js
       - name: Run dashboard tests
-        run: node --test dashboard-cloudflare/app.test.cjs dashboard-cloudflare/dual-dashboard.test.cjs
+        run: node --test dashboard-cloudflare/app.test.cjs dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
       - name: Check static site files
         run: |
           test -s dashboard-cloudflare/index.html
