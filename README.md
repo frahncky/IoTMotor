@@ -186,8 +186,11 @@ autenticacao e troca o prefixo por um dificil de adivinhar, sem recompilar nada.
 O `device_id` continua sendo de compilacao — e a identidade do modulo, e deixar
 que um pedido de rede a mude orfanaria o dispositivo no painel.
 
-O app ja tem o metodo `sendProvisionCommand` apontando para esta rota, mas ainda
-nao tem tela que o chame.
+No app, a aba Configuracoes tem o botao **Provisionar modulo**, ao lado de
+"Testar comunicacao local". Ele pede a chave, le `/health` e `/provision` para
+mostrar qual modulo respondeu e o que esta valendo, varre as redes pelo proprio
+ESP32 (`/wifi-networks`) e grava. Restaurar padroes de fabrica esta na mesma
+tela.
 
 **Divergencia deliberada do E-Metrics:** la o `/provision` e aberto. Aqui exige a
 chave. Num modulo que aciona motor, um endpoint aberto na rede local deixaria
