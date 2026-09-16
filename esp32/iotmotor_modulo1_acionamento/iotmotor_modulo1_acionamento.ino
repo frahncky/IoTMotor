@@ -50,6 +50,7 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <PZEM004Tv30.h>
+#include <IoTMotorNet.h>
 #include <math.h>
 
 // -----------------------------------------------------------------------------
@@ -80,6 +81,22 @@ static const bool ACEITA_COMANDO_DIRETO    = true;  // topico <prefix>/esp32-01/
 
 static const unsigned long INTERVALO_TELEMETRIA_MS      = 1000UL;
 static const unsigned long INTERVALO_RECONEXAO_MQTT_MS  = 3000UL;
+
+// -----------------------------------------------------------------------------
+// Acesso local e atualizacao de firmware
+// -----------------------------------------------------------------------------
+static const char* FIRMWARE_VERSION = "1.1.0";
+
+// Prefixo obrigatorio das URLs de atualizacao remota. Uma URL que nao comece
+// exatamente com isto e recusada antes de qualquer download — e o que impede
+// que um comando vindo de um broker aberto aponte para outro firmware.
+// Ajuste para o seu endereco de releases.
+static const char* OTA_URL_PREFIX =
+    "https://github.com/frahncky/IoTMotor-firmware/releases/download/";
+
+// TROQUE ANTES DE USAR. Protege o upload local e o ArduinoOTA. Com menos de
+// 8 caracteres, os dois ficam desligados.
+static const char* OTA_KEY = "troque-esta-chave";
 
 // -----------------------------------------------------------------------------
 // Reles / acionamento
@@ -239,6 +256,33 @@ const char* nomeEstadoAcionamento() {
 }
 
 // -----------------------------------------------------------------------------
+// Ganchos do servico de rede
+// -----------------------------------------------------------------------------
+// Atualizar o firmware termina em reboot, e no reset os reles caem: o motor
+// pararia sozinho no meio da operacao. Por isso so aceitamos com o acionamento
+// parado — vale para as tres vias (upload local, ArduinoOTA e OTA remota).
+bool vetarAtualizacao(String &motivo) {
+  if (motorLigado()) {
+    motivo = "Motor acionado. Pare o motor antes de atualizar o firmware.";
+    return false;
+  }
+  return true;
+}
+
+void descreverEstadoParaHealth(JsonObject modulo) {
+  modulo["role"] = "actuator";
+  modulo["state"] = nomeEstadoAcionamento();
+  modulo["motor_on"] = motorLigado();
+  modulo["mode"] = modoAtual;
+  modulo["protection_lock"] = travaProtecao;
+  modulo["stop_reason"] = motivoUltimaParada;
+  modulo["pzem_ok"] = pzemOk;
+  modulo["mqtt_connected"] = mqttClient.connected();
+  modulo["voltage"] = ultimaTensao;
+  modulo["current"] = ultimaCorrente;
+}
+
+// -----------------------------------------------------------------------------
 // MQTT - publicacoes
 // -----------------------------------------------------------------------------
 void montarTopicos() {
@@ -260,10 +304,17 @@ void publicarStatus(const char* valor) {
   Serial.println(valor);
 }
 
+void relatarStatusDeRede(const char* status) {
+  publicarStatus(status);
+}
+
 void publicarCapabilities() {
   StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator";
+  doc["firmware_version"] = FIRMWARE_VERSION;
+  doc["accepts_ota"] = true;
+  doc["ota_url_prefix"] = OTA_URL_PREFIX;
   JsonArray campos = doc.createNestedArray("fields");
   campos.add("voltage");
   campos.add("current");
@@ -600,14 +651,38 @@ bool destinadoAEsteModulo(const JsonDocument& doc) {
   return strcmp(alvo, DEVICE_ID) == 0;
 }
 
+void tratarPedidoDeAtualizacao(const JsonDocument& doc) {
+  const char* url = doc["url"] | "";
+  const char* versao = doc["version"] | "";
+
+  if (strlen(url) == 0) {
+    publicarStatus("ota_invalid_request");
+    return;
+  }
+
+  // Bloqueia o laco enquanto baixa. Aceitavel: so chega aqui com o motor
+  // parado, e o fim do caminho feliz e um reboot de qualquer forma.
+  String erro;
+  if (!iotmotor::rede.atualizarDeUrl(String(url), String(versao), erro)) {
+    Serial.print("[ota] recusada ou falhou: ");
+    Serial.println(erro);
+  }
+}
+
 void tratarComandoMqtt(const JsonDocument& doc, bool viaBroadcast) {
   if (viaBroadcast && !ACEITA_COMANDO_BROADCAST) return;
   if (!viaBroadcast && !ACEITA_COMANDO_DIRETO) return;
   if (viaBroadcast && !destinadoAEsteModulo(doc)) return;
 
+  const char* tipo = doc["type"] | "";
+
+  if (strcmp(tipo, "ota") == 0) {
+    tratarPedidoDeAtualizacao(doc);
+    return;
+  }
+
   // O topico de broadcast tambem carrega configuracoes que nao sao do Modulo 1
   // (por exemplo storage_config, tratada pelo Modulo 2).
-  const char* tipo = doc["type"] | "";
   if (strlen(tipo) > 0 && strcmp(tipo, "command_request") != 0) return;
 
   const char* comando = doc["command"] | "";
@@ -788,6 +863,17 @@ void setup() {
   mqttClient.setCallback(aoReceberMqtt);
   mqttClient.setBufferSize(768);
 
+  iotmotor::Config redeCfg;
+  redeCfg.deviceId = DEVICE_ID;
+  redeCfg.versaoFirmware = FIRMWARE_VERSION;
+  redeCfg.prefixoUrlOta = OTA_URL_PREFIX;
+  redeCfg.chaveOta = OTA_KEY;
+  redeCfg.apSsid = "IoTMotor-M1-Setup";
+  iotmotor::rede.aoVetarAtualizacao(vetarAtualizacao);
+  iotmotor::rede.aoConsultarEstado(descreverEstadoParaHealth);
+  iotmotor::rede.aoRelatarStatus(relatarStatusDeRede);
+  iotmotor::rede.begin(redeCfg);
+
   lerPzem();
   ultimaLeituraPzem = millis();
 
@@ -803,9 +889,11 @@ void setup() {
 void loop() {
   const unsigned long agora = millis();
 
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
   manterWifi(agora);
   manterMqtt(agora);
   mqttClient.loop();
+  iotmotor::rede.loop(wifiOk);
 
   atualizarAcionamento(agora);
 

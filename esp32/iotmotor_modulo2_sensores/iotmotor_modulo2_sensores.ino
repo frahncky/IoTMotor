@@ -50,6 +50,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Preferences.h>
+#include <IoTMotorNet.h>
 #include <time.h>
 #include <math.h>
 
@@ -78,6 +79,19 @@ static const char* DEVICE_ID_ACIONAMENTO = "esp32-01";
 
 static const unsigned long INTERVALO_TELEMETRIA_MS      = 1000UL;
 static const unsigned long INTERVALO_RECONEXAO_MQTT_MS  = 3000UL;
+
+// -----------------------------------------------------------------------------
+// Acesso local e atualizacao de firmware
+// -----------------------------------------------------------------------------
+static const char* FIRMWARE_VERSION = "1.1.0";
+
+// Prefixo obrigatorio das URLs de atualizacao remota. Ajuste para o seu
+// endereco de releases. Uma URL fora dele e recusada antes do download.
+static const char* OTA_URL_PREFIX =
+    "https://github.com/frahncky/IoTMotor-firmware/releases/download/";
+
+// TROQUE ANTES DE USAR. Protege o upload local e o ArduinoOTA.
+static const char* OTA_KEY = "troque-esta-chave";
 
 // -----------------------------------------------------------------------------
 // Pinagem
@@ -460,6 +474,21 @@ void registrarNoSD() {
 }
 
 // -----------------------------------------------------------------------------
+// Ganchos do servico de rede
+// -----------------------------------------------------------------------------
+void descreverEstadoParaHealth(JsonObject modulo) {
+  modulo["role"] = "sensor";
+  modulo["mpu_ok"] = mpuDisponivel;
+  modulo["sd_ok"] = sdDisponivel;
+  modulo["sd_samples"] = totalAmostrasGravadas;
+  modulo["retention_days"] = retencaoDias;
+  modulo["critical"] = estadoCritico;
+  modulo["vibration"] = g_vibracaoRms;
+  modulo["temperature"] = g_tempValida ? g_temperatura : 0.0f;
+  modulo["mqtt_connected"] = mqttClient.connected();
+}
+
+// -----------------------------------------------------------------------------
 // MQTT - publicacoes
 // -----------------------------------------------------------------------------
 void montarTopicos() {
@@ -481,10 +510,17 @@ void publicarStatus(const char* valor) {
   Serial.println(valor);
 }
 
+void relatarStatusDeRede(const char* status) {
+  publicarStatus(status);
+}
+
 void publicarCapabilities() {
   StaticJsonDocument<512> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "sensor";
+  doc["firmware_version"] = FIRMWARE_VERSION;
+  doc["accepts_ota"] = true;
+  doc["ota_url_prefix"] = OTA_URL_PREFIX;
   JsonArray campos = doc.createNestedArray("fields");
   campos.add("vibration");
   campos.add("temperature");
@@ -612,9 +648,30 @@ void aoReceberMqtt(char* topico, byte* payload, unsigned int tamanho) {
 
   if (strcmp(topico, topicComandoRequest) == 0 || strcmp(topico, topicComando) == 0) {
     const char* tipo = doc["type"] | "";
+
     if (strcmp(tipo, "storage_config") == 0) {
       tratarConfiguracaoDeArmazenamento(doc);
+      return;
     }
+
+    if (strcmp(tipo, "ota") == 0) {
+      if (!destinadoAEsteModulo(doc)) return;
+
+      const char* url = doc["url"] | "";
+      const char* versao = doc["version"] | "";
+      if (strlen(url) == 0) {
+        publicarStatus("ota_invalid_request");
+        return;
+      }
+
+      String erro;
+      if (!iotmotor::rede.atualizarDeUrl(String(url), String(versao), erro)) {
+        Serial.print("[ota] recusada ou falhou: ");
+        Serial.println(erro);
+      }
+      return;
+    }
+
     // Comandos de partida/parada nao pertencem a este modulo: sao do Modulo 1.
     return;
   }
@@ -807,6 +864,18 @@ void setup() {
   mqttClient.setCallback(aoReceberMqtt);
   mqttClient.setBufferSize(768);
 
+  // Este modulo nao aciona nada, entao nao ha veto: atualizar so interrompe a
+  // aquisicao pelo tempo do download e do reboot.
+  iotmotor::Config redeCfg;
+  redeCfg.deviceId = DEVICE_ID;
+  redeCfg.versaoFirmware = FIRMWARE_VERSION;
+  redeCfg.prefixoUrlOta = OTA_URL_PREFIX;
+  redeCfg.chaveOta = OTA_KEY;
+  redeCfg.apSsid = "IoTMotor-M2-Setup";
+  iotmotor::rede.aoConsultarEstado(descreverEstadoParaHealth);
+  iotmotor::rede.aoRelatarStatus(relatarStatusDeRede);
+  iotmotor::rede.begin(redeCfg);
+
   setLED(false, true, false);
 }
 
@@ -816,9 +885,11 @@ void setup() {
 void loop() {
   const unsigned long agora = millis();
 
+  const bool wifiOk = (WiFi.status() == WL_CONNECTED);
   manterWifi(agora);
   manterMqtt(agora);
   mqttClient.loop();
+  iotmotor::rede.loop(wifiOk);
 
   if (agora - ultimaAmostraMs >= INTERVALO_AMOSTRA_MS) {
     ultimaAmostraMs = agora;

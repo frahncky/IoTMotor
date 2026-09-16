@@ -7,8 +7,9 @@ Aplicativo Flutter para controle e monitoramento de motores via MQTT.
 O sistema e composto por dois modulos ESP32 que dividem os papeis e conversam
 pelo mesmo broker MQTT que o aplicativo.
 
-Os modulos **nao servem pagina web**. Existem duas interfaces, e as duas falam
-com o broker, nunca com o ESP32:
+Os modulos **nao servem pagina web**. O que eles expoem na rede local e uma API
+JSON de diagnostico e atualizacao de firmware (ver "Acesso local e atualizacao"),
+nao uma interface. As duas interfaces de operacao falam com o broker:
 
 - **Aplicativo** — o projeto Flutter deste repositorio (Android, iOS e desktop);
 - **Dashboard web** — `dashboard_iotmotor/`, em React + Vite, publicado no
@@ -117,11 +118,124 @@ Com `topic_prefix` igual a `iotmotor` (padrao do aplicativo):
 Um payload em `request/...` sem `device_id` vale para todos os modulos; com
 `device_id`, apenas para o modulo indicado.
 
+Payloads aceitos em `request/command` e `<device>/command`, pelo campo `type`:
+`command_request` (partida/parada, so o Modulo 1), `storage_config` (retencao do
+SD, so o Modulo 2) e `ota` (atualizacao remota, os dois).
+
 Valores publicados em `status`: `online`, `offline`, `motor_started`,
 `motor_running`, `motor_stopped`, `unknown_command`, `invalid_command_json`,
 `blocked_by_protection`, `protection_overcurrent`, `protection_overvoltage`,
 `protection_undervoltage`, `protection_vibration`, `protection_temperature`,
-`storage_config_applied`, `storage_config_invalid`.
+`storage_config_applied`, `storage_config_invalid`, e os da atualizacao:
+`ota_local_started`, `ota_local_applied`, `ota_local_failed`, `ota_push_started`,
+`ota_push_applied`, `ota_push_failed`, `ota_remote_started`, `ota_remote_applied`,
+`ota_remote_failed`, `ota_refused`, `ota_refused_url`, `ota_refused_version`,
+`ota_invalid_request`.
+
+## Acesso local e atualizacao
+
+Alem do MQTT, cada modulo sobe um servico na rede local — mesmo desenho do
+firmware do E-Metrics IoT. Nao e um painel: sao rotas JSON para diagnostico e
+para gravar firmware.
+
+| Rota | Metodo | Para que serve |
+|---|---|---|
+| `/health` | GET | Estado completo: versao, heap, RSSI, IP e o estado do modulo |
+| `/wifi-networks` | GET | Varredura de redes Wi-Fi ao alcance |
+| `/firmware/update` | POST | Upload de firmware (multipart), exige a chave no cabecalho |
+
+Os modulos respondem em `http://esp32-01.local/` e `http://esp32-02.local/` via
+mDNS, ou pelo IP. O botao "testar comunicacao local" da aba Configuracoes do app
+chama `/wifi-networks` — ate agora ele apontava para um endpoint que nenhum
+firmware implementava.
+
+### Tres caminhos de atualizacao
+
+| Caminho | Como | Quando usar |
+|---|---|---|
+| **ArduinoOTA** | Push pela IDE, pela rede local | Desenvolvimento na bancada |
+| **Upload HTTP** | `POST /firmware/update` com a chave | Gravar sem a IDE, pelo app ou por `curl` |
+| **Remota** | Payload `{"type":"ota","url":...}` no topico de comando; o modulo baixa por HTTPS | Atualizar a planta a partir de um release |
+
+Exemplo de upload local:
+
+```bash
+curl -X POST http://esp32-01.local/firmware/update \
+  -H "X-IoTMotor-OTA-Key: SUA-CHAVE" \
+  -F "firmware=@iotmotor_modulo1_acionamento.ino.bin"
+```
+
+Exemplo de atualizacao remota, publicada no topico de comando do modulo:
+
+```json
+{
+  "type": "ota",
+  "device_id": "esp32-01",
+  "url": "https://github.com/<owner>/<repo>/releases/download/v1.2.0/modulo1.bin",
+  "version": "1.2.0"
+}
+```
+
+### O que protege isso
+
+O broker e publico, entao o disparo da atualizacao remota nao e confiavel por
+si. As defesas estao no modulo:
+
+- **Prefixo de URL fixado em tempo de compilacao** (`OTA_URL_PREFIX`). Uma URL
+  que nao comece exatamente com ele e recusada antes de qualquer download. Quem
+  disparar de fora so consegue apontar para o *seu* endereco de releases — nao
+  vira execucao de codigo arbitrario.
+- **Recusa de versao igual ou anterior**, o que fecha o downgrade para uma
+  versao antiga com falha conhecida.
+- **HTTPS obrigatorio**, com o pacote de certificados raiz do proprio core.
+- **Chave de 8+ caracteres** (`OTA_KEY`) para o upload local e o ArduinoOTA,
+  comparada em tempo constante. Com menos que isso, os dois ficam desligados.
+- **Modulo 1 recusa atualizar com o motor acionado.** A gravacao termina em
+  reboot e no reset os reles caem: o motor pararia sozinho no meio da operacao.
+
+Duas ressalvas honestas:
+
+1. **Nao ha rollback automatico.** O bootloader que o Arduino distribui nao vem
+   com `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A protecao que existe e o
+   `Update.end()` validando a imagem antes de trocar a particao ativa — uma
+   imagem que grave inteira mas trave no boot exige acesso fisico.
+2. **Nada disso substitui broker autenticado.** O prefixo fixado reduz a
+   gravidade, nao elimina. Para uso alem da bancada, use broker com usuario e
+   senha, e considere assinatura de imagem.
+
+### Tabelas de particao
+
+OTA exige dois slots de aplicacao: o firmware roda em um enquanto o outro
+recebe a imagem. Cada sketch traz o seu `partitions.csv`; na IDE, selecione
+Ferramentas > Esquema de Particao > **Custom**.
+
+| | Flash | Slot de OTA | Sobra para o binario atual |
+|---|---|---|---|
+| Modulo 1 | 4 MB | 1,94 MB cada | confortavel |
+| Modulo 2 | 8 MB | 3,94 MB cada | espaco para o TFLite Micro e o modelo |
+
+Nenhum dos dois usa sistema de arquivos na flash interna — o Modulo 2 grava no
+SD e usa NVS para a retencao — entao o espaco que os esquemas padrao dariam ao
+SPIFFS foi para os slots de aplicacao.
+
+### Biblioteca compartilhada
+
+O servico de rede dos dois modulos vive em `esp32/libraries/IoTMotorNet/`, para
+nao duplicar codigo. Para compilar pela IDE, copie essa pasta para
+`~/Arduino/libraries/`. O workflow de CI usa `--libraries esp32/libraries` e nao
+precisa de instalacao.
+
+### Compilacao automatica
+
+`.github/workflows/firmware.yml` compila os dois sketches com `arduino-cli` a
+cada push em `esp32/`, confere o tamanho de cada binario contra o slot de OTA
+(falha se nao couber, avisa acima de 85%) e publica os `.bin` como artefato.
+Numa tag `v*`, anexa os binarios ao release.
+
+> **Repositorio privado:** um release de repo privado exige token para baixar, e
+> gravar token no firmware e ruim — quem tiver a placa extrai. As saidas sao
+> tornar o repositorio publico, publicar os binarios num repo publico separado,
+> ou hospedar no Cloudflare. `OTA_URL_PREFIX` acompanha a escolha.
 
 ## Comportamento sem rede
 
@@ -136,6 +250,10 @@ Como o comando so chega pelo broker, vale saber o que cada modulo faz sozinho:
 - **Modulo 2** continua medindo, sinalizando estado critico no LED e no buzzer e
   gravando no cartao SD. Quando a rede volta, as leituras do periodo ficam no SD;
   o modulo nao republica o historico.
+
+Se o Wi-Fi da planta nao voltar, cada modulo levanta um ponto de acesso de
+emergencia (`IoTMotor-M1-Setup` / `IoTMotor-M2-Setup`) apos 90 s, para que de
+para alcancar `/health` e gravar firmware sem abrir o painel eletrico.
 
 Enquanto o broker estiver fora, nao ha como partir ou parar o motor remotamente:
 o acionamento depende do comando MQTT.
@@ -157,8 +275,11 @@ Flutter e a URL no painel web.
 > topicos pode publicar em `iotmotor/esp32-01/command` e partir o motor. Para uso
 > alem da bancada, use um broker com usuario, senha e TLS.
 
+Troque tambem `OTA_KEY` nos dois sketches: o valor versionado e um marcador, e
+com ele qualquer um na rede local grava firmware no modulo.
+
 Bibliotecas necessarias: PubSubClient, ArduinoJson 6.x, PZEM004Tv30, LiquidCrystal
-I2C, OneWire e DallasTemperature.
+I2C, OneWire, DallasTemperature e a IoTMotorNet deste repositorio.
 
 ## Telemetria MQTT
 
