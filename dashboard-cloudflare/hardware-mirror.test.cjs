@@ -40,7 +40,7 @@ test('old firmware is clearly marked as an approximation; retained telemetry ign
  const {get,client}=browser();
  const m={device_id:'esp32-01',state:'tempo_morto',mode:'star_delta',pzem_ok:true,voltage:220,current:3,power:600,energy:0.5};
  client.emit('message','iotmotor/esp32-01/telemetry',Buffer.from(JSON.stringify(m)),{retain:true});
- assert.equal(get('messageCount').textContent,'0');
+ assert.equal(String(get('messageCount').textContent),'0');
  client.emit('message','iotmotor/esp32-01/telemetry',Buffer.from(JSON.stringify(m)),{retain:false});
  assert.equal(get('relayText0').textContent,'Comando LIGADO');
  assert.equal(get('relayText1').textContent,'Comando DESLIGADO');
