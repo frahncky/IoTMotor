@@ -1,14 +1,16 @@
-name: Cloudflare dashboard
+name: IoTMotor web and firmware checks
 
 on:
   push:
     branches: [main]
     paths:
       - 'dashboard-cloudflare/**'
+      - 'esp32/**'
       - '.github/workflows/cloudflare-dashboard.yml'
   pull_request:
     paths:
       - 'dashboard-cloudflare/**'
+      - 'esp32/**'
       - '.github/workflows/cloudflare-dashboard.yml'
   workflow_dispatch:
 
@@ -23,17 +25,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check JavaScript syntax
+      - name: Check active JavaScript syntax
         run: |
-          node --check dashboard-cloudflare/app.js
           node --check dashboard-cloudflare/dual-dashboard.js
           node --check dashboard-cloudflare/hardware-mirror.js
-      - name: Run dashboard tests
-        run: node --test dashboard-cloudflare/app.test.cjs dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
-      - name: Check static site files
+      - name: Run current web tests
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
+      - name: Verify canonical project structure
         run: |
+          test -s esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
+          test -s esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/iotmotor_esp32_s3_sensores.ino
           test -s dashboard-cloudflare/index.html
           test -s dashboard-cloudflare/hardware.html
           test -s dashboard-cloudflare/_headers
           grep -q 'dual-dashboard.js' dashboard-cloudflare/index.html
           grep -q 'hardware-mirror.js' dashboard-cloudflare/hardware.html
+          grep -q 'relay_pins' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
+          grep -q 'createNestedArray("lcd")' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
+          test ! -e esp32/iotmotor_esp32/iotmotor_esp32_motor
+          test ! -e esp32/iotmotor_esp32/iotmotor_esp32_todos
+          test ! -e dashboard-cloudflare/app.js
+          test ! -e dashboard-cloudflare/dashboard-v2.js
