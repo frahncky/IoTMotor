@@ -5,26 +5,30 @@
  * MODULO 1 - ESP32 DevKit V1  (device_id: esp32-01)
  * Papel: ACIONAMENTO do motor + MEDICAO ELETRICA
  *
- * Reune, num unico firmware:
+ * O modulo nao serve pagina web. Toda a interface - pagina web e
+ * aplicativo - e o proprio cliente Flutter falando com o broker MQTT.
+ * Aqui ficam apenas a aquisicao, o acionamento e as protecoes.
+ *
+ * Conteudo:
  *   - Medicao real com PZEM-004T v3 (tensao, corrente, potencia,
  *     fator de potencia, frequencia e energia);
  *   - Acionamento por 4 reles com partida direta, partida
  *     estrela-triangulo (maquina de estados nao bloqueante) e parada;
- *   - LCD I2C 20x4 com cache de linhas (sem flicker);
- *   - Pagina web local (http://modulo1.local/) para operacao
- *     direta, sem broker;
- *   - Ponte MQTT no mesmo contrato do aplicativo Flutter IoTMotor,
- *     de modo que pagina web e aplicativo comandem o mesmo motor;
- *   - Protecao eletrica local (sub/sobretensao e sobrecorrente) e
- *     protecao cruzada: assina a telemetria do Modulo 2 (esp32-02)
- *     e desliga o motor em vibracao ou temperatura critica.
+ *   - LCD I2C 20x4 com cache de linhas (unica interface local, para
+ *     o operador junto da bancada);
+ *   - Protecao eletrica local (sub/sobretensao e sobrecorrente), que
+ *     continua atuando mesmo sem rede;
+ *   - Protecao cruzada: assina a telemetria do Modulo 2 (esp32-02) e
+ *     desliga o motor em vibracao ou temperatura critica. Se a
+ *     telemetria do Modulo 2 envelhecer, esta protecao e suspensa em
+ *     vez de derrubar o motor por falha de comunicacao.
  *
  * Bibliotecas:
  *   - PubSubClient (Nick O'Leary)
  *   - ArduinoJson (Benoit Blanchon) 6.x
  *   - PZEM004Tv30 (Jakub Mandula) >= 1.1.2
  *   - LiquidCrystal I2C (Frank de Brabander)
- *   - WiFi / WebServer / ESPmDNS (core ESP32)
+ *   - WiFi (core ESP32)
  *
  * Ligacoes:
  *   PZEM TX  -> GPIO16 (RX2)      LCD SDA -> GPIO21
@@ -41,8 +45,6 @@
  * ============================================================ */
 
 #include <WiFi.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -55,7 +57,6 @@
 // -----------------------------------------------------------------------------
 static const char* WIFI_SSID     = "BotComp";
 static const char* WIFI_PASSWORD = "linguagemC";
-static const char* NOME_MDNS     = "modulo1";
 
 static const unsigned long TEMPO_MAX_CONEXAO_WIFI   = 15000UL;
 static const unsigned long INTERVALO_RECONEXAO_WIFI = 10000UL;
@@ -77,8 +78,8 @@ static const char* DEVICE_ID_SENSORES = "esp32-02";
 static const bool ACEITA_COMANDO_BROADCAST = true;  // topico <prefix>/request/command
 static const bool ACEITA_COMANDO_DIRETO    = true;  // topico <prefix>/esp32-01/command
 
-static const unsigned long INTERVALO_TELEMETRIA_MS = 1000UL;
-static const unsigned long INTERVALO_RECONEXAO_MQTT_MS = 3000UL;
+static const unsigned long INTERVALO_TELEMETRIA_MS      = 1000UL;
+static const unsigned long INTERVALO_RECONEXAO_MQTT_MS  = 3000UL;
 
 // -----------------------------------------------------------------------------
 // Reles / acionamento
@@ -129,7 +130,7 @@ static const bool  PROTECAO_CRUZADA_HABILITADA = true;
 static const float VIBRACAO_MAXIMA_G     = 1.5f;
 static const float TEMPERATURA_MAXIMA_C  = 70.0f;
 // Se o Modulo 2 ficar mudo por mais que isso, a protecao cruzada e suspensa
-// (nao derruba o motor apenas porque o outro modulo caiu).
+// (nao derruba o motor apenas porque o outro modulo ou a rede caiu).
 static const unsigned long VALIDADE_TELEMETRIA_SENSORES_MS = 15000UL;
 
 float ultimaVibracaoSensores = NAN;
@@ -138,7 +139,7 @@ unsigned long recebidoTelemetriaSensoresMs = 0;
 bool travaProtecao = false;   // exige parada explicita antes de nova partida
 
 // -----------------------------------------------------------------------------
-// LCD I2C 20x4
+// LCD I2C 20x4 - unica interface local
 // -----------------------------------------------------------------------------
 static const uint8_t LCD_ENDERECO = 0x27;
 static const uint8_t LCD_COLUNAS  = 20;
@@ -148,7 +149,7 @@ static const uint8_t LCD_SCL      = 22;
 LiquidCrystal_I2C lcd(LCD_ENDERECO, LCD_COLUNAS, LCD_LINHAS);
 
 char lcdCache[LCD_LINHAS][LCD_COLUNAS + 1];
-volatile bool lcdPrecisaAtualizar = false;
+bool lcdPrecisaAtualizar = false;
 unsigned long ultimaAtualizacaoLcd = 0;
 static const unsigned long INTERVALO_LCD = 1000UL;
 
@@ -175,9 +176,8 @@ unsigned long ultimaLeituraPzem = 0;
 static const unsigned long INTERVALO_LEITURA_PZEM = 3000UL;
 
 // -----------------------------------------------------------------------------
-// Objetos de rede
+// Rede
 // -----------------------------------------------------------------------------
-WebServer server(80);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
@@ -192,168 +192,7 @@ char topicTelemetriaSensores[96];
 unsigned long ultimaTelemetriaMs   = 0;
 unsigned long ultimaTentativaWifi  = 0;
 unsigned long ultimaTentativaMqtt  = 0;
-bool mdnsAtivo = false;
-
-// -----------------------------------------------------------------------------
-// Pagina web local
-// -----------------------------------------------------------------------------
-const char INDEX_HTML[] PROGMEM = R"====(
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Modulo 1 - Acionamento</title>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; background:#0f1720; color:#e6edf3; margin:0; padding:20px; }
-  h1 { font-size:20px; margin:0 0 4px; }
-  .sub { font-size:13px; color:#8b98a5; margin-bottom:18px; }
-  .ok { color:#3fb950; }
-  .alerta { color:#f59e0b; }
-  .erro { color:#f85149; }
-  .cartao { background:#161e27; border:1px solid #24303c; border-radius:10px; padding:16px; margin-bottom:16px; }
-  .rotulo { font-size:11px; color:#8b98a5; text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
-  .grade { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
-  .medida { background:#0d1117; border-radius:8px; padding:10px; text-align:center; }
-  .medida .valor { font-size:20px; font-weight:700; }
-  .medida .nome { font-size:12px; color:#8b98a5; margin-top:2px; }
-  .estado { font-size:24px; font-weight:700; margin-bottom:4px; }
-  .modo { font-size:13px; color:#8b98a5; }
-  .botoes { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
-  button { border:none; border-radius:6px; padding:12px 18px; font-size:14px; font-weight:700; cursor:pointer; color:#fff; }
-  button:disabled { opacity:.5; cursor:wait; }
-  .b-direta { background:#16a34a; }
-  .b-estrela { background:#2563eb; }
-  .b-parar { background:#dc2626; }
-  .reles { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-  .rele { background:#0d1117; border:1px solid #24303c; border-radius:6px; padding:6px 10px; font-size:12px; }
-  .rele.on { border-color:#3fb950; color:#3fb950; }
-</style>
-</head>
-<body>
-  <h1>Modulo 1 &mdash; Acionamento e Medicao</h1>
-  <div class="sub" id="subtitulo">Carregando...</div>
-
-  <div class="cartao">
-    <div class="rotulo">Estado do motor</div>
-    <div class="estado" id="estadoMotor">--</div>
-    <div class="modo" id="modoMotor">--</div>
-    <div class="botoes">
-      <button class="b-direta" id="btDireta">Partida direta</button>
-      <button class="b-estrela" id="btEstrela">Estrela-triangulo</button>
-      <button class="b-parar" id="btParar">Parar</button>
-    </div>
-    <div class="reles" id="listaReles"></div>
-  </div>
-
-  <div class="cartao">
-    <div class="rotulo">Medicao eletrica (PZEM-004T)</div>
-    <div class="grade">
-      <div class="medida"><div class="valor" id="vTensao">--</div><div class="nome">Tensao (V)</div></div>
-      <div class="medida"><div class="valor" id="vCorrente">--</div><div class="nome">Corrente (A)</div></div>
-      <div class="medida"><div class="valor" id="vPotencia">--</div><div class="nome">Potencia (W)</div></div>
-      <div class="medida"><div class="valor" id="vEnergia">--</div><div class="nome">Energia (kWh)</div></div>
-      <div class="medida"><div class="valor" id="vFrequencia">--</div><div class="nome">Frequencia (Hz)</div></div>
-      <div class="medida"><div class="valor" id="vFP">--</div><div class="nome">Fator de potencia</div></div>
-    </div>
-  </div>
-
-  <div class="cartao">
-    <div class="rotulo">Modulo 2 (protecao cruzada)</div>
-    <div class="grade">
-      <div class="medida"><div class="valor" id="vVibracao">--</div><div class="nome">Vibracao (g)</div></div>
-      <div class="medida"><div class="valor" id="vTemperatura">--</div><div class="nome">Temperatura (C)</div></div>
-    </div>
-    <div class="modo" id="avisoProtecao" style="margin-top:10px;"></div>
-  </div>
-
-<script>
-var ocupado = false;
-
-function texto(id, valor) { document.getElementById(id).textContent = valor; }
-
-function rotuloEstado(estado) {
-  if (estado === 'rodando') return 'RODANDO';
-  if (estado === 'estrela') return 'PARTINDO (ESTRELA)';
-  if (estado === 'tempo_morto') return 'COMUTANDO';
-  return 'PARADO';
-}
-
-async function atualizar() {
-  try {
-    const resp = await fetch('/dados', { cache: 'no-store' });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const d = await resp.json();
-
-    const sub = document.getElementById('subtitulo');
-    const partes = [];
-    partes.push(d.mqtt_ok ? 'MQTT conectado' : 'MQTT desconectado');
-    partes.push(d.pzem_ok ? 'PZEM respondendo' : 'PZEM sem leitura');
-    sub.textContent = partes.join(' | ') + ' | ' + d.device_id;
-    sub.className = 'sub ' + ((d.mqtt_ok && d.pzem_ok) ? 'ok' : 'alerta');
-
-    texto('estadoMotor', rotuloEstado(d.estado));
-    document.getElementById('estadoMotor').className =
-      'estado ' + (d.motor_on ? 'ok' : (d.trava_protecao ? 'erro' : ''));
-    texto('modoMotor', 'Modo: ' + d.mode + (d.motivo_parada ? ' | ' + d.motivo_parada : ''));
-
-    texto('vTensao',     d.pzem_ok ? d.voltage.toFixed(1) : '--');
-    texto('vCorrente',   d.pzem_ok ? d.current.toFixed(2) : '--');
-    texto('vPotencia',   d.pzem_ok ? d.power.toFixed(0) : '--');
-    texto('vEnergia',    d.pzem_ok ? d.energy.toFixed(3) : '--');
-    texto('vFrequencia', d.pzem_ok ? d.frequency.toFixed(1) : '--');
-    texto('vFP',         d.pzem_ok ? d.pf.toFixed(2) : '--');
-
-    texto('vVibracao',    d.sensores_ok ? d.vibration.toFixed(3) : '--');
-    texto('vTemperatura', d.sensores_ok ? d.temperature.toFixed(1) : '--');
-    document.getElementById('avisoProtecao').textContent = d.sensores_ok
-      ? 'Telemetria do Modulo 2 valida.'
-      : 'Sem telemetria recente do Modulo 2 - protecao cruzada suspensa.';
-
-    const lista = document.getElementById('listaReles');
-    lista.innerHTML = '';
-    const nomes = ['K1 linha', 'K2 estrela', 'K3 triangulo', 'K4 auxiliar'];
-    d.reles.forEach(function (ligado, i) {
-      const el = document.createElement('div');
-      el.className = 'rele' + (ligado ? ' on' : '');
-      el.textContent = nomes[i] + ': ' + (ligado ? 'ON' : 'OFF');
-      lista.appendChild(el);
-    });
-  } catch (e) {
-    const sub = document.getElementById('subtitulo');
-    sub.textContent = 'Erro de comunicacao com o ESP32';
-    sub.className = 'sub erro';
-  }
-}
-
-async function comandar(tipo) {
-  if (ocupado) return;
-  ocupado = true;
-  const botoes = document.querySelectorAll('button');
-  botoes.forEach(function (b) { b.disabled = true; });
-  try {
-    const resp = await fetch('/comando?tipo=' + tipo, { cache: 'no-store' });
-    const corpo = await resp.text();
-    if (!resp.ok) throw new Error(corpo);
-  } catch (e) {
-    alert('Falha ao comandar: ' + e.message);
-  } finally {
-    ocupado = false;
-    botoes.forEach(function (b) { b.disabled = false; });
-    atualizar();
-  }
-}
-
-document.getElementById('btDireta').addEventListener('click', function () { comandar('direct'); });
-document.getElementById('btEstrela').addEventListener('click', function () { comandar('star_delta'); });
-document.getElementById('btParar').addEventListener('click', function () { comandar('stop'); });
-
-atualizar();
-setInterval(atualizar, 1500);
-</script>
-</body>
-</html>
-)====";
+uint32_t sequenciaTelemetria = 0;
 
 // -----------------------------------------------------------------------------
 // Reles
@@ -367,7 +206,7 @@ void escreverRele(uint8_t indice, bool ligado) {
   digitalWrite(PINOS_RELES[indice], ligado ? nivelLigado() : nivelDesligado());
 }
 
-// Intertravamento fisico: estrela e triangulo nunca podem fechar juntos.
+// Intertravamento: estrela e triangulo nunca podem fechar juntos.
 void aplicarContatores(bool linha, bool estrela, bool triangulo) {
   if (estrela && triangulo) {
     estrela = false;
@@ -441,7 +280,6 @@ void publicarCapabilities() {
   doc["request_command_topic"]   = topicComandoRequest;
   doc["command_topic"]           = topicComando;
   doc["telemetry_topic"]         = topicTelemetria;
-  doc["local_page"]              = WiFi.localIP().toString();
   doc["timestamp"]               = millis();
 
   char payload[512];
@@ -471,7 +309,7 @@ void publicarTelemetria(JsonVariantConst campos, const char* requestId) {
   const bool wantF  = campoPedido(campos, "frequency");
   const bool wantE  = campoPedido(campos, "energy");
 
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<448> doc;
   doc["device_id"] = DEVICE_ID;
 
   if (pzemOk) {
@@ -487,11 +325,18 @@ void publicarTelemetria(JsonVariantConst campos, const char* requestId) {
   doc["mode"]     = modoAtual;
   doc["state"]    = nomeEstadoAcionamento();
   doc["pzem_ok"]  = pzemOk;
+  // Sem pagina local, o motivo da ultima parada e o estado da trava so chegam
+  // ao operador por aqui.
+  doc["protection_lock"] = travaProtecao;
+  if (motivoUltimaParada.length() > 0) {
+    doc["stop_reason"] = motivoUltimaParada;
+  }
+  doc["seq"] = sequenciaTelemetria;
   if (requestId != nullptr && strlen(requestId) > 0) {
     doc["request_id"] = requestId;
   }
 
-  char payload[384];
+  char payload[448];
   size_t n = serializeJson(doc, payload, sizeof(payload));
   mqttClient.publish(topicTelemetria, (const uint8_t*)payload, n, false);
 }
@@ -605,6 +450,7 @@ void avaliarProtecoes(unsigned long agora) {
       estadoAcionamento == ACIONAMENTO_ESTRELA ||
       estadoAcionamento == ACIONAMENTO_TEMPO_MORTO;
 
+  // Estas nao dependem da rede: seguem atuando com o broker fora do ar.
   if (PROTECAO_ELETRICA_HABILITADA && pzemOk && !dentroDaJanelaDePartida) {
     if (ultimaCorrente > CORRENTE_MAXIMA_A) {
       dispararProtecao("sobrecorrente", "protection_overcurrent");
@@ -817,7 +663,8 @@ void aoReceberMqtt(char* topico, byte* payload, unsigned int tamanho) {
   }
 }
 
-// Nao bloqueia: tenta uma conexao por chamada e devolve o controle ao loop.
+// Nao bloqueia: tenta uma conexao por chamada e devolve o controle ao loop,
+// para que o acionamento e as protecoes sigam rodando sem broker.
 void manterMqtt(unsigned long agora) {
   if (WiFi.status() != WL_CONNECTED) return;
   if (mqttClient.connected()) return;
@@ -851,22 +698,8 @@ void manterMqtt(unsigned long agora) {
 }
 
 // -----------------------------------------------------------------------------
-// Wi-Fi / mDNS
+// Wi-Fi
 // -----------------------------------------------------------------------------
-void iniciarMdns() {
-  if (WiFi.status() != WL_CONNECTED || mdnsAtivo) return;
-
-  if (MDNS.begin(NOME_MDNS)) {
-    mdnsAtivo = true;
-    MDNS.addService("http", "tcp", 80);
-    Serial.print("mDNS ativo: http://");
-    Serial.print(NOME_MDNS);
-    Serial.println(".local/");
-  } else {
-    Serial.println("Falha ao iniciar mDNS. Use o endereco IP.");
-  }
-}
-
 void manterWifi(unsigned long agora) {
   static bool estavaConectado = false;
   const bool conectado = (WiFi.status() == WL_CONNECTED);
@@ -878,17 +711,12 @@ void manterWifi(unsigned long agora) {
       Serial.println(WiFi.localIP());
       lcdPrecisaAtualizar = true;
     }
-    iniciarMdns();
     return;
   }
 
   if (estavaConectado) {
     estavaConectado = false;
     Serial.println("Wi-Fi desconectado.");
-    if (mdnsAtivo) {
-      MDNS.end();
-      mdnsAtivo = false;
-    }
     lcdPrecisaAtualizar = true;
   }
 
@@ -898,137 +726,6 @@ void manterWifi(unsigned long agora) {
     WiFi.disconnect(false, false);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
-}
-
-// -----------------------------------------------------------------------------
-// Rotas HTTP
-// -----------------------------------------------------------------------------
-void cabecalhosComuns() {
-  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-}
-
-void tratarIndex() {
-  cabecalhosComuns();
-  server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
-}
-
-void tratarDados() {
-  StaticJsonDocument<768> doc;
-  doc["device_id"]   = DEVICE_ID;
-  doc["wifi_ok"]     = (WiFi.status() == WL_CONNECTED);
-  doc["mqtt_ok"]     = mqttClient.connected();
-  doc["pzem_ok"]     = pzemOk;
-  doc["voltage"]     = ultimaTensao;
-  doc["current"]     = ultimaCorrente;
-  doc["power"]       = ultimaPotencia;
-  doc["energy"]      = ultimaEnergia;
-  doc["frequency"]   = ultimaFrequencia;
-  doc["pf"]          = ultimoFatorPotencia;
-  doc["motor_on"]    = motorLigado();
-  doc["mode"]        = modoAtual;
-  doc["estado"]      = nomeEstadoAcionamento();
-  doc["trava_protecao"]  = travaProtecao;
-  doc["motivo_parada"]   = motivoUltimaParada;
-  doc["sensores_ok"]     = telemetriaSensoresValida();
-  doc["vibration"]       = isnan(ultimaVibracaoSensores) ? 0.0f : ultimaVibracaoSensores;
-  doc["temperature"]     = isnan(ultimaTemperaturaSensores) ? 0.0f : ultimaTemperaturaSensores;
-
-  JsonArray reles = doc.createNestedArray("reles");
-  for (uint8_t i = 0; i < NUM_RELES; i++) {
-    reles.add(estadoReles[i]);
-  }
-
-  String corpo;
-  serializeJson(doc, corpo);
-  cabecalhosComuns();
-  server.send(200, "application/json; charset=utf-8", corpo);
-}
-
-void tratarComandoWeb() {
-  cabecalhosComuns();
-
-  if (!server.hasArg("tipo")) {
-    server.send(400, "text/plain; charset=utf-8", "Parametro 'tipo' e obrigatorio.");
-    return;
-  }
-
-  const String tipo = server.arg("tipo");
-
-  if (tipo == "stop") {
-    aplicarComando("stop", "manual_stop");
-    server.send(200, "text/plain; charset=utf-8", "OK");
-    return;
-  }
-
-  if (tipo == "direct" || tipo == "star_delta") {
-    if (travaProtecao) {
-      server.send(409, "text/plain; charset=utf-8",
-                  "Protecao atuada. Envie 'Parar' para rearmar antes de nova partida.");
-      return;
-    }
-    aplicarComando("start", tipo.c_str());
-    server.send(200, "text/plain; charset=utf-8", "OK");
-    return;
-  }
-
-  server.send(400, "text/plain; charset=utf-8",
-              "Tipo invalido. Use direct, star_delta ou stop.");
-}
-
-// Mantido por compatibilidade com a versao v6: aciona um rele avulso.
-// So funciona com o motor parado, para nao furar o intertravamento.
-void tratarReleWeb() {
-  cabecalhosComuns();
-
-  if (!server.hasArg("canal") || !server.hasArg("estado")) {
-    server.send(400, "text/plain; charset=utf-8",
-                "Parametros 'canal' e 'estado' sao obrigatorios.");
-    return;
-  }
-
-  if (motorLigado()) {
-    server.send(409, "text/plain; charset=utf-8",
-                "Comando de rele avulso bloqueado com o motor acionado.");
-    return;
-  }
-
-  const String canalTexto  = server.arg("canal");
-  const String estadoTexto = server.arg("estado");
-
-  if (estadoTexto != "0" && estadoTexto != "1") {
-    server.send(400, "text/plain; charset=utf-8", "Estado invalido. Use 0 ou 1.");
-    return;
-  }
-
-  const long canal = canalTexto.toInt();
-  if (canal < 1 || canal > (long)NUM_RELES || canalTexto != String(canal)) {
-    server.send(400, "text/plain; charset=utf-8", "Canal invalido. Use 1, 2, 3 ou 4.");
-    return;
-  }
-
-  const uint8_t indice = (uint8_t)(canal - 1);
-  const bool ligar = (estadoTexto == "1");
-
-  // Nunca deixa estrela e triangulo fechados ao mesmo tempo.
-  if (ligar && indice == K_ESTRELA && estadoReles[K_TRIANGULO]) {
-    server.send(409, "text/plain; charset=utf-8", "Intertravamento: triangulo esta fechado.");
-    return;
-  }
-  if (ligar && indice == K_TRIANGULO && estadoReles[K_ESTRELA]) {
-    server.send(409, "text/plain; charset=utf-8", "Intertravamento: estrela esta fechada.");
-    return;
-  }
-
-  escreverRele(indice, ligar);
-  lcdPrecisaAtualizar = true;
-  server.send(200, "text/plain; charset=utf-8", "OK");
-}
-
-void tratarNaoEncontrado() {
-  cabecalhosComuns();
-  server.send(404, "text/plain; charset=utf-8", "Rota nao encontrada.");
 }
 
 // -----------------------------------------------------------------------------
@@ -1068,7 +765,7 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
-  WiFi.setSleep(false);  // evita latencia alta no servidor web
+  WiFi.setSleep(false);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   ultimaTentativaWifi = millis();
 
@@ -1083,7 +780,6 @@ void setup() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("Wi-Fi conectado. IP: ");
     Serial.println(WiFi.localIP());
-    iniciarMdns();
   } else {
     Serial.println("Wi-Fi nao conectado. O modulo segue operando e tentara reconectar.");
   }
@@ -1091,14 +787,6 @@ void setup() {
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCallback(aoReceberMqtt);
   mqttClient.setBufferSize(768);
-
-  server.on("/", HTTP_GET, tratarIndex);
-  server.on("/dados", HTTP_GET, tratarDados);
-  server.on("/comando", HTTP_GET, tratarComandoWeb);
-  server.on("/rele", HTTP_GET, tratarReleWeb);
-  server.onNotFound(tratarNaoEncontrado);
-  server.begin();
-  Serial.println("Servidor HTTP iniciado na porta 80.");
 
   lerPzem();
   ultimaLeituraPzem = millis();
@@ -1115,7 +803,6 @@ void setup() {
 void loop() {
   const unsigned long agora = millis();
 
-  server.handleClient();
   manterWifi(agora);
   manterMqtt(agora);
   mqttClient.loop();
@@ -1131,6 +818,7 @@ void loop() {
 
   if (agora - ultimaTelemetriaMs >= INTERVALO_TELEMETRIA_MS) {
     ultimaTelemetriaMs = agora;
+    sequenciaTelemetria++;
     publicarTelemetria(JsonVariantConst(), "");
   }
 

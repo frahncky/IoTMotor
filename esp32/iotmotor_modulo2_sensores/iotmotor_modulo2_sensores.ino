@@ -5,25 +5,30 @@
  * MODULO 2 - ESP32-S3 DevKitC N8R2  (device_id: esp32-02)
  * Papel: AQUISICAO dos dados do motor usados no controle
  *
- * Reune, num unico firmware:
+ * O modulo nao serve pagina web. Toda a interface - pagina web e
+ * aplicativo - e o proprio cliente Flutter falando com o broker MQTT.
+ *
+ * Conteudo:
  *   - Vibracao via MPU6050 lido diretamente nos registradores, com
  *     reset de software e reconfiguracao automatica se o sensor travar;
  *   - Amostragem rapida (50 Hz) com RMS e pico por janela, em vez de
  *     uma unica amostra instantanea por publicacao;
  *   - Temperatura via DS18B20 (OneWire);
  *   - Registro local em cartao SD com arquivos diarios e expurgo por
- *     retencao, configuravel pelo aplicativo (payload storage_config);
- *   - Sinalizacao local por LED RGB e buzzer em estado critico;
- *   - Pagina web local (http://modulo2.local/);
- *   - Ponte MQTT no mesmo contrato do aplicativo Flutter IoTMotor.
- *     O Modulo 1 (esp32-01) assina esta telemetria e usa vibracao e
+ *     retencao, configuravel pelo aplicativo (payload storage_config).
+ *     O SD e a garantia de que nada se perde enquanto a rede estiver
+ *     fora, ja que nao ha mais interface local para consulta;
+ *   - Sinalizacao local por LED RGB e buzzer em estado critico - a
+ *     unica indicacao para quem esta junto da bancada;
+ *   - Publicacao MQTT no mesmo contrato do aplicativo Flutter. O
+ *     Modulo 1 (esp32-01) assina esta telemetria e usa vibracao e
  *     temperatura como protecao cruzada do acionamento.
  *
  * Bibliotecas:
  *   - PubSubClient (Nick O'Leary)
  *   - ArduinoJson (Benoit Blanchon) 6.x
  *   - OneWire + DallasTemperature
- *   - WiFi / WebServer / ESPmDNS / Wire / SPI / SD / Preferences (core ESP32)
+ *   - WiFi / Wire / SPI / SD / Preferences (core ESP32)
  *
  * Ligacoes:
  *   MPU6050 SDA -> GPIO5      DS18B20 DQ -> GPIO4 (pull-up 4k7 ao 3V3)
@@ -37,8 +42,6 @@
  * ============================================================ */
 
 #include <WiFi.h>
-#include <WebServer.h>
-#include <ESPmDNS.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -55,7 +58,6 @@
 // -----------------------------------------------------------------------------
 static const char* WIFI_SSID     = "BotComp";
 static const char* WIFI_PASSWORD = "linguagemC";
-static const char* NOME_MDNS     = "modulo2";
 
 static const unsigned long TEMPO_MAX_CONEXAO_WIFI   = 15000UL;
 static const unsigned long INTERVALO_RECONEXAO_WIFI = 10000UL;
@@ -132,9 +134,7 @@ static const int   RETENCAO_MAXIMA_DIAS = 3650;
 bool sdDisponivel = false;
 unsigned long totalAmostrasGravadas = 0;
 int retencaoDias = RETENCAO_PADRAO_DIAS;
-char arquivoLogAtual[32] = "";
 unsigned long ultimoExpurgoMs = 0;
-int ultimoExpurgoRemovidos = -1;
 static const unsigned long INTERVALO_EXPURGO_MS = 6UL * 60UL * 60UL * 1000UL;  // 6 h
 
 Preferences preferencias;
@@ -142,7 +142,6 @@ Preferences preferencias;
 // -----------------------------------------------------------------------------
 // Objetos globais
 // -----------------------------------------------------------------------------
-WebServer server(80);
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
@@ -158,7 +157,6 @@ char topicCapabilities[96];
 char topicTelemetriaAcionamento[96];
 
 bool mpuDisponivel = false;
-bool mdnsAtivo = false;
 
 unsigned long ultimaAmostraMs      = 0;
 unsigned long ultimaTemperaturaMs  = 0;
@@ -176,7 +174,7 @@ double somaQuadradosDesvio = 0.0;
 uint32_t amostrasNaJanela  = 0;
 float picoDesvioJanela     = 0.0f;
 
-// Ultimos valores publicados / exibidos.
+// Ultimos valores publicados.
 float g_ax = 0, g_ay = 0, g_az = 0;
 float g_magnitude = 0;
 float g_vibracaoRms = 0, g_vibracaoPico = 0;
@@ -185,131 +183,10 @@ bool  g_tempValida = false;
 uint32_t g_contadorLeituras = 0;
 String g_timestamp = "--";
 
-// Estado do motor, vindo do Modulo 1 (apenas informativo/registro).
-bool  motorLigado = false;
-bool  motorConhecido = false;
-String modoMotor = "";
-
-// -----------------------------------------------------------------------------
-// Pagina web local
-// -----------------------------------------------------------------------------
-const char PAGINA_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Modulo 2 - Aquisicao</title>
-<style>
-  body { font-family: Arial, Helvetica, sans-serif; background:#0f1720; color:#e6edf3; margin:0; padding:20px; }
-  h1 { font-size:20px; margin:0 0 4px; }
-  .sub { color:#8b98a5; font-size:13px; margin-bottom:18px; }
-  .ok { color:#3fb950; } .alerta { color:#f59e0b; } .erro { color:#f85149; }
-  .grade { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:16px; }
-  .cartao { background:#161e27; border-radius:10px; padding:16px; border:1px solid #24303c; }
-  .rotulo { font-size:11px; color:#8b98a5; text-transform:uppercase; letter-spacing:.05em; }
-  .valor { font-size:26px; font-weight:600; margin-top:4px; }
-  .unidade { font-size:12px; color:#8b98a5; margin-left:4px; }
-  table { width:100%; border-collapse:collapse; margin-top:10px; background:#161e27; border-radius:8px; overflow:hidden; }
-  th, td { padding:10px 12px; text-align:left; border-bottom:1px solid #24303c; font-size:13px; }
-  th { background:#1f2937; color:#8b98a5; }
-  .log-box { background:#0d1117; border:1px solid #24303c; border-radius:6px; height:170px; overflow-y:auto; padding:10px; font-family:monospace; font-size:12px; color:#7ee787; }
-</style>
-</head>
-<body>
-  <h1>Modulo 2 &mdash; Vibracao e Temperatura</h1>
-  <div class="sub" id="subtitulo">Carregando...</div>
-
-  <div class="grade">
-    <div class="cartao">
-      <div class="rotulo">Vibracao (RMS)</div>
-      <div class="valor"><span id="vibRms">--</span><span class="unidade">g</span></div>
-    </div>
-    <div class="cartao">
-      <div class="rotulo">Vibracao (pico)</div>
-      <div class="valor"><span id="vibPico">--</span><span class="unidade">g</span></div>
-    </div>
-    <div class="cartao">
-      <div class="rotulo">Temperatura</div>
-      <div class="valor"><span id="temp">--</span><span class="unidade">&deg;C</span></div>
-    </div>
-    <div class="cartao">
-      <div class="rotulo">Amostras no SD</div>
-      <div class="valor" id="amostrasSd">--</div>
-    </div>
-  </div>
-
-  <div class="cartao" style="margin-bottom:16px;">
-    <div class="rotulo" style="margin-bottom:8px;">Leitura bruta dos eixos</div>
-    <table>
-      <thead>
-        <tr><th>X (g)</th><th>Y (g)</th><th>Z (g)</th><th>|a| (g)</th><th>Motor</th><th>Contador</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td id="ax">--</td><td id="ay">--</td><td id="az">--</td>
-          <td id="mag">--</td><td id="motor">--</td><td id="contador">--</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="cartao">
-    <div class="rotulo" style="margin-bottom:8px;">Log de aquisicao</div>
-    <div class="log-box" id="logBox">Aguardando leituras...<br></div>
-  </div>
-
-<script>
-var ultimoContador = -1;
-
-async function atualizar() {
-  try {
-    const resp = await fetch('/dados', { cache: 'no-store' });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const d = await resp.json();
-
-    const sub = document.getElementById('subtitulo');
-    const partes = [];
-    partes.push(d.mpu_ok ? 'MPU6050 OK' : 'MPU6050 sem leitura');
-    partes.push(d.mqtt_ok ? 'MQTT conectado' : 'MQTT desconectado');
-    partes.push(d.sd_ok ? ('SD OK (retencao ' + d.retention_days + 'd)') : 'SD indisponivel');
-    sub.textContent = partes.join(' | ');
-    sub.className = 'sub ' + (d.critico ? 'erro' : ((d.mpu_ok && d.mqtt_ok) ? 'ok' : 'alerta'));
-
-    document.getElementById('vibRms').textContent  = d.mpu_ok ? d.vibration.toFixed(3) : '--';
-    document.getElementById('vibPico').textContent = d.mpu_ok ? d.vibration_peak.toFixed(3) : '--';
-    document.getElementById('temp').textContent    = d.temp_valida ? d.temperature.toFixed(1) : '--';
-    document.getElementById('amostrasSd').textContent = d.sd_amostras;
-    document.getElementById('ax').textContent  = d.ax_g.toFixed(3);
-    document.getElementById('ay').textContent  = d.ay_g.toFixed(3);
-    document.getElementById('az').textContent  = d.az_g.toFixed(3);
-    document.getElementById('mag').textContent = d.magnitude_g.toFixed(3);
-    document.getElementById('motor').textContent =
-      d.motor_conhecido ? (d.motor_on ? 'LIGADO' : 'PARADO') : '--';
-    document.getElementById('contador').textContent = '#' + d.contador;
-
-    if (d.mpu_ok && d.contador !== ultimoContador) {
-      ultimoContador = d.contador;
-      const box = document.getElementById('logBox');
-      const linha = '[' + d.timestamp + '] #' + d.contador +
-        ' -> RMS:' + d.vibration.toFixed(3) + 'g' +
-        ' | pico:' + d.vibration_peak.toFixed(3) + 'g' +
-        ' | T:' + (d.temp_valida ? d.temperature.toFixed(1) + 'C' : '--') + '<br>';
-      box.innerHTML = linha + box.innerHTML;
-    }
-  } catch (e) {
-    const sub = document.getElementById('subtitulo');
-    sub.textContent = 'Erro de comunicacao com o ESP32-S3';
-    sub.className = 'sub erro';
-  }
-}
-
-setInterval(atualizar, 1500);
-atualizar();
-</script>
-</body>
-</html>
-)rawliteral";
+// Estado do motor, vindo do Modulo 1: registrado no SD junto de cada amostra,
+// para que a analise posterior saiba se o motor estava acionado.
+bool motorLigado = false;
+bool motorConhecido = false;
 
 // -----------------------------------------------------------------------------
 // MPU6050 - reset de software e leitura direta dos registradores
@@ -364,7 +241,7 @@ bool lerAcelerometroBruto(float &ax, float &ay, float &az) {
 }
 
 // -----------------------------------------------------------------------------
-// LED RGB e buzzer
+// LED RGB e buzzer - unica sinalizacao local
 // -----------------------------------------------------------------------------
 void setLED(bool azul, bool verde, bool vermelho) {
   if (RGB_ANODO_COMUM) {
@@ -460,7 +337,7 @@ void inicializarSD() {
   Serial.println("Cartao SD pronto.");
 }
 
-// Converte "AAAAMMDD" no epoch local de meia-noite daquele dia.
+// Converte "AAAAMMDD" no epoch local daquele dia.
 // Devolve 0 quando o nome nao segue o padrao.
 time_t epochDoNomeDeArquivo(const char* nome) {
   size_t n = strlen(nome);
@@ -545,7 +422,6 @@ int expurgarLogsAntigos() {
     }
   }
 
-  ultimoExpurgoRemovidos = removidos;
   return removidos;
 }
 
@@ -580,8 +456,6 @@ void registrarNoSD() {
   arquivo.println(estadoCritico ? 1 : 0);
   arquivo.close();
 
-  strncpy(arquivoLogAtual, nome, sizeof(arquivoLogAtual) - 1);
-  arquivoLogAtual[sizeof(arquivoLogAtual) - 1] = '\0';
   totalAmostrasGravadas++;
 }
 
@@ -622,7 +496,6 @@ void publicarCapabilities() {
   doc["request_telemetry_topic"] = topicTelemetriaRequest;
   doc["request_command_topic"]   = topicComandoRequest;
   doc["telemetry_topic"]         = topicTelemetria;
-  doc["local_page"]              = WiFi.localIP().toString();
   doc["timestamp"]               = millis();
 
   char payload[512];
@@ -648,7 +521,7 @@ void publicarTelemetria(JsonVariantConst campos, const char* requestId) {
   const bool wantVib  = campoPedido(campos, "vibration");
   const bool wantTemp = campoPedido(campos, "temperature");
 
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<448> doc;
   doc["device_id"] = DEVICE_ID;
 
   if (wantVib && mpuDisponivel) {
@@ -660,14 +533,18 @@ void publicarTelemetria(JsonVariantConst campos, const char* requestId) {
     doc["temperature"] = g_temperatura;
   }
 
-  doc["critical"] = estadoCritico;
-  doc["mpu_ok"]   = mpuDisponivel;
-  doc["sd_ok"]    = sdDisponivel;
+  doc["critical"]       = estadoCritico;
+  doc["mpu_ok"]         = mpuDisponivel;
+  doc["sd_ok"]          = sdDisponivel;
+  // Sem interface local, o estado do registro so e visivel por aqui.
+  doc["sd_samples"]     = totalAmostrasGravadas;
+  doc["retention_days"] = retencaoDias;
+  doc["seq"]            = g_contadorLeituras;
   if (requestId != nullptr && strlen(requestId) > 0) {
     doc["request_id"] = requestId;
   }
 
-  char payload[384];
+  char payload[448];
   size_t n = serializeJson(doc, payload, sizeof(payload));
   mqttClient.publish(topicTelemetria, (const uint8_t*)payload, n, false);
 }
@@ -719,10 +596,6 @@ void tratarTelemetriaDoAcionamento(const JsonDocument& doc) {
     motorLigado = doc["motor_on"].as<bool>();
     motorConhecido = true;
   }
-  const char* modo = doc["mode"] | "";
-  if (strlen(modo) > 0) {
-    modoMotor = String(modo);
-  }
 }
 
 void aoReceberMqtt(char* topico, byte* payload, unsigned int tamanho) {
@@ -751,7 +624,8 @@ void aoReceberMqtt(char* topico, byte* payload, unsigned int tamanho) {
   }
 }
 
-// Nao bloqueia: tenta uma conexao por chamada e devolve o controle ao loop.
+// Nao bloqueia: tenta uma conexao por chamada e devolve o controle ao loop,
+// para que a aquisicao e o registro no SD sigam rodando sem broker.
 void manterMqtt(unsigned long agora) {
   if (WiFi.status() != WL_CONNECTED) return;
   if (mqttClient.connected()) return;
@@ -784,22 +658,8 @@ void manterMqtt(unsigned long agora) {
 }
 
 // -----------------------------------------------------------------------------
-// Wi-Fi / mDNS
+// Wi-Fi
 // -----------------------------------------------------------------------------
-void iniciarMdns() {
-  if (WiFi.status() != WL_CONNECTED || mdnsAtivo) return;
-
-  if (MDNS.begin(NOME_MDNS)) {
-    mdnsAtivo = true;
-    MDNS.addService("http", "tcp", 80);
-    Serial.print("mDNS ativo: http://");
-    Serial.print(NOME_MDNS);
-    Serial.println(".local/");
-  } else {
-    Serial.println("Falha ao iniciar mDNS. Use o endereco IP.");
-  }
-}
-
 void manterWifi(unsigned long agora) {
   static bool estavaConectado = false;
   const bool conectado = (WiFi.status() == WL_CONNECTED);
@@ -810,17 +670,12 @@ void manterWifi(unsigned long agora) {
       Serial.print("Wi-Fi conectado. IP: ");
       Serial.println(WiFi.localIP());
     }
-    iniciarMdns();
     return;
   }
 
   if (estavaConectado) {
     estavaConectado = false;
     Serial.println("Wi-Fi desconectado.");
-    if (mdnsAtivo) {
-      MDNS.end();
-      mdnsAtivo = false;
-    }
   }
 
   if (agora - ultimaTentativaWifi >= INTERVALO_RECONEXAO_WIFI) {
@@ -829,80 +684,6 @@ void manterWifi(unsigned long agora) {
     WiFi.disconnect(false, false);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
-}
-
-// -----------------------------------------------------------------------------
-// Rotas HTTP
-// -----------------------------------------------------------------------------
-void cabecalhosComuns() {
-  server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-  server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-}
-
-void tratarRaiz() {
-  cabecalhosComuns();
-  server.send_P(200, "text/html; charset=utf-8", PAGINA_HTML);
-}
-
-void tratarDados() {
-  StaticJsonDocument<768> doc;
-  doc["device_id"]       = DEVICE_ID;
-  doc["timestamp"]       = g_timestamp;
-  doc["wifi_ok"]         = (WiFi.status() == WL_CONNECTED);
-  doc["mqtt_ok"]         = mqttClient.connected();
-  doc["mpu_ok"]          = mpuDisponivel;
-  doc["sd_ok"]           = sdDisponivel;
-  doc["ax_g"]            = g_ax;
-  doc["ay_g"]            = g_ay;
-  doc["az_g"]            = g_az;
-  doc["magnitude_g"]     = g_magnitude;
-  doc["vibration"]       = g_vibracaoRms;
-  doc["vibration_peak"]  = g_vibracaoPico;
-  doc["temp_valida"]     = g_tempValida;
-  doc["temperature"]     = g_tempValida ? g_temperatura : 0.0f;
-  doc["critico"]         = estadoCritico;
-  doc["sd_amostras"]     = totalAmostrasGravadas;
-  doc["sd_arquivo"]      = arquivoLogAtual;
-  doc["retention_days"]  = retencaoDias;
-  doc["contador"]        = g_contadorLeituras;
-  doc["motor_on"]        = motorLigado;
-  doc["motor_conhecido"] = motorConhecido;
-  doc["motor_mode"]      = modoMotor;
-
-  String corpo;
-  serializeJson(doc, corpo);
-  cabecalhosComuns();
-  server.send(200, "application/json; charset=utf-8", corpo);
-}
-
-// Permite ajustar a retencao pela pagina local, sem depender do broker.
-void tratarRetencaoWeb() {
-  cabecalhosComuns();
-
-  if (!server.hasArg("dias")) {
-    server.send(400, "text/plain; charset=utf-8", "Parametro 'dias' e obrigatorio.");
-    return;
-  }
-
-  const long dias = server.arg("dias").toInt();
-  if (dias < RETENCAO_MINIMA_DIAS || dias > RETENCAO_MAXIMA_DIAS) {
-    server.send(400, "text/plain; charset=utf-8", "Retencao fora da faixa permitida.");
-    return;
-  }
-
-  retencaoDias = (int)dias;
-  salvarRetencaoPersistida(retencaoDias);
-  const int removidos = expurgarLogsAntigos();
-
-  char resposta[64];
-  snprintf(resposta, sizeof(resposta), "OK retencao=%dd removidos=%d", retencaoDias, removidos);
-  server.send(200, "text/plain; charset=utf-8", resposta);
-}
-
-void tratarNaoEncontrado() {
-  cabecalhosComuns();
-  server.send(404, "text/plain; charset=utf-8", "Rota nao encontrada.");
 }
 
 // -----------------------------------------------------------------------------
@@ -1015,7 +796,6 @@ void setup() {
     Serial.print("Wi-Fi conectado. IP: ");
     Serial.println(WiFi.localIP());
     configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
-    iniciarMdns();
   } else {
     Serial.println("Wi-Fi nao conectado. O modulo segue medindo e tentara reconectar.");
   }
@@ -1027,13 +807,6 @@ void setup() {
   mqttClient.setCallback(aoReceberMqtt);
   mqttClient.setBufferSize(768);
 
-  server.on("/", HTTP_GET, tratarRaiz);
-  server.on("/dados", HTTP_GET, tratarDados);
-  server.on("/retencao", HTTP_GET, tratarRetencaoWeb);
-  server.onNotFound(tratarNaoEncontrado);
-  server.begin();
-  Serial.println("Servidor HTTP iniciado na porta 80.");
-
   setLED(false, true, false);
 }
 
@@ -1043,7 +816,6 @@ void setup() {
 void loop() {
   const unsigned long agora = millis();
 
-  server.handleClient();
   manterWifi(agora);
   manterMqtt(agora);
   mqttClient.loop();

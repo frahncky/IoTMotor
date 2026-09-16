@@ -5,8 +5,13 @@ Aplicativo Flutter para controle e monitoramento de motores via MQTT.
 ## Arquitetura de dois modulos
 
 O sistema e composto por dois modulos ESP32 que dividem os papeis e conversam
-pelo mesmo broker MQTT que o aplicativo. Cada modulo tambem serve uma pagina web
-propria, de modo que a planta continua operavel mesmo sem o aplicativo.
+pelo mesmo broker MQTT que o aplicativo.
+
+Os modulos **nao servem pagina web**. A interface e uma so - este projeto Flutter -
+compilada para web (`flutter build web`) e para o celular (`flutter build apk`);
+as duas falam com o broker, nao com o ESP32. O que existe no modulo e apenas
+sinalizacao para quem esta junto da bancada: LCD 20x4 no Modulo 1, LED RGB e
+buzzer no Modulo 2.
 
 | | Modulo 1 | Modulo 2 |
 | --- | --- | --- |
@@ -15,9 +20,9 @@ propria, de modo que a planta continua operavel mesmo sem o aplicativo.
 | Papel | aciona o motor e mede as grandezas eletricas | coleta os dados do motor usados no controle |
 | Sensores | PZEM-004T v3 | MPU6050 + DS18B20 |
 | Grandezas | `voltage`, `current`, `power`, `pf`, `frequency`, `energy` | `vibration`, `temperature` |
-| Atuadores | 4 reles (K1..K4) | LED RGB + buzzer |
+| Atuadores | 4 reles (K1..K4) | — |
 | Armazenamento | — | cartao SD, um arquivo por dia |
-| Interface local | LCD I2C 20x4 + `http://modulo1.local/` | `http://modulo2.local/` |
+| Sinalizacao local | LCD I2C 20x4 | LED RGB + buzzer |
 | Sketch | `esp32/iotmotor_modulo1_acionamento/` | `esp32/iotmotor_modulo2_sensores/` |
 
 Os sketches em `esp32/iotmotor_esp32/` sao **simuladores**: publicam telemetria
@@ -27,12 +32,14 @@ dois sketches acima sao os de hardware real.
 ### Fluxo
 
 ```
-      aplicativo Flutter  ─┐
-                           ├─►  broker MQTT  ─┬─►  Modulo 1 (esp32-01)  ──► contatores ──► MOTOR
-      pagina web local  ───┘                  │         ▲                                    │
-                                              │         │ vibracao / temperatura             │
-                                              └─►  Modulo 2 (esp32-02)  ◄────── sensores ────┘
+   app (celular)  ─┐
+                   ├─►  broker MQTT  ─┬─►  Modulo 1 (esp32-01)  ──► contatores ──► MOTOR
+   app (web)  ─────┘                  │         ▲                                    │
+                                      │         │ vibracao / temperatura             │
+                                      └─►  Modulo 2 (esp32-02)  ◄────── sensores ────┘
 ```
+
+Mesmo cliente Flutter nos dois casos; muda so o alvo de compilacao.
 
 O Modulo 1 assina `iotmotor/esp32-02/telemetry` e usa vibracao e temperatura como
 **protecao cruzada**: acima dos limites configurados ele abre os contatores e
@@ -81,24 +88,22 @@ Valores publicados em `status`: `online`, `offline`, `motor_started`,
 `protection_undervoltage`, `protection_vibration`, `protection_temperature`,
 `storage_config_applied`, `storage_config_invalid`.
 
-## Rotas HTTP locais
+## Comportamento sem rede
 
-Modulo 1 (`http://modulo1.local/`):
+Como o comando so chega pelo broker, vale saber o que cada modulo faz sozinho:
 
-| Rota | Efeito |
-| --- | --- |
-| `GET /` | painel de operacao |
-| `GET /dados` | estado completo em JSON |
-| `GET /comando?tipo=direct\|star_delta\|stop` | comanda o motor |
-| `GET /rele?canal=1..4&estado=0\|1` | rele avulso (apenas com o motor parado) |
+- **Modulo 1** mantem o estado atual dos contatores (uma queda de rede nao derruba
+  o motor) e segue avaliando as protecoes eletricas, que sao locais e independem
+  do broker. A protecao cruzada e suspensa quando a telemetria do Modulo 2
+  envelhece mais que `VALIDADE_TELEMETRIA_SENSORES_MS`, para nao parar a maquina
+  por falha de comunicacao. O LCD continua mostrando estado, medicao e se o MQTT
+  esta conectado.
+- **Modulo 2** continua medindo, sinalizando estado critico no LED e no buzzer e
+  gravando no cartao SD. Quando a rede volta, as leituras do periodo ficam no SD;
+  o modulo nao republica o historico.
 
-Modulo 2 (`http://modulo2.local/`):
-
-| Rota | Efeito |
-| --- | --- |
-| `GET /` | painel de leituras |
-| `GET /dados` | estado completo em JSON |
-| `GET /retencao?dias=N` | ajusta a retencao do SD sem passar pelo broker |
+Enquanto o broker estiver fora, nao ha como partir ou parar o motor remotamente:
+o acionamento depende do comando MQTT.
 
 ## Antes de gravar
 
