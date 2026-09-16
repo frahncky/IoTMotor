@@ -1,26 +1,27 @@
 'use strict';
 
-// Painel exclusivamente de leitura: nao publica comandos MQTT.
+// Painel somente leitura: não envia comandos ao motor.
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'iotmotor_dashboard_connection_v1';
+const DEFAULT_BROKER = 'wss://test.mosquitto.org:8081';
+const LEGACY_BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 const HISTORY_LIMIT = 120;
 const STALE_AFTER_MS = 10000;
 const ns = 'http://www.w3.org/2000/svg';
 const state = {
-  client: null, generation: 0, connected: false, manualStop: false,
+  client: null, generation: 0, connected: false, connectedAt: 0,
   lastSampleAt: 0, messages: 0, lastStatus: '—', history: [],
   voltage: null, current: null, motorOn: null,
-  config: { broker: 'wss://broker.hivemq.com:8884/mqtt', prefix: 'iotmotor', device: 'esp32-01' }
+  config: { broker: DEFAULT_BROKER, prefix: 'iotmotor', device: 'esp32-01' }
 };
-
 function text(id, value) { $(id).textContent = String(value); }
 function friendlyError(error) { return String(error?.message || error || 'Erro desconhecido').slice(0, 180); }
 function numeric(value) {
   if (value === null || value === undefined || value === '') return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
-function dateTime(date) { return new Date(date).toLocaleTimeString('pt-BR', { hour12: false }); }
+function dateTime(value) { return new Date(value).toLocaleTimeString('pt-BR', { hour12: false }); }
 function setConnection(label, kind = '') {
   text('connectionText', label);
   $('connection').className = `pill ${kind}`.trim();
@@ -46,7 +47,7 @@ function validateConfig() {
   return { broker: url.toString(), prefix, device };
 }
 function persistConfig() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.config)); } catch { /* armazenamento opcional */ }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.config)); } catch { /* opcional */ }
 }
 function restoreConfig() {
   try {
@@ -56,7 +57,13 @@ function restoreConfig() {
         if (typeof saved[key] === 'string' && saved[key].length < 250) state.config[key] = saved[key];
       }
     }
-  } catch { /* sem configuração salva */ }
+  } catch { /* sem dados salvos */ }
+  // A versão anterior salvava HiveMQ como padrão: migrar SOMENTE esse padrão,
+  // preservando URLs privadas ou Mosquitto escolhidas conscientemente.
+  if (state.config.broker === LEGACY_BROKER || state.config.broker === `${LEGACY_BROKER}/`) {
+    state.config.broker = DEFAULT_BROKER;
+    persistConfig();
+  }
   $('broker').value = state.config.broker;
   $('prefix').value = state.config.prefix;
   $('device').value = state.config.device;
@@ -66,6 +73,7 @@ function restoreConfig() {
 }
 function resetTelemetry() {
   state.lastSampleAt = 0;
+  state.connectedAt = 0;
   state.messages = 0;
   state.lastStatus = '—';
   state.history = [];
@@ -82,10 +90,10 @@ function disconnect() {
   state.generation += 1;
   state.client = null;
   state.connected = false;
-  state.manualStop = true;
+  state.connectedAt = 0;
   if (old) old.end(true);
   setConnection('Desconectado');
-  showDiagnostic('Desconectado manualmente. Os dados anteriores permanecem visíveis, mas podem estar desatualizados.');
+  showDiagnostic('Desconectado manualmente. Os dados anteriores podem estar desatualizados.');
   refreshView();
 }
 function connect() {
@@ -93,7 +101,7 @@ function connect() {
   try { config = validateConfig(); } catch (error) { showDiagnostic(friendlyError(error)); return; }
   if (!window.mqtt || typeof window.mqtt.connect !== 'function') {
     setConnection('Biblioteca indisponível', 'error');
-    showDiagnostic('Não foi possível carregar MQTT.js. Verifique o acesso do navegador à CDN e tente recarregar.');
+    showDiagnostic('A biblioteca MQTT.js não carregou. Recarregue a página e confira se o navegador acessa cdnjs.cloudflare.com.');
     return;
   }
   const previous = state.client;
@@ -101,7 +109,6 @@ function connect() {
   const generation = state.generation;
   state.client = null;
   state.connected = false;
-  state.manualStop = false;
   if (previous) previous.end(true);
   state.config = config;
   persistConfig();
@@ -110,17 +117,17 @@ function connect() {
   text('deviceValue', config.device);
   text('deviceTitle', config.device);
   setConnection('Conectando…', 'wait');
-  showDiagnostic('Abrindo conexão MQTT por WebSocket seguro…');
+  showDiagnostic(`Conectando ao broker ${config.broker} por WSS. A porta 1883 é somente para o ESP32.`);
   const id = `iotmotor_web_${Math.random().toString(36).slice(2, 12)}`;
   let client;
   try {
     client = window.mqtt.connect(config.broker, {
-      clientId: id, clean: true, protocolVersion: 4, reconnectPeriod: 4000,
-      connectTimeout: 10000, keepalive: 30, resubscribe: true
+      clientId: id, clean: true, protocolVersion: 4,
+      reconnectPeriod: 4000, connectTimeout: 10000, keepalive: 30, resubscribe: true
     });
   } catch (error) {
     setConnection('Falha na conexão', 'error');
-    showDiagnostic(friendlyError(error));
+    showDiagnostic(`Não foi possível iniciar o MQTT: ${friendlyError(error)}`);
     return;
   }
   state.client = client;
@@ -128,12 +135,13 @@ function connect() {
   client.on('connect', () => {
     if (!active()) return;
     state.connected = true;
+    state.connectedAt = Date.now();
     setConnection('Broker conectado', 'live');
     const topics = [`${config.prefix}/${config.device}/telemetry`, `${config.prefix}/${config.device}/status`];
     client.subscribe(topics, { qos: 0 }, (error) => {
       if (!active()) return;
-      if (error) showDiagnostic(`Conectado, mas a assinatura falhou: ${friendlyError(error)}`);
-      else showDiagnostic('Broker conectado. Aguardando telemetria do ESP32. Se não aparecer, confira o Wi-Fi e o ID no firmware.');
+      if (error) showDiagnostic(`Broker conectado, mas a assinatura dos tópicos falhou: ${friendlyError(error)}`);
+      else showDiagnostic(`Broker conectado. Assinando ${topics[0]}. Se não chegar telemetria, o ESP32 pode estar em outro broker, sem Wi-Fi ou sem publicar.`);
     });
   });
   client.on('message', (topic, payload) => {
@@ -143,17 +151,24 @@ function connect() {
     if (topic === statusTopic) {
       state.lastStatus = payload.toString('utf8').slice(0, 80);
       text('statusValue', state.lastStatus);
-      // Status retido nao prova que o dispositivo esteja online neste momento.
+      if (!state.lastSampleAt) showDiagnostic(`Status recebido: ${state.lastStatus}. Status retido não confirma conexão atual; aguardando ${telemetryTopic}.`);
       return;
     }
     if (topic !== telemetryTopic) return;
     let packet;
-    try { packet = JSON.parse(payload.toString('utf8')); } catch { showDiagnostic('Mensagem de telemetria inválida (JSON).'); return; }
+    try { packet = JSON.parse(payload.toString('utf8')); }
+    catch { showDiagnostic('Mensagem recebida no tópico de telemetria não é JSON válido.'); return; }
     const data = packet && typeof packet === 'object' && packet.data && typeof packet.data === 'object' ? packet.data : packet;
-    if (!data || typeof data !== 'object' || (packet.device_id && packet.device_id !== config.device)) return;
+    if (!data || typeof data !== 'object' || (packet.device_id && packet.device_id !== config.device)) {
+      showDiagnostic('A mensagem recebida possui um ID de dispositivo diferente ou estrutura inválida.');
+      return;
+    }
     const voltage = numeric(data.voltage);
     const current = numeric(data.current);
-    if (voltage === null && current === null && typeof data.motor_on !== 'boolean') return;
+    if (voltage === null && current === null && typeof data.motor_on !== 'boolean') {
+      showDiagnostic('A mensagem não contém voltage, current nem motor_on. Confira o firmware instalado.');
+      return;
+    }
     if (voltage !== null) state.voltage = voltage;
     if (current !== null) state.current = current;
     if (typeof data.motor_on === 'boolean') state.motorOn = data.motor_on;
@@ -163,29 +178,33 @@ function connect() {
     if (state.history.length > HISTORY_LIMIT) state.history.shift();
     text('messages', state.messages);
     $('csvBtn').disabled = false;
+    showDiagnostic(`Recebendo telemetria de ${config.device} em ${telemetryTopic}.`);
     refreshView();
   });
   client.on('reconnect', () => {
     if (!active()) return;
     state.connected = false;
+    state.connectedAt = 0;
     setConnection('Reconectando…', 'wait');
-    showDiagnostic('A conexão MQTT caiu. Tentando reconectar automaticamente.');
+    showDiagnostic('A conexão MQTT caiu. Tentando reconectar ao broker automaticamente.');
     refreshView();
   });
   client.on('offline', () => {
     if (!active()) return;
     state.connected = false;
+    state.connectedAt = 0;
     setConnection('Broker indisponível', 'error');
-    showDiagnostic('Sem conexão com o broker. Confira a URL WSS, a rede e a porta.');
+    showDiagnostic(`Não foi possível alcançar ${config.broker}. Confira WSS, rede e certificado; o broker público de testes pode ficar indisponível.`);
     refreshView();
   });
   client.on('error', (error) => {
     if (!active()) return;
-    showDiagnostic(`Erro MQTT: ${friendlyError(error)}. O painel tentará reconectar.`);
+    showDiagnostic(`Erro MQTT/WebSocket: ${friendlyError(error)}. O painel tentará reconectar.`);
   });
   client.on('close', () => {
     if (!active()) return;
     state.connected = false;
+    state.connectedAt = 0;
     setConnection('Conexão encerrada', 'error');
     refreshView();
   });
@@ -266,7 +285,10 @@ setInterval(() => {
   if (wasFresh !== isFresh) {
     refreshView();
     if (state.connected && state.lastSampleAt && !isFresh) {
-      showDiagnostic('Broker conectado, mas o ESP32 parou de publicar telemetria. Verifique energia, Wi-Fi e o firmware.');
+      showDiagnostic('Broker conectado, mas o ESP32 parou de publicar telemetria. Verifique energia, Wi-Fi e firmware.');
     }
+  }
+  if (state.connected && state.connectedAt && !state.lastSampleAt && Date.now() - state.connectedAt >= STALE_AFTER_MS) {
+    showDiagnostic(`Broker conectado, mas sem telemetria no tópico ${state.config.prefix}/${state.config.device}/telemetry. Confirme no Monitor Serial que o ESP32 também conectou e publica no mesmo broker.`);
   }
 }, 1500);
