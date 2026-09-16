@@ -29,8 +29,9 @@ jobs:
         run: |
           node --check dashboard-cloudflare/dual-dashboard.js
           node --check dashboard-cloudflare/hardware-mirror.js
+          node --check dashboard-cloudflare/local-controls.js
       - name: Run current web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/local-controls.test.cjs
       - name: Verify canonical project structure
         run: |
           test -s esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
@@ -39,6 +40,7 @@ jobs:
           test -s dashboard-cloudflare/hardware.html
           test -s dashboard-cloudflare/_headers
           grep -q 'dual-dashboard.js' dashboard-cloudflare/index.html
+          grep -q 'local-controls.js' dashboard-cloudflare/index.html
           grep -q 'hardware-mirror.js' dashboard-cloudflare/hardware.html
           grep -q 'relay_pins' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
           grep -q 'createNestedArray("lcd")' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
