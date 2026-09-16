@@ -309,7 +309,7 @@ void atualizarLcd() {
 void adicionarCabecalhosComuns() {
   server.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   server.sendHeader("Pragma", "no-cache");
-  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("X-Frame-Options", "DENY");
 }
 
 void tratarIndex() {
@@ -493,6 +493,9 @@ void setup() {
   snprintf(topicoCapacidades, sizeof(topicoCapacidades), "iotmotor/%s/capabilities", DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);
+  // Inspecionar Origin em POSTs de energizacao, sem abrir CORS.
+  const char* headerNames[] = {"Origin"};
+  server.collectHeaders(headerNames, 1);
   // Servidor web
   server.on("/", HTTP_GET, tratarIndex);
   server.on("/dados", HTTP_GET, tratarDados);

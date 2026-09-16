@@ -63,11 +63,19 @@ bool numeroEstrito(const String& value, int& numero) {
   for (size_t i=0;i<value.length();++i) if (value[i]<'0'||value[i]>'9') return false;
   numero=value.toInt();return true;
 }
+bool origemControleLocal() {
+  // Browser fetch POST envia Origin. Nenhuma chave e exposta no codigo publico.
+  const String origin=server.header("Origin");
+  if (WiFi.status()!=WL_CONNECTED || !origin.length()) return false;
+  return origin==String("http://")+WiFi.localIP().toString() ||
+         origin=="http://modulo1.local";
+}
 void tratarPararBancada() {
   pararBancada();
   server.send(200,"text/plain; charset=utf-8","TODAS AS SAIDAS DESLIGADAS");
 }
 void tratarPartidaBancada() {
+  if (!origemControleLocal()) { server.send(403,"text/plain","Origem local nao autorizada");return; }
   if (!bancadaHabilitada()) { server.send(423,"text/plain","Jumper GPIO32-GND ausente");return; }
   if (etapaPartida) { server.send(409,"text/plain","Pare antes de configurar outra partida");return; }
   for (uint8_t i=0;i<NUM_RELES;i++) if (estadoReles[i]) {
@@ -99,6 +107,7 @@ void tratarPartidaBancada() {
   server.send(202,"text/plain; charset=utf-8","PARTIDA RECEBIDA; consulte /dados");
 }
 void tratarCanalBancada() {
+  if (!origemControleLocal()) { server.send(403,"text/plain","Origem local nao autorizada");return; }
   int canal=0,ligar=0;
   if (!numeroEstrito(server.arg("canal"),canal)||canal<1||canal>4||
       !numeroEstrito(server.arg("estado"),ligar)||ligar>1) {
