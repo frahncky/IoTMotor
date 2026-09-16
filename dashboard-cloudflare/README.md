@@ -1,40 +1,37 @@
-# Dashboard IoTMotor — Cloudflare Pages
+# IoTMotor — dois ESP32 no dashboard Cloudflare
 
-Painel estático, somente leitura, para o firmware `esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino` (`esp32-01`). A página usa MQTT sobre **WebSocket seguro (WSS)**; o ESP32 usa MQTT/TCP. Não é preciso compilar o Flutter para publicar este painel.
+A página em `dashboard-cloudflare/index.html` usa `dual-dashboard.js`. **ESP32-01** lê o **PZEM-004T v3** e recebe comandos de bancada; **ESP32-S3 (esp32-02)** lê **MPU6050** (vibração) e **DS18B20** (temperatura). Ambos publicam no mesmo broker Mosquitto. A página junta as leituras, mantendo diagnóstico e histórico por origem.
 
-## Configuração para o ESP32 que utiliza Mosquitto
+| Origem | Firmware na `main` | Tópico de telemetria |
+| --- | --- | --- |
+| ESP32 comandos + PZEM, `esp32-01` | `esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino` | `iotmotor/esp32-01/telemetry` |
+| ESP32-S3 sensores, `esp32-02` | `esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/iotmotor_esp32_s3_sensores.ino` | `iotmotor/esp32-02/telemetry` |
 
-| Dispositivo | Host / URL | Porta e protocolo |
-|---|---|---|
-| ESP32 | `test.mosquitto.org` | `1883` (MQTT/TCP) |
-| Dashboard Cloudflare | `wss://test.mosquitto.org:8081` | `8081` (MQTT/WSS) |
+Todos usam `test.mosquitto.org`: **porta 1883 MQTT/TCP nos firmwares** e **`wss://test.mosquitto.org:8081` no navegador**. Prefixo `iotmotor`. A rede Wi-Fi aberta configurada é `IFMA_IOT`; uma rede com portal cativo pode conectar ao Wi-Fi sem permitir acesso ao broker.
 
-No painel, use prefixo `iotmotor` e ID `esp32-01`, **desde que esses valores continuem iguais no firmware**. Não use `mosquito` (sem o segundo `t`), ponto extra depois de `.org` ou porta `1883` em uma URL `wss://`.
+## Grandezas e gráficos
 
-A versão anterior sugeria HiveMQ por padrão. Esta versão migra automaticamente **somente aquele valor antigo** armazenado no navegador, sem sobrescrever um broker personalizado. O endereço pode ser alterado no campo de conexão; o painel guarda apenas URL, prefixo e ID, sem credenciais.
+A página tem cartões/gráficos de tensão, corrente, potência ativa, potência aparente, potência reativa, fator de potência, frequência, energia, vibração RMS e temperatura. Potência aparente é `V × I`; reativa é calculada a partir da aparente e potência ativa ou fator de potência, quando disponíveis. Campos sem sensor ou sem leitura atual aparecem como `—`. O histórico CSV inclui o `device_id`. Cada módulo tem indicador de frescor: **status MQTT retido não é comprovação de telemetria recente**.
 
-> O firmware `comandos` gera tensão e corrente simuladas por software. O painel não mede sensores reais nem oferece controle remoto: um broker público sem autenticação não é seguro para acionar motores.
+A configuração padrão do firmware ESP32-01 usa **PZEM real**, não números fictícios. Para fazer testes de gráficos sem o sensor, há `DEMO_MODE=1` opcional, e o JSON marca `demo:true`/`data_source:simulated`. O firmware ESP32-S3 usa sensores físicos; o modelo e a pinagem foram baseados na proposta de dois módulos do repositório e precisam de conferência com a montagem real. O painel não mede nada por si: apenas exibe o que os dispositivos publicam.
 
-## Publicação no Cloudflare Pages
+## Comandos: APENAS bancada sem motor
 
-1. Cloudflare → **Workers & Pages** → **Create application** → **Pages** → conectar GitHub.
-2. Selecione o repositório privado `frahncky/IoTMotor` e autorize o acesso se necessário.
-3. Branch de produção: `main`; framework: `None`; diretório raiz: `/`; comando de build: `exit 0`; diretório de saída: `dashboard-cloudflare`.
-4. Publique e abra o endereço real `*.pages.dev` fornecido pelo Cloudflare. Alterações no GitHub precisam de um deploy concluído para aparecerem no site. Não existe URL pública garantida ou confirmada neste repositório.
-5. Atualize a página (se necessário, recarga forçada) e clique **Conectar ao MQTT**.
+Comandos vão exclusivamente para `iotmotor/esp32-01/command` com `device_id`, `command`, `mode`, `origin` e `timestamp`, tal como no aplicativo Flutter. O ESP32-S3 não recebe comandos nem tem relé.
 
-## Identificar por que não aparece telemetria
+- **Partida direta de teste:** só habilitada na página com telemetria recente do ESP32-01, PZEM válido e jumper físico entre GPIO32 e GND. Há confirmação adicional na interface. O firmware aciona apenas a saída de teste GPIO2: **não conecte motor ou contator ao relé** enquanto usar broker público.
+- **Parada:** disponível sempre que o MQTT estiver conectado; pode sobrepor uma partida ainda sem resposta.
+- **Estrela-triângulo:** aparece no painel, mas fica indisponível. O sketch atual tem somente uma saída; não possui três contatores, intertravamentos ou proteções de máquina. Não trate os modos de software como comandos de potência física.
+- A mensagem após um clique diz que o pedido foi publicado; o estado só é atualizado quando o ESP32 publicar telemetria. O campo `motor_on` é estado **solicitado do GPIO**, não leitura real de um contator ou motor.
 
-- **O endereço `*.pages.dev` não abre:** verifique o deploy no Cloudflare; enviar código ao GitHub não publica o site sozinho.
-- **Biblioteca indisponível:** o navegador não carregou MQTT.js pelo CDN; confira conexão/restrições da rede ou Console do navegador.
-- **Broker indisponível / Reconectando:** a conexão WebSocket à URL WSS falhou. Confira endereço, certificado e porta. O broker público Mosquitto informa que pode haver indisponibilidade de WebSockets ou TLS: https://test.mosquitto.org/.
-- **Broker conectado, sem dados:** a página conectou, mas não recebeu nada em `iotmotor/esp32-01/telemetry`. Verifique no ESP32 se a alteração do host foi **recompilada e gravada**, se conectou ao Wi-Fi e ao MQTT, se ID e prefixo batem e se o código está publicando.
-- **Status `online` sem dados:** pode ser uma mensagem *retida* do broker; não comprova que a placa esteja online agora.
+**Não é seguro operar motor real por broker público sem autenticação**, mesmo que a interface exija confirmação e o firmware tenha um jumper: terceiros podem enviar mensagens, e o GPIO não é uma função de segurança certificada. Para operação real, adote broker autenticado com ACL e TLS, circuito independente de parada, contatores intertravados e proteções elétricas adequadas.
 
-Se a página continuar vazia, forneça a URL publicada e copie o texto do quadro **Diagnóstico da conexão**. Isso distingue falha de publicação, de WebSocket, de assinatura e de firmware.
+## Publicação no Cloudflare Worker ou Pages
 
-## Segurança
+Este repositório contém arquivos estáticos e testes GitHub Actions; os testes **não publicam** no Cloudflare. Se o seu endereço é `*.workers.dev`, publique `index.html` e `dual-dashboard.js` como assets do **Worker**, com a pasta `dashboard-cloudflare` como diretório estático. O arquivo `_headers` é usado no Pages e não substitui configuração de cabeçalhos no Worker.
 
-O Mosquitto público serve para testes e pode apresentar interrupções. Não conecte a saída do relé a um motor durante os ensaios e não envie comandos de partida/parada por um broker público sem autenticação. Para operar hardware real, use broker privado com TLS, autenticação, autorização por tópico, proteção elétrica e intertravamentos locais. Não publique credenciais de Wi-Fi, chaves MQTT nem tokens do Cloudflare no frontend ou no GitHub. O firmware original contém credencial Wi-Fi versionada; troque-a e elimine o segredo também do histórico antes de compartilhar o repositório.
+Se preferir Pages com Git: branch `main`, root `/`, framework `None`, build command `exit 0`, output `dashboard-cloudflare`. Só depois do deploy do Cloudflare concluído as mudanças aparecem no endereço público. Verifique no navegador `/dual-dashboard.js`; se houver 404, o Worker não está servindo esta versão.
 
-O dashboard `dashboard_iotmotor/` no PR #3 é um projeto distinto, para outros firmwares. Este painel foi feito para o sketch `comandos`.
+Para investigar: primeiro conecte ao broker e observe o diagnóstico individual de `esp32-01` e `esp32-02`. Em cada placa, abra o Monitor Serial a **115200 baud** para verificar Wi-Fi/IP, estado MQTT e leituras físicas. Alterar arquivos no GitHub ou publicar o dashboard **não regrava automaticamente os firmwares**.
+
+O broker público Mosquitto pode ficar temporariamente indisponível: https://test.mosquitto.org/ . Nunca coloque credenciais Wi-Fi, MQTT ou Cloudflare nos arquivos públicos. Revise também versões antigas do repositório que continham senha de Wi-Fi e altere qualquer credencial exposta.
