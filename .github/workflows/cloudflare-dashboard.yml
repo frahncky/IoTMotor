@@ -30,8 +30,9 @@ jobs:
           node --check dashboard-cloudflare/dual-dashboard.js
           node --check dashboard-cloudflare/hardware-mirror.js
           node --check dashboard-cloudflare/local-controls.js
+          node --check dashboard-cloudflare/remote-controls.js
       - name: Run current web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/local-controls.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
       - name: Verify canonical project structure
         run: |
           test -s esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
@@ -41,9 +42,12 @@ jobs:
           test -s dashboard-cloudflare/_headers
           grep -q 'dual-dashboard.js' dashboard-cloudflare/index.html
           grep -q 'local-controls.js' dashboard-cloudflare/index.html
+          grep -q 'remote-controls.js' dashboard-cloudflare/index.html
+          grep -q 'function blockedReason()' dashboard-cloudflare/remote-controls.js
           grep -q 'hardware-mirror.js' dashboard-cloudflare/hardware.html
           grep -q 'relay_pins' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
           grep -q 'createNestedArray("lcd")' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
+          grep -q 'mqttClient.subscribe(topicoComandos, 1)' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
           test ! -e esp32/iotmotor_esp32/iotmotor_esp32_motor
           test ! -e esp32/iotmotor_esp32/iotmotor_esp32_todos
           test ! -e dashboard-cloudflare/app.js
