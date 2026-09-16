@@ -7,6 +7,8 @@ on:
       - 'dashboard-cloudflare/dual-dashboard.js'
       - 'dashboard-cloudflare/local-controls.js'
       - 'tools/integrate_profiles.py'
+      - 'tools/rebuild_esp32_site.py'
+      - 'tools/harden_local_profiles.py'
       - 'esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_profiles.h'
       - '.github/workflows/integrated-relay-controls.yml'
   workflow_dispatch:
@@ -22,26 +24,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Integrate ESP32 firmware and shared dashboard
+      - name: Keep firmware control and browser assets synchronized
         run: |
-          python3 -m py_compile tools/integrate_profiles.py
-          python3 tools/integrate_profiles.py
-      - name: Verify generated firmware, controls and tests
+          python3 -m py_compile tools/integrate_profiles.py tools/rebuild_esp32_site.py tools/harden_local_profiles.py
+          if grep -q '#include "iotmotor_site.h"' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino; then
+            python3 tools/harden_local_profiles.py
+            python3 tools/rebuild_esp32_site.py
+          else
+            python3 tools/integrate_profiles.py
+            python3 tools/harden_local_profiles.py
+          fi
+      - name: Verify LAN-only control policy and browser tests
         run: |
           node --check dashboard-cloudflare/dual-dashboard.js
           node --check dashboard-cloudflare/local-controls.js
           node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
           grep -q 'server.on("/partida", HTTP_POST' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
           grep -q 'PINO_HABILITACAO_BANCADA' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_profiles.h
+          grep -q 'server.collectHeaders(headerNames, 1)' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
+          grep -q 'origemControleLocal()' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_profiles.h
           ! grep -q 'mqttClient.subscribe(' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
           ! grep -q 'server.on("/rele"' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
+          ! grep -q 'Access-Control-Allow-Origin' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
+          ! grep -q 'mqtt\.publish' dashboard-cloudflare/local-controls.js
           git diff --check
-      - name: Publish canonical firmware and generated dashboard assets
+      - name: Publish synchronized ESP32 firmware and site
         run: |
           if ! git diff --quiet -- dashboard-cloudflare/index.html dashboard-cloudflare/dual-dashboard.js esp32/iotmotor_esp32/iotmotor_esp32_comandos; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add dashboard-cloudflare/index.html dashboard-cloudflare/dual-dashboard.js esp32/iotmotor_esp32/iotmotor_esp32_comandos
-            git commit -m 'feat(iotmotor): configure start mode and K1-K4 on same ESP32 dashboard'
+            git commit -m 'fix(iotmotor): same-origin LAN profiles and synchronized dashboard'
             git push origin HEAD:main
           fi
