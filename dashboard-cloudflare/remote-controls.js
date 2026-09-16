@@ -19,15 +19,27 @@
   let client = null, connected = false, device = '', prefix = '', boot = '', lastAt = 0;
   let currentRelays = null, armed = false, busy = false, pendingSeq = '', lastSeq = 0;
   let latestStatus = 'Aguardando conexao MQTT e chave da placa.';
+  let legacyAt = 0; // ESP32 enviou telemetria sem identificador de firmware remoto.
   const keyInput = $('mqttControlKey');
   const signedTopic = () => `${prefix}/${device}/command`;
   const validKey = () => /^[a-f0-9]{32}$/i.test(keyInput.value.trim());
   const fresh = () => Boolean(boot && Date.now() - lastAt < 10000 && currentRelays);
+  function blockedReason() {
+    if (!window.crypto?.subtle) return 'Navegador sem Web Crypto: abra a página via HTTPS.';
+    if (!connected) return 'Conexão MQTT indisponível: use Conectar ao MQTT e confira o broker WSS.';
+    if (!boot && legacyAt && Date.now()-legacyAt < 10000)
+      return 'O ESP32 envia dados, mas usa firmware antigo. Grave o firmware de comandos mais recente (com MQTT de comandos) na placa.';
+    if (!fresh()) return 'Aguardando telemetria recente do ESP32-01 com boot e estados K1–K4; confira firmware, ID e conexão MQTT.';
+    if (!validKey()) return 'Informe no campo acima a chave de 32 caracteres exibida no Monitor Serial do ESP32 atualizado.';
+    if (!armed) return 'Ligar bloqueado: jumper físico GPIO32–GND ausente. Desligar permanece disponível.';
+    if (currentRelays.some(Boolean)) return 'Relés já acionados; use Desligar antes de uma nova partida.';
+    return '';
+  }
   function refresh() {
     start.disabled = busy || !connected || !validKey() || !fresh() || !armed || currentRelays.some(Boolean) || !window.crypto?.subtle;
     stop.disabled = busy || !connected || !validKey() || !boot || !window.crypto?.subtle;
     if ($('armValue')) $('armValue').textContent = fresh() ? (armed ? 'Jumper GPIO32 presente' : 'Jumper GPIO32 ausente') : 'Sem telemetria recente do ESP32';
-    if (!pendingSeq && status) status.textContent = latestStatus;
+    if (!pendingSeq && status) status.textContent = [latestStatus, blockedReason()].filter(Boolean).join(' · ');
   }
   keyInput.addEventListener('input', refresh);
   const fromHex = hex => Uint8Array.from(hex.match(/../g).map(v => parseInt(v, 16)));
@@ -46,7 +58,7 @@
     let conf;
     try {conf = configuration();} catch(e) { latestStatus=e.message; refresh(); return; }
     if (client) {client.end(true); client=null;}
-    connected=false; boot=''; lastAt=0; currentRelays=null; pendingSeq='';
+    connected=false; boot=''; lastAt=0; legacyAt=0; currentRelays=null; pendingSeq='';
     prefix=conf.p;device=conf.d;latestStatus='Conectando MQTT para comandos assinados…';refresh();
     const active = window.mqtt.connect(conf.url, {clientId:`iotmotor_remote_${Math.random().toString(36).slice(2,12)}`,
       clean:true, reconnectPeriod:4000, connectTimeout:10000, protocolVersion:4, keepalive:30});
@@ -65,6 +77,9 @@
           refresh();
         }
         return;
+      }
+      if (topic===`${prefix}/${device}/telemetry` && !/^[0-9a-f]{16}$/i.test(String(data.boot||''))) {
+        legacyAt=Date.now(); latestStatus='Recebendo telemetria de uma versão sem controle MQTT remoto.'; refresh(); return;
       }
       if(topic!==`${prefix}/${device}/telemetry` || !/^[0-9a-f]{16}$/i.test(String(data.boot||'')) ||
          !Array.isArray(data.relay_pins) || data.relay_pins.join(',')!=='19,18,23,27' ||
