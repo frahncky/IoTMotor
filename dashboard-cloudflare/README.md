@@ -1,55 +1,40 @@
-# Dashboard IoTMotor para Cloudflare Pages
+# Dashboard IoTMotor — Cloudflare Pages
 
-Dashboard web **somente leitura** compatível com o firmware que está em `esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino` na branch `main`.
+Painel estático, somente leitura, para o firmware `esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino` (`esp32-01`). A página usa MQTT sobre **WebSocket seguro (WSS)**; o ESP32 usa MQTT/TCP. Não é preciso compilar o Flutter para publicar este painel.
 
-## O que funciona
+## Configuração para o ESP32 que utiliza Mosquitto
 
-- Conexão MQTT por WebSocket seguro (WSS) com diagnóstico de conexão e reconexão.
-- Telemetria do `esp32-01`: tensão, corrente, estado do motor e data da última amostra.
-- Gráficos ao vivo (120 amostras por sessão) e exportação de CSV.
-- Configuração editável de URL WSS, prefixo e ID; somente esses dados não secretos são guardados no navegador.
-- A ausência de telemetria após 10 segundos é sinalizada, mesmo se o broker continuar conectado. O status MQTT retido, sozinho, não comprova que o ESP32 esteja online.
+| Dispositivo | Host / URL | Porta e protocolo |
+|---|---|---|
+| ESP32 | `test.mosquitto.org` | `1883` (MQTT/TCP) |
+| Dashboard Cloudflare | `wss://test.mosquitto.org:8081` | `8081` (MQTT/WSS) |
 
-**As medições do firmware `comandos` são simuladas por software, não leituras de sensores reais.**
+No painel, use prefixo `iotmotor` e ID `esp32-01`, **desde que esses valores continuem iguais no firmware**. Não use `mosquito` (sem o segundo `t`), ponto extra depois de `.org` ou porta `1883` em uma URL `wss://`.
 
-O dashboard não possui botões de partida/parada nem publica comandos. O firmware atual aceita comandos remotos pelo broker público sem autenticação: **não ligue um motor real enquanto usar essa configuração.** Para comandar um motor em produção, use broker privado com autenticação/TLS, controle de acesso, intertravamentos e proteção elétrica local; o Cloudflare Pages, sozinho, não protege o broker.
+A versão anterior sugeria HiveMQ por padrão. Esta versão migra automaticamente **somente aquele valor antigo** armazenado no navegador, sem sobrescrever um broker personalizado. O endereço pode ser alterado no campo de conexão; o painel guarda apenas URL, prefixo e ID, sem credenciais.
 
-## Publicar no Cloudflare Pages
+> O firmware `comandos` gera tensão e corrente simuladas por software. O painel não mede sensores reais nem oferece controle remoto: um broker público sem autenticação não é seguro para acionar motores.
 
-1. No Cloudflare, vá a **Workers & Pages → Create application → Pages → Import an existing Git repository**.
-2. Autorize o acesso ao repositório privado `frahncky/IoTMotor`, se solicitado, e selecione-o.
-3. Configure:
+## Publicação no Cloudflare Pages
 
-   | Campo | Valor |
-   | --- | --- |
-   | Production branch | `main` |
-   | Framework preset | `None` |
-   | Root directory | `/` (raiz do repositório) |
-   | Build command | `exit 0` |
-   | Build output directory | `dashboard-cloudflare` |
+1. Cloudflare → **Workers & Pages** → **Create application** → **Pages** → conectar GitHub.
+2. Selecione o repositório privado `frahncky/IoTMotor` e autorize o acesso se necessário.
+3. Branch de produção: `main`; framework: `None`; diretório raiz: `/`; comando de build: `exit 0`; diretório de saída: `dashboard-cloudflare`.
+4. Publique e abra o endereço real `*.pages.dev` fornecido pelo Cloudflare. Alterações no GitHub precisam de um deploy concluído para aparecerem no site. Não existe URL pública garantida ou confirmada neste repositório.
+5. Atualize a página (se necessário, recarga forçada) e clique **Conectar ao MQTT**.
 
-4. Selecione **Save and Deploy**. O Cloudflare fornecerá o endereço `*.pages.dev` depois que o deploy tiver êxito. Não há necessidade de compilar Flutter nem de configurar `npm` para este dashboard.
-5. Na página publicada, use `wss://broker.hivemq.com:8884/mqtt`, prefixo `iotmotor`, dispositivo `esp32-01`, e clique **Conectar ao MQTT**.
+## Identificar por que não aparece telemetria
 
-O ESP32 mantém `broker.hivemq.com:1883` (TCP). A página usa a entrada WebSocket segura do **mesmo broker**, não se conecta diretamente ao IP local do ESP32. O acesso WSS à porta 8884 depende de o serviço público estar operacional. Caso não funcione, configure outro broker com WSS e altere o firmware para publicar nele também.
+- **O endereço `*.pages.dev` não abre:** verifique o deploy no Cloudflare; enviar código ao GitHub não publica o site sozinho.
+- **Biblioteca indisponível:** o navegador não carregou MQTT.js pelo CDN; confira conexão/restrições da rede ou Console do navegador.
+- **Broker indisponível / Reconectando:** a conexão WebSocket à URL WSS falhou. Confira endereço, certificado e porta. O broker público Mosquitto informa que pode haver indisponibilidade de WebSockets ou TLS: https://test.mosquitto.org/.
+- **Broker conectado, sem dados:** a página conectou, mas não recebeu nada em `iotmotor/esp32-01/telemetry`. Verifique no ESP32 se a alteração do host foi **recompilada e gravada**, se conectou ao Wi-Fi e ao MQTT, se ID e prefixo batem e se o código está publicando.
+- **Status `online` sem dados:** pode ser uma mensagem *retida* do broker; não comprova que a placa esteja online agora.
 
-### Testar sem o ESP32
+Se a página continuar vazia, forneça a URL publicada e copie o texto do quadro **Diagnóstico da conexão**. Isso distingue falha de publicação, de WebSocket, de assinatura e de firmware.
 
-Ao conectar, o status de broker pode ficar conectado, mas não aparecerão amostras se nenhum ESP32 estiver publicando no tópico configurado. Isso não é um defeito dos gráficos. O botão **Exportar CSV** só é habilitado depois da primeira amostra.
+## Segurança
 
-### Verificação de código
+O Mosquitto público serve para testes e pode apresentar interrupções. Não conecte a saída do relé a um motor durante os ensaios e não envie comandos de partida/parada por um broker público sem autenticação. Para operar hardware real, use broker privado com TLS, autenticação, autorização por tópico, proteção elétrica e intertravamentos locais. Não publique credenciais de Wi-Fi, chaves MQTT nem tokens do Cloudflare no frontend ou no GitHub. O firmware original contém credencial Wi-Fi versionada; troque-a e elimine o segredo também do histórico antes de compartilhar o repositório.
 
-A aplicação é estática (`index.html` + `app.js` + `_headers`) e não depende de build. Para verificar a sintaxe do script com Node.js:
-
-```bash
-node --check dashboard-cloudflare/app.js
-```
-
-## Limitações e segurança
-
-- O broker público HiveMQ é compartilhado e **não é adequado para dados privados nem comandos de produção**.
-- O dashboard não exige login. Publicar no Cloudflare Pages não estabelece autenticação MQTT e os dados do broker público podem ser forjados por terceiros.
-- Se quiser acesso restrito ao site, configure Cloudflare Access separadamente e migre a comunicação do ESP32 para um broker privado autenticado.
-- Não coloque senha Wi-Fi, token Cloudflare nem credenciais MQTT no JavaScript, no HTML ou no GitHub. Um arquivo de frontend é visível a qualquer visitante.
-- O código do firmware atual versionou uma senha Wi-Fi; troque essa credencial e remova-a também do histórico Git antes de compartilhar o repositório.
-- O dashboard em `dashboard_iotmotor/` da branch de PR #3 é outro projeto, voltado aos **dois novos firmwares** daquela proposta. Não confunda com esta versão, que monitora o firmware `comandos` atualmente instalado.
+O dashboard `dashboard_iotmotor/` no PR #3 é um projeto distinto, para outros firmwares. Este painel foi feito para o sketch `comandos`.
