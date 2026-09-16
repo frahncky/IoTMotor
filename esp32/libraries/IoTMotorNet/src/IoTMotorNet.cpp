@@ -26,7 +26,16 @@ const char *CABECALHOS_COLETADOS[] = {CABECALHO_CHAVE};
 
 // Pacote de certificados raiz embutido pelo core do ESP32. Cobre os emissores
 // publicos, entao a URL de atualizacao pode migrar de host sem recompilar.
+//
+// setCACertBundle exige o tamanho: com size 0 ele DESANEXA o pacote em vez de
+// instalar, e a verificacao do certificado deixaria de acontecer em silencio.
+// Por isso o par start/end.
 extern "C" const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+extern "C" const uint8_t rootca_crt_bundle_end[] asm("_binary_x509_crt_bundle_end");
+
+size_t tamanhoDoPacoteDeRaizes() {
+  return (size_t)(rootca_crt_bundle_end - rootca_crt_bundle_start);
+}
 
 String jsonDeErro(const String &mensagem) {
   StaticJsonDocument<256> doc;
@@ -45,7 +54,7 @@ void cabecalhosComuns() {
 }  // namespace
 
 void aplicarRaizesTls(WiFiClientSecure &cliente) {
-  cliente.setCACertBundle(rootca_crt_bundle_start);
+  cliente.setCACertBundle(rootca_crt_bundle_start, tamanhoDoPacoteDeRaizes());
 }
 
 // -----------------------------------------------------------------------------
@@ -356,7 +365,7 @@ bool Rede::atualizarDeUrl(const String &url, const String &versao, String &erro)
   relatar("ota_remote_started");
 
   WiFiClientSecure cliente;
-  cliente.setCACertBundle(rootca_crt_bundle_start);
+  cliente.setCACertBundle(rootca_crt_bundle_start, tamanhoDoPacoteDeRaizes());
   cliente.setTimeout(15000);
 
   HTTPClient http;
