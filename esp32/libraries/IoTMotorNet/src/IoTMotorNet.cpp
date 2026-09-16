@@ -7,6 +7,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <Preferences.h>
 #include <mbedtls/md.h>
 
 namespace iotmotor {
@@ -18,6 +19,9 @@ namespace {
 WebServer servidor(80);
 
 const char *CABECALHO_CHAVE = "X-IoTMotor-OTA-Key";
+
+// Namespace proprio: o Modulo 2 ja usa "iotmotor" para a retencao do SD.
+const char *NVS_NAMESPACE = "iotnet";
 const char *CABECALHOS_COLETADOS[] = {CABECALHO_CHAVE};
 
 // Pacote de certificados raiz embutido pelo core do ESP32. Cobre os emissores
@@ -39,6 +43,10 @@ void cabecalhosComuns() {
 }
 
 }  // namespace
+
+void aplicarRaizesTls(WiFiClientSecure &cliente) {
+  cliente.setCACertBundle(rootca_crt_bundle_start);
+}
 
 // -----------------------------------------------------------------------------
 // Versoes
@@ -222,6 +230,9 @@ void Rede::registrarRotas() {
   servidor.collectHeaders(CABECALHOS_COLETADOS, 1);
   servidor.on("/health", HTTP_GET, []() { rede.trataHealth(); });
   servidor.on("/wifi-networks", HTTP_GET, []() { rede.trataRedesWifi(); });
+  servidor.on("/provision", HTTP_GET, []() { rede.trataProvisionamentoLer(); });
+  servidor.on("/provision", HTTP_POST, []() { rede.trataProvisionamentoGravar(); });
+  servidor.on("/provision/reset", HTTP_POST, []() { rede.trataProvisionamentoLimpar(); });
   servidor.on("/firmware/update", HTTP_POST,
               []() { rede.trataUploadFinal(); },
               []() { rede.trataUploadBloco(); });
@@ -452,10 +463,177 @@ bool Rede::atualizarDeUrl(const String &url, const String &versao, String &erro)
 }
 
 // -----------------------------------------------------------------------------
+// Provisionamento
+// -----------------------------------------------------------------------------
+Credenciais Rede::carregarCredenciais(const Credenciais &padroes) {
+  creds_ = padroes;
+  creds_.provisionado = false;
+
+  Preferences nvs;
+  if (!nvs.begin(NVS_NAMESPACE, true)) {
+    Serial.println("[rede] Sem provisionamento gravado; usando os padroes do sketch.");
+    return creds_;
+  }
+
+  // Sem SSID gravado nao ha provisionamento util: mantem tudo como veio.
+  const String ssid = nvs.getString("ssid", "");
+  if (ssid.length() == 0) {
+    nvs.end();
+    Serial.println("[rede] Sem provisionamento gravado; usando os padroes do sketch.");
+    return creds_;
+  }
+
+  creds_.wifiSsid = ssid;
+  creds_.wifiSenha = nvs.getString("wifi_pwd", padroes.wifiSenha);
+  creds_.mqttHost = nvs.getString("mqtt_host", padroes.mqttHost);
+  creds_.mqttPorta = nvs.getUShort("mqtt_port", padroes.mqttPorta);
+  creds_.mqttUsuario = nvs.getString("mqtt_user", padroes.mqttUsuario);
+  creds_.mqttSenha = nvs.getString("mqtt_pwd", padroes.mqttSenha);
+  creds_.prefixoTopicos = nvs.getString("prefix", padroes.prefixoTopicos);
+  creds_.mqttTls = nvs.getBool("tls", padroes.mqttTls);
+  creds_.provisionado = true;
+  nvs.end();
+
+  Serial.print("[rede] Provisionamento carregado: rede ");
+  Serial.print(creds_.wifiSsid);
+  Serial.print(", broker ");
+  Serial.print(creds_.mqttHost);
+  Serial.print(":");
+  Serial.print(creds_.mqttPorta);
+  Serial.println(creds_.mqttTls ? " (TLS)" : "");
+  return creds_;
+}
+
+// GET /provision — devolve o que esta valendo, sem as senhas.
+void Rede::trataProvisionamentoLer() {
+  cabecalhosComuns();
+  if (!chaveConfere()) {
+    servidor.send(401, "application/json", jsonDeErro("Chave invalida."));
+    return;
+  }
+
+  StaticJsonDocument<512> doc;
+  doc["ok"] = true;
+  doc["provisioned"] = creds_.provisionado;
+  doc["ssid"] = creds_.wifiSsid;
+  doc["mqttHost"] = creds_.mqttHost;
+  doc["mqttPort"] = creds_.mqttPorta;
+  doc["mqttUser"] = creds_.mqttUsuario;
+  doc["topicPrefix"] = creds_.prefixoTopicos;
+  doc["useTls"] = creds_.mqttTls;
+  // As senhas nunca saem; so informamos se existem.
+  doc["hasWifiPassword"] = creds_.wifiSenha.length() > 0;
+  doc["hasMqttPassword"] = creds_.mqttSenha.length() > 0;
+
+  String corpo;
+  serializeJson(doc, corpo);
+  servidor.send(200, "application/json", corpo);
+}
+
+// POST /provision — grava e reinicia.
+//
+// Diferente do firmware do E-Metrics, esta rota exige a chave. Um endpoint
+// aberto na rede local permitiria a qualquer um apontar o modulo para outro
+// broker — e quem controla o broker controla o motor.
+void Rede::trataProvisionamentoGravar() {
+  cabecalhosComuns();
+  if (!chaveConfere()) {
+    servidor.send(401, "application/json", jsonDeErro("Chave invalida."));
+    return;
+  }
+
+  const String ssid = servidor.arg("ssid");
+  const String mqttHost = servidor.arg("mqttHost");
+  const String prefixo = servidor.arg("topicPrefix");
+
+  if (ssid.length() == 0 || mqttHost.length() == 0 || prefixo.length() == 0) {
+    servidor.send(400, "application/json",
+                  jsonDeErro("ssid, mqttHost e topicPrefix sao obrigatorios."));
+    return;
+  }
+
+  long porta = 1883;
+  if (servidor.hasArg("mqttPort")) {
+    porta = servidor.arg("mqttPort").toInt();
+    if (porta < 1 || porta > 65535) {
+      servidor.send(400, "application/json", jsonDeErro("mqttPort fora da faixa."));
+      return;
+    }
+  }
+
+  // Trocar a chave pela propria rota e permitido, mas nao para uma fraca:
+  // seria um caminho para desabilitar a protecao do resto.
+  String novaChave;
+  if (servidor.hasArg("otaKey")) {
+    novaChave = servidor.arg("otaKey");
+    if (novaChave.length() < 8) {
+      servidor.send(400, "application/json",
+                    jsonDeErro("otaKey precisa de ao menos 8 caracteres."));
+      return;
+    }
+  }
+
+  Preferences nvs;
+  if (!nvs.begin(NVS_NAMESPACE, false)) {
+    servidor.send(500, "application/json", jsonDeErro("Nao foi possivel abrir a NVS."));
+    return;
+  }
+
+  nvs.putString("ssid", ssid);
+  nvs.putString("wifi_pwd", servidor.arg("wifiPassword"));
+  nvs.putString("mqtt_host", mqttHost);
+  nvs.putUShort("mqtt_port", (uint16_t)porta);
+  nvs.putString("mqtt_user", servidor.arg("mqttUser"));
+  nvs.putString("mqtt_pwd", servidor.arg("mqttPassword"));
+  nvs.putString("prefix", prefixo);
+  nvs.putBool("tls", servidor.arg("useTls") == "1");
+  if (novaChave.length() >= 8) nvs.putString("ota_key", novaChave);
+  nvs.end();
+
+  servidor.send(200, "application/json",
+                "{\"ok\":true,\"message\":\"Provisionamento gravado. Reiniciando.\"}");
+  relatar("provisioned");
+  delay(400);
+  ESP.restart();
+}
+
+// POST /provision/reset — volta aos padroes compilados.
+void Rede::trataProvisionamentoLimpar() {
+  cabecalhosComuns();
+  if (!chaveConfere()) {
+    servidor.send(401, "application/json", jsonDeErro("Chave invalida."));
+    return;
+  }
+
+  Preferences nvs;
+  if (!nvs.begin(NVS_NAMESPACE, false)) {
+    servidor.send(500, "application/json", jsonDeErro("Nao foi possivel abrir a NVS."));
+    return;
+  }
+  nvs.clear();
+  nvs.end();
+
+  servidor.send(200, "application/json",
+                "{\"ok\":true,\"message\":\"Provisionamento apagado. Reiniciando.\"}");
+  relatar("provision_cleared");
+  delay(400);
+  ESP.restart();
+}
+
+// -----------------------------------------------------------------------------
 // Ciclo de vida
 // -----------------------------------------------------------------------------
 void Rede::begin(const Config &config) {
   cfg_ = config;
+
+  // Uma chave gravada por provisionamento substitui a compilada. Guardada
+  // num membro porque Config so tem ponteiros para constantes do sketch.
+  Preferences nvs;
+  if (nvs.begin(NVS_NAMESPACE, true)) {
+    chaveGravada_ = nvs.getString("ota_key", "");
+    nvs.end();
+    if (chaveGravada_.length() >= 8) cfg_.chaveOta = chaveGravada_.c_str();
+  }
 
   if (cfg_.portaHttp != 80) {
     // O WebServer ja foi construido na porta 80; avisa em vez de mentir.

@@ -142,12 +142,57 @@ para gravar firmware.
 |---|---|---|
 | `/health` | GET | Estado completo: versao, heap, RSSI, IP e o estado do modulo |
 | `/wifi-networks` | GET | Varredura de redes Wi-Fi ao alcance |
-| `/firmware/update` | POST | Upload de firmware (multipart), exige a chave no cabecalho |
+| `/provision` | GET | Configuracao em uso, sem as senhas |
+| `/provision` | POST | Grava Wi-Fi, broker e prefixo de topicos; reinicia |
+| `/provision/reset` | POST | Apaga o provisionamento e volta aos padroes compilados |
+| `/firmware/update` | POST | Upload de firmware (multipart) |
+
+Todas as rotas de escrita — e a leitura do provisionamento — exigem o cabecalho
+`X-IoTMotor-OTA-Key`. Só `/health` e `/wifi-networks` sao abertas.
 
 Os modulos respondem em `http://esp32-01.local/` e `http://esp32-02.local/` via
 mDNS, ou pelo IP. O botao "testar comunicacao local" da aba Configuracoes do app
 chama `/wifi-networks` — ate agora ele apontava para um endpoint que nenhum
 firmware implementava.
+
+### Provisionamento
+
+Os valores de Wi-Fi e broker no topo de cada sketch sao **padrao de fabrica**:
+valem enquanto nao houver nada gravado. Depois de um `POST /provision`, a NVS
+vence e a placa muda de rede ou de broker sem recompilar.
+
+| Campo | Obrigatorio | Observacao |
+|---|---|---|
+| `ssid` | sim | Rede Wi-Fi |
+| `wifiPassword` | nao | Vazio para rede aberta |
+| `mqttHost` | sim | |
+| `mqttPort` | nao | Padrao 1883 |
+| `mqttUser`, `mqttPassword` | nao | |
+| `topicPrefix` | sim | Ex.: `iotmotor` |
+| `useTls` | nao | `1` liga MQTT sobre TLS |
+| `otaKey` | nao | Troca a chave; minimo 8 caracteres |
+
+```bash
+curl -X POST http://esp32-01.local/provision \
+  -H "X-IoTMotor-OTA-Key: SUA-CHAVE" \
+  -d ssid="RedeDaPlanta" -d wifiPassword="senha" \
+  -d mqttHost="broker.exemplo.com" -d mqttPort=8883 -d useTls=1 \
+  -d mqttUser="iotmotor" -d mqttPassword="segredo" \
+  -d topicPrefix="iotmotor-ifma-7f3a"
+```
+
+Esse comando e o caminho pratico para sair do broker publico: liga TLS e
+autenticacao e troca o prefixo por um dificil de adivinhar, sem recompilar nada.
+O `device_id` continua sendo de compilacao — e a identidade do modulo, e deixar
+que um pedido de rede a mude orfanaria o dispositivo no painel.
+
+O app ja tem o metodo `sendProvisionCommand` apontando para esta rota, mas ainda
+nao tem tela que o chame.
+
+**Divergencia deliberada do E-Metrics:** la o `/provision` e aberto. Aqui exige a
+chave. Num modulo que aciona motor, um endpoint aberto na rede local deixaria
+qualquer um apontar o dispositivo para outro broker — e quem controla o broker
+controla o motor.
 
 ### Tres caminhos de atualizacao
 
@@ -188,8 +233,9 @@ si. As defesas estao no modulo:
 - **Recusa de versao igual ou anterior**, o que fecha o downgrade para uma
   versao antiga com falha conhecida.
 - **HTTPS obrigatorio**, com o pacote de certificados raiz do proprio core.
-- **Chave de 8+ caracteres** (`OTA_KEY`) para o upload local e o ArduinoOTA,
-  comparada em tempo constante. Com menos que isso, os dois ficam desligados.
+- **Chave de 8+ caracteres** (`OTA_KEY`) para o upload local, o ArduinoOTA e o
+  provisionamento, comparada em tempo constante. Com menos que isso, o upload
+  local e o ArduinoOTA ficam desligados.
 - **Modulo 1 recusa atualizar com o motor acionado.** A gravacao termina em
   reboot e no reset os reles caem: o motor pararia sozinho no meio da operacao.
 
@@ -276,7 +322,11 @@ Flutter e a URL no painel web.
 > alem da bancada, use um broker com usuario, senha e TLS.
 
 Troque tambem `OTA_KEY` nos dois sketches: o valor versionado e um marcador, e
-com ele qualquer um na rede local grava firmware no modulo.
+com ele qualquer um na rede local grava firmware ou reaponta o broker do modulo.
+
+Os valores de Wi-Fi e broker sao apenas o padrao de fabrica — depois de
+provisionar pela rede, a NVS manda. `POST /provision/reset` volta aos
+compilados.
 
 Bibliotecas necessarias: PubSubClient, ArduinoJson 6.x, PZEM004Tv30, LiquidCrystal
 I2C, OneWire, DallasTemperature e a IoTMotorNet deste repositorio.

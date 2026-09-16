@@ -50,6 +50,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Preferences.h>
+#include <WiFiClientSecure.h>
 #include <IoTMotorNet.h>
 #include <time.h>
 #include <math.h>
@@ -57,6 +58,7 @@
 // -----------------------------------------------------------------------------
 // Wi-Fi
 // -----------------------------------------------------------------------------
+// Estes valores so valem enquanto nao houver provisionamento gravado na NVS.
 static const char* WIFI_SSID     = "BotComp";
 static const char* WIFI_PASSWORD = "linguagemC";
 
@@ -156,8 +158,14 @@ Preferences preferencias;
 // -----------------------------------------------------------------------------
 // Objetos globais
 // -----------------------------------------------------------------------------
-WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);
+// Duas pilhas de socket: a simples e a TLS. O provisionamento escolhe qual usar.
+WiFiClient clienteWifiPlano;
+WiFiClientSecure clienteWifiTls;
+PubSubClient mqttClient(clienteWifiPlano);
+
+// Global e nunca reatribuida depois do setup: o PubSubClient guarda o ponteiro
+// do host, nao uma copia.
+iotmotor::Credenciais credenciais;
 
 OneWire oneWire(DS18B20_PIN);
 DallasTemperature ds18b20(&oneWire);
@@ -492,14 +500,15 @@ void descreverEstadoParaHealth(JsonObject modulo) {
 // MQTT - publicacoes
 // -----------------------------------------------------------------------------
 void montarTopicos() {
-  snprintf(topicTelemetria, sizeof(topicTelemetria), "%s/%s/telemetry", TOPIC_PREFIX, DEVICE_ID);
-  snprintf(topicStatus, sizeof(topicStatus), "%s/%s/status", TOPIC_PREFIX, DEVICE_ID);
-  snprintf(topicComando, sizeof(topicComando), "%s/%s/command", TOPIC_PREFIX, DEVICE_ID);
-  snprintf(topicTelemetriaRequest, sizeof(topicTelemetriaRequest), "%s/request/telemetry", TOPIC_PREFIX);
-  snprintf(topicComandoRequest, sizeof(topicComandoRequest), "%s/request/command", TOPIC_PREFIX);
-  snprintf(topicCapabilities, sizeof(topicCapabilities), "%s/%s/capabilities", TOPIC_PREFIX, DEVICE_ID);
+  const char* prefixo = credenciais.prefixoTopicos.c_str();
+  snprintf(topicTelemetria, sizeof(topicTelemetria), "%s/%s/telemetry", prefixo, DEVICE_ID);
+  snprintf(topicStatus, sizeof(topicStatus), "%s/%s/status", prefixo, DEVICE_ID);
+  snprintf(topicComando, sizeof(topicComando), "%s/%s/command", prefixo, DEVICE_ID);
+  snprintf(topicTelemetriaRequest, sizeof(topicTelemetriaRequest), "%s/request/telemetry", prefixo);
+  snprintf(topicComandoRequest, sizeof(topicComandoRequest), "%s/request/command", prefixo);
+  snprintf(topicCapabilities, sizeof(topicCapabilities), "%s/%s/capabilities", prefixo, DEVICE_ID);
   snprintf(topicTelemetriaAcionamento, sizeof(topicTelemetriaAcionamento), "%s/%s/telemetry",
-           TOPIC_PREFIX, DEVICE_ID_ACIONAMENTO);
+           prefixo, DEVICE_ID_ACIONAMENTO);
 }
 
 void publicarStatus(const char* valor) {
@@ -692,8 +701,9 @@ void manterMqtt(unsigned long agora) {
 
   const String clientId = String("esp32_mod2_") + String(DEVICE_ID);
   bool ok;
-  if (strlen(MQTT_USER) > 0) {
-    ok = mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS, topicStatus, 0, true, "offline");
+  if (credenciais.mqttUsuario.length() > 0) {
+    ok = mqttClient.connect(clientId.c_str(), credenciais.mqttUsuario.c_str(),
+                            credenciais.mqttSenha.c_str(), topicStatus, 0, true, "offline");
   } else {
     ok = mqttClient.connect(clientId.c_str(), topicStatus, 0, true, "offline");
   }
@@ -739,7 +749,7 @@ void manterWifi(unsigned long agora) {
     ultimaTentativaWifi = agora;
     Serial.println("Tentando reconectar ao Wi-Fi...");
     WiFi.disconnect(false, false);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(credenciais.wifiSsid.c_str(), credenciais.wifiSenha.c_str());
   }
 }
 
@@ -832,13 +842,24 @@ void setup() {
   ds18b20.setWaitForConversion(false);
   ds18b20.requestTemperatures();
 
+  // Le o provisionamento antes de tudo que depende de rede.
+  iotmotor::Credenciais padroes;
+  padroes.wifiSsid = WIFI_SSID;
+  padroes.wifiSenha = WIFI_PASSWORD;
+  padroes.mqttHost = MQTT_HOST;
+  padroes.mqttPorta = MQTT_PORT;
+  padroes.mqttUsuario = MQTT_USER;
+  padroes.mqttSenha = MQTT_PASS;
+  padroes.prefixoTopicos = TOPIC_PREFIX;
+  credenciais = iotmotor::rede.carregarCredenciais(padroes);
+
   montarTopicos();
 
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(credenciais.wifiSsid.c_str(), credenciais.wifiSenha.c_str());
   ultimaTentativaWifi = millis();
 
   Serial.print("Conectando ao Wi-Fi");
@@ -860,7 +881,11 @@ void setup() {
   inicializarSD();
   expurgarLogsAntigos();
 
-  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  if (credenciais.mqttTls) {
+    iotmotor::aplicarRaizesTls(clienteWifiTls);
+    mqttClient.setClient(clienteWifiTls);
+  }
+  mqttClient.setServer(credenciais.mqttHost.c_str(), credenciais.mqttPorta);
   mqttClient.setCallback(aoReceberMqtt);
   mqttClient.setBufferSize(768);
 

@@ -24,6 +24,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <WiFiClientSecure.h>
 
 namespace iotmotor {
 
@@ -36,6 +37,25 @@ typedef bool (*VetoDeAtualizacao)(String &motivo);
 
 /// Reporta o andamento para fora (tipicamente publicando em MQTT).
 typedef void (*RelatorDeStatus)(const char *status);
+
+/// Credenciais de rede e broker, guardadas em NVS.
+///
+/// Os valores compilados no sketch sao apenas o padrao de fabrica: se houver
+/// provisionamento gravado, ele vence. Isso permite levar a placa para outra
+/// planta sem recompilar.
+struct Credenciais {
+  String wifiSsid;
+  String wifiSenha;
+  String mqttHost;
+  uint16_t mqttPorta = 1883;
+  String mqttUsuario;
+  String mqttSenha;
+  String prefixoTopicos;
+  bool mqttTls = false;
+
+  /// true quando os valores vieram da NVS, nao dos padroes de compilacao.
+  bool provisionado = false;
+};
 
 struct Config {
   /// device_id do modulo (esp32-01, esp32-02). Tambem vira hostname do mDNS.
@@ -64,6 +84,11 @@ struct Config {
   uint16_t portaHttp = 80;
 };
 
+/// Instala o pacote de certificados raiz do core neste cliente TLS.
+/// Use para o broker MQTT quando o provisionamento pedir TLS — o pacote ja
+/// esta embutido por causa da atualizacao remota, entao nao custa flash extra.
+void aplicarRaizesTls(WiFiClientSecure &cliente);
+
 class Rede {
  public:
   void begin(const Config &config);
@@ -88,6 +113,14 @@ class Rede {
 
   const Config &config() const { return cfg_; }
 
+  /// Le as credenciais gravadas, caindo nos padroes quando nao ha nada.
+  /// Chame ANTES de begin(): o resultado precisa viver enquanto o programa
+  /// rodar, porque o PubSubClient guarda o ponteiro do host.
+  Credenciais carregarCredenciais(const Credenciais &padroes);
+
+  /// Credenciais em uso, para o modulo consultar depois de carregar.
+  const Credenciais &credenciais() const { return creds_; }
+
   /// Compara versoes x.y.z. <0, 0 ou >0, como strcmp.
   static int compararVersoes(const String &a, const String &b);
 
@@ -100,6 +133,9 @@ class Rede {
 
   void trataHealth();
   void trataRedesWifi();
+  void trataProvisionamentoLer();
+  void trataProvisionamentoGravar();
+  void trataProvisionamentoLimpar();
   void trataUploadFinal();
   void trataUploadBloco();
   void trataNaoEncontrado();
@@ -115,6 +151,8 @@ class Rede {
   bool arduinoOtaAtivo_ = false;
   unsigned long semWifiDesde_ = 0;
   String erroUpload_;
+  Credenciais creds_;
+  String chaveGravada_;
 };
 
 /// Instancia unica: o WebServer e o ArduinoOTA ja sao recursos unicos do chip.
