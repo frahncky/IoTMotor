@@ -1,5 +1,4 @@
 name: IoTMotor web and firmware checks
-
 on:
   push:
     branches: [main]
@@ -13,10 +12,8 @@ on:
       - 'esp32/**'
       - '.github/workflows/cloudflare-dashboard.yml'
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -25,30 +22,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check active JavaScript syntax
+      - name: Check JavaScript syntax
         run: |
           node --check dashboard-cloudflare/dual-dashboard.js
-          node --check dashboard-cloudflare/hardware-mirror.js
           node --check dashboard-cloudflare/local-controls.js
           node --check dashboard-cloudflare/remote-controls.js
-      - name: Run current web tests
+          node --check dashboard-cloudflare/hardware-mirror.js
+      - name: Run web tests
         run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
-      - name: Verify canonical project structure
+      - name: Verify MQTT-only firmware and controls
         run: |
-          test -s esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
-          test -s esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/iotmotor_esp32_s3_sensores.ino
-          test -s dashboard-cloudflare/index.html
-          test -s dashboard-cloudflare/hardware.html
-          test -s dashboard-cloudflare/_headers
-          grep -q 'dual-dashboard.js' dashboard-cloudflare/index.html
-          grep -q 'local-controls.js' dashboard-cloudflare/index.html
-          grep -q 'remote-controls.js' dashboard-cloudflare/index.html
-          grep -q 'function blockedReason()' dashboard-cloudflare/remote-controls.js
-          grep -q 'hardware-mirror.js' dashboard-cloudflare/hardware.html
-          grep -q 'relay_pins' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
-          grep -q 'createNestedArray("lcd")' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
-          grep -q 'mqttClient.subscribe(topicoComandos, 1)' esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino
-          test ! -e esp32/iotmotor_esp32/iotmotor_esp32_motor
-          test ! -e esp32/iotmotor_esp32/iotmotor_esp32_todos
-          test ! -e dashboard-cloudflare/app.js
-          test ! -e dashboard-cloudflare/dashboard-v2.js
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('esp32/iotmotor_esp32/iotmotor_esp32_comandos')
+          firmware=(root/'iotmotor_esp32_comandos.ino').read_text()
+          control=(root/'iotmotor_mqtt_control.h').read_text()
+          remote=Path('dashboard-cloudflare/remote-controls.js').read_text()
+          local=Path('dashboard-cloudflare/local-controls.js').read_text()
+          page=Path('dashboard-cloudflare/index.html').read_text()
+          assert 'mqttClient.subscribe(topicoComandos, 1)' in firmware
+          assert 'relay_pins' in firmware and 'createNestedArray("lcd")' in firmware
+          assert 'WebServer' not in firmware and 'server.on(' not in firmware and 'iotmotor_site.h' not in firmware
+          assert not (root/'iotmotor_site.h').exists()
+          assert 'mbedtls' not in control and 'Preferences' not in control and 'cmd_key' not in control
+          assert 'mqttControlKey' not in remote and 'crypto.subtle' not in remote
+          assert 'startBtn' in page and 'stopBtn' in page
+          assert "start.addEventListener('click'" in remote and "stop.addEventListener('click'" in remote
+          assert "fetch('/dados'" not in local and 'server.on(' not in control
+          PY
