@@ -1,14 +1,13 @@
 /*
   IoTMotor — ESP32-01 (DevKit V1)
-  Hardware preservado do sketch de bancada funcional:
+  Hardware do sketch de bancada funcional:
     PZEM-004T TX -> GPIO16 (RX2), RX -> GPIO17 (TX2)
-    LCD I2C 20x4 SDA -> GPIO21, SCL -> GPIO22, endereço 0x27
-    Relés K1..K4 -> GPIO19, GPIO18, GPIO23, GPIO27
-    Jumper físico de habilitação -> GPIO32 ao GND
+    LCD I2C 20x4 SDA -> GPIO21, SCL -> GPIO22, endereco 0x27
+    Reles K1..K4 -> GPIO19, GPIO18, GPIO23, GPIO27
 
-  Este firmware NÃO hospeda página web e NÃO armazena chave de comando.
+  Nao hospeda pagina web, nao exige chave de comando nem jumper GPIO32.
   Painel Cloudflare usa MQTT WSS; ESP32 publica telemetria e aceita JSON via TCP.
-  Somente ensaios de relés sem motor ou contatores conectados ao broker público.
+  APENAS para ensaios de reles sem motor ou contatores no broker publico.
   Bibliotecas: PZEM004Tv30, LiquidCrystal I2C, PubSubClient, ArduinoJson 6.
 */
 #include <WiFi.h>
@@ -19,7 +18,6 @@
 #include <ArduinoJson.h>
 #include <math.h>
 
-// Rede usada na bancada; para rede com senha, altere somente WIFI_PASSWORD.
 const char* WIFI_SSID = "IFMA_IOT";
 const char* WIFI_PASSWORD = "";
 constexpr unsigned long WIFI_RETRY_MS = 10000UL;
@@ -28,7 +26,7 @@ unsigned long ultimaTentativaWifi = 0;
 constexpr uint8_t NUM_RELES = 4;
 const uint8_t PINOS_RELES[NUM_RELES] = {19, 18, 23, 27};
 bool estadoReles[NUM_RELES] = {false, false, false, false};
-// Preserva a polaridade do sketch funcional. Altere só se seu módulo for ativo em LOW.
+// Preserva a polaridade do sketch funcional; altere apenas se o modulo for ativo em LOW.
 const bool RELE_ATIVO_EM_NIVEL_BAIXO = false;
 constexpr uint8_t nivelLigado() { return RELE_ATIVO_EM_NIVEL_BAIXO ? LOW : HIGH; }
 constexpr uint8_t nivelDesligado() { return RELE_ATIVO_EM_NIVEL_BAIXO ? HIGH : LOW; }
@@ -128,7 +126,7 @@ void manterWifi(unsigned long agora) {
 void lerPzem() {
   if (!pzem) {pzemOk = false; return;}
   const float tensao = pzem->voltage();
-  // Se o primeiro registrador falhar, não encadear vários timeouts Modbus.
+  // Evita encadear varios timeouts Modbus se o primeiro registrador falhar.
   if (!isfinite(tensao)) {
     if (pzemOk) Serial.println("[PZEM] leitura perdida");
     pzemOk = false;
@@ -158,12 +156,12 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v8-open-mqtt-bench";
+  doc["firmware_version"] = "v9-open-mqtt-no-jumper";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
   doc["relay_commanded_only"] = true;
-  doc["requires_gpio32_arm"] = true;
+  doc["requires_gpio32_arm"] = false;
   JsonArray fields = doc.createNestedArray("fields");
   for (const char* field : {"voltage", "current", "power", "energy", "frequency", "pf"})
     fields.add(field);
@@ -180,7 +178,8 @@ void publicarTelemetriaMqtt() {
   doc["seq"] = ++sequenciaMqtt;
   doc["boot"] = sessaoControle;
   doc["remote_control_ready"] = controleMqttConfigurado;
-  doc["bench_armed"] = bancadaHabilitada();
+  // Campo de compatibilidade: pronto para comandos; NAO representa jumper fisico.
+  doc["bench_armed"] = true;
   doc["start_phase"] = nomeEtapa();
   if (WiFi.status() == WL_CONNECTED) doc["wifi_ip"] = WiFi.localIP().toString();
   doc["demo"] = false;
@@ -218,7 +217,7 @@ void manterMqtt(unsigned long agora) {
   if (mqttClient.connected()) {mqttClient.loop();return;}
   if (ultimaTentativaMqtt && agora - ultimaTentativaMqtt < MQTT_RETRY_MS) return;
   ultimaTentativaMqtt = agora;
-  const String clientId = String("iotmotor_v8_") + String((uint32_t)ESP.getEfuseMac(), HEX);
+  const String clientId = String("iotmotor_v9_") + String((uint32_t)ESP.getEfuseMac(), HEX);
   if (mqttClient.connect(clientId.c_str(), topicoStatus, 0, true, "offline")) {
     mqttClient.publish(topicoStatus, "online", true);
     if (!mqttClient.subscribe(topicoComandos, 1))
@@ -231,9 +230,8 @@ void manterMqtt(unsigned long agora) {
 void setup() {
   Serial.begin(115200);
   delay(100);
-  Serial.println("=== IoTMotor ESP32-01 / MQTT sem chave ===");
-  pinMode(PINO_HABILITACAO_BANCADA, INPUT_PULLUP);
-  // Escreve repouso ANTES de configurar como saída para evitar pulso de partida.
+  Serial.println("=== IoTMotor ESP32-01 / MQTT sem chave e sem jumper ===");
+  // Repouso ANTES de configurar saidas para evitar pulso no boot.
   for (uint8_t i = 0; i < NUM_RELES; ++i) {
     digitalWrite(PINOS_RELES[i], nivelDesligado());
     pinMode(PINOS_RELES[i], OUTPUT);
@@ -247,7 +245,7 @@ void setup() {
   lcd.clear();
   imprimirLinhaCompleta(0, "Iniciando ESP32...");
   imprimirLinhaCompleta(1, "Conectando WiFi...");
-  // Criar PZEM após inicialização do core evita Serial2.begin() antes do boot.
+  // PZEM criado depois da inicializacao do core.
   pzem = new PZEM004Tv30(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
   WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
@@ -283,7 +281,7 @@ void loop() {
   const unsigned long agora = millis();
   manterWifi(agora);
   manterMqtt(agora);
-  // Se o link MQTT cair, nenhuma saída permanece energizada.
+  // Se o MQTT cair, nenhuma saida permanece energizada.
   if (!mqttClient.connected() && (etapaPartida || estadoReles[0] || estadoReles[1] ||
                                   estadoReles[2] || estadoReles[3])) pararBancada();
   manterPartidaBancada(agora);
