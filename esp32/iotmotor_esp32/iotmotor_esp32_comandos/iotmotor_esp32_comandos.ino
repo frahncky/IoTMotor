@@ -38,7 +38,8 @@ constexpr uint8_t LCD_COLUNAS = 20;
 constexpr uint8_t LCD_LINHAS = 4;
 constexpr uint8_t LCD_SDA = 21;
 constexpr uint8_t LCD_SCL = 22;
-LiquidCrystal_I2C lcd(LCD_ENDERECO, LCD_COLUNAS, LCD_LINHAS);
+// Criado apos a varredura I2C: modulos PCF8574 usam 0x27 ou 0x3F conforme o fabricante.
+LiquidCrystal_I2C* lcd = nullptr;
 char lcdCache[LCD_LINHAS][LCD_COLUNAS + 1];
 bool lcdPrecisaAtualizar = true;
 unsigned long ultimaAtualizacaoLcd = 0;
@@ -79,8 +80,25 @@ void imprimirLinhaCompleta(uint8_t linha, const char* texto) {
   snprintf(buffer, sizeof(buffer), "%-*.*s", LCD_COLUNAS, LCD_COLUNAS, texto);
   if (!strcmp(buffer, lcdCache[linha])) return;
   strcpy(lcdCache[linha], buffer);
-  lcd.setCursor(0, linha);
-  lcd.print(buffer);
+  if (!lcd) return;  // Cache segue para a telemetria mesmo sem display.
+  lcd->setCursor(0, linha);
+  lcd->print(buffer);
+}
+
+// Varre o barramento I2C e retorna o endereco do LCD (prefere LCD_ENDERECO), ou 0.
+uint8_t detectarLcd() {
+  uint8_t achado = 0;
+  Serial.print("[I2C] dispositivos:");
+  for (uint8_t endereco = 1; endereco < 127; ++endereco) {
+    Wire.beginTransmission(endereco);
+    if (Wire.endTransmission() != 0) continue;
+    Serial.printf(" 0x%02X", endereco);
+    const bool pcf8574 = (endereco >= 0x20 && endereco <= 0x27) || (endereco >= 0x38 && endereco <= 0x3F);
+    if (pcf8574 && (!achado || endereco == LCD_ENDERECO)) achado = endereco;
+  }
+  if (achado) Serial.printf("\n[LCD] usando endereco 0x%02X\n", achado);
+  else Serial.println(" nenhum\n[LCD] nao encontrado: confira VCC 5V, GND, SDA GPIO21 e SCL GPIO22");
+  return achado;
 }
 
 void atualizarLcd() {
@@ -242,9 +260,12 @@ void setup() {
   }
   for (uint8_t i = 0; i < LCD_LINHAS; ++i) lcdCache[i][0] = '\0';
   Wire.begin(LCD_SDA, LCD_SCL);
-  lcd.init();
-  lcd.backlight();
-  lcd.clear();
+  if (const uint8_t endereco = detectarLcd()) {
+    lcd = new LiquidCrystal_I2C(endereco, LCD_COLUNAS, LCD_LINHAS);
+    lcd->init();
+    lcd->backlight();
+    lcd->clear();
+  }
   imprimirLinhaCompleta(0, "Iniciando ESP32...");
   imprimirLinhaCompleta(1, "Conectando WiFi...");
   // PZEM criado depois da inicializacao do core.
@@ -273,7 +294,7 @@ void setup() {
   mqttClient.setCallback(receberComandoMqtt);
   lerPzem();
   ultimaLeituraPzem = millis();
-  lcd.clear();
+  if (lcd) lcd->clear();
   for (uint8_t i = 0; i < LCD_LINHAS; ++i) lcdCache[i][0] = '\0';
   atualizarLcd();
   ultimaAtualizacaoLcd = millis();
