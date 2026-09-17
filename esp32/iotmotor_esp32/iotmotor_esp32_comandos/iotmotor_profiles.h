@@ -1,7 +1,8 @@
 #pragma once
 // Perfis de ensaio MQTT: nao ha habilitacao por jumper GPIO32.
 // O circuito de ensaio deve permanecer desconectado de motores e contatores no broker publico.
-constexpr unsigned long LIMITE_BANCADA_MS = 60000UL;
+// Desligamento automatico de seguranca: 5 minutos por ensaio.
+constexpr unsigned long LIMITE_BANCADA_MS = 300000UL;
 constexpr unsigned long TEMPO_MORTO_MS = 700UL;
 uint8_t etapaPartida = 0; // 0 parado, 1 aguarda, 2 estrela, 3 tempo morto, 4 triangulo, 5 direta.
 uint8_t modoPartida = 0;  // 0 direta, 1 sequencia.

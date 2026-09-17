@@ -53,7 +53,7 @@ A resposta em `command_ack` traz `accepted` e `reason`: `accepted`, `stopped`, `
 1. Após aceitar `start`, aguarda 0,5 s com tudo desligado.
 2. **Direta**: liga os relés da máscara. **Sequência**: liga principal + estrela; após `seconds`, desliga a estrela (tempo morto de 0,7 s) e liga principal + triângulo.
 3. Todos os relés são desligados automaticamente:
-   - **60 s** após o `start` (`LIMITE_BANCADA_MS`), em qualquer modo;
+   - **5 minutos** após o `start` (`LIMITE_BANCADA_MS`), em qualquer modo;
    - ao perder o Wi-Fi ou a conexão MQTT, mesmo por pouco tempo.
 
 ## Segurança
