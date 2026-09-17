@@ -40,7 +40,8 @@ OneWire oneWire(DS18B20_PIN);
 DallasTemperature ds18b20(&oneWire);
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
-uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0;
+uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
+static const uint32_t MPU_RETRY_MS = 5000UL;
 uint32_t sampleCount=0;
 float vibrationSquares=0.0f,vibrationPeak=0.0f;
 float gravityX=0.0f,gravityY=0.0f,gravityZ=1.0f;
@@ -58,11 +59,15 @@ bool mpuWrite(uint8_t reg,uint8_t value) {
   return Wire.endTransmission()==0;
 }
 
-bool initMpu() {
-  bool ok=mpuWrite(0x6B,0x00);  // wake up
-  ok=mpuWrite(0x1C,0x08)&&ok; // +/-4 g -> 8192 LSB/g
+bool initMpu(bool avisarFalha) {
+  // WHO_AM_I (0x75) confirma que e um MPU6050, nao apenas um ACK no endereco.
+  Wire.beginTransmission(MPU_ADDR);
+  Wire.write((uint8_t)0x75);
+  bool ok=Wire.endTransmission(false)==0 && Wire.requestFrom(MPU_ADDR,(uint8_t)1,(bool)true)==1 && Wire.read()==0x68;
+  ok=ok&&mpuWrite(0x6B,0x00);  // wake up
+  ok=ok&&mpuWrite(0x1C,0x08);  // +/-4 g -> 8192 LSB/g
   if(ok) Serial.println("[S3/MPU6050] iniciado nos GPIO5/9");
-  else Serial.println("[S3/MPU6050] indisponivel; confira I2C e alimentacao");
+  else if(avisarFalha) Serial.println("[S3/MPU6050] indisponivel; confira I2C e alimentacao (nova tentativa a cada 5 s)");
   return ok;
 }
 
@@ -98,8 +103,12 @@ void pollTemperature(uint32_t now) {
     tempReady=isfinite(reading) && reading>-55.0f && reading<125.0f &&
               reading!=85.0f && reading!=DEVICE_DISCONNECTED_C;
     temperatureC=tempReady?reading:NAN;
-    if(tempReady)Serial.printf("[S3/DS18B20] %.2f C\n",temperatureC);
-    else Serial.println("[S3/DS18B20] sensor ausente/leitura invalida");
+    static int8_t ultimoEstado=-1;  // Avisa so na mudanca: evita repetir a cada 2 s.
+    if(tempReady!=(ultimoEstado==1)||ultimoEstado<0) {
+      if(tempReady)Serial.printf("[S3/DS18B20] %.2f C\n",temperatureC);
+      else Serial.println("[S3/DS18B20] sensor ausente/leitura invalida");
+      ultimoEstado=tempReady?1:0;
+    }
     tempPending=false;
   }
   if(!tempPending && (lastTempRequest==0 || (uint32_t)(now-lastTempRequest)>=TEMP_REQUEST_MS)) {
@@ -149,7 +158,8 @@ void setup() {
   Serial.begin(115200);
   Wire.begin(SDA_PIN,SCL_PIN);
   Wire.setClock(100000);
-  mpuReady=initMpu();
+  mpuReady=initMpu(true);
+  lastMpuRetry=millis();
   ds18b20.begin();
   ds18b20.setWaitForConversion(false);
   snprintf(telemetryTopic,sizeof(telemetryTopic),"%s/%s/telemetry",TOPIC_PREFIX,DEVICE_ID);
@@ -164,7 +174,10 @@ void setup() {
 void loop() {
   uint32_t now=millis();
   if((uint32_t)(now-lastSample)>=SAMPLE_MS){lastSample=now;sampleMpu();}
-  if(!mpuReady && now>3000 && now%5000<SAMPLE_MS)mpuReady=initMpu();
+  if(!mpuReady && (uint32_t)(now-lastMpuRetry)>=MPU_RETRY_MS) {
+    lastMpuRetry=now;
+    mpuReady=initMpu(false);  // Falha ja avisada; so informa quando voltar.
+  }
   pollTemperature(now);
   if(WiFi.status()!=WL_CONNECTED) {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
