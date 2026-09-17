@@ -10,7 +10,8 @@ uint8_t mascaraDireta = 0;
 uint8_t indicePrincipal = 0, indiceEstrela = 1, indiceTriangulo = 2;
 unsigned long momentoPartida = 0, momentoEtapa = 0, tempoEstrelaMs = 5000;
 
-bool bancadaHabilitada() { return digitalRead(PINO_HABILITACAO_BANCADA) == LOW; }
+bool bancadaHabilitada() { return true; }
+// bool bancadaHabilitada() { return digitalRead(PINO_HABILITACAO_BANCADA) == LOW; }
 const char* nomeEtapa() {
   switch (etapaPartida) {
     case 1: return "Aguardando tempo de seguranca";
