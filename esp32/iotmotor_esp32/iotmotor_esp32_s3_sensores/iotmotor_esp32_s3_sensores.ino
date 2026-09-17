@@ -36,8 +36,12 @@ static const uint32_t TEMP_WAIT_MS = 800UL; // DS18B20 12-bit: ate 750 ms
 
 MqttWebSocketClient net;
 PubSubClient mqtt(net);
-OneWire oneWire(DS18B20_PIN);
-DallasTemperature ds18b20(&oneWire);
+// Criados apos a procura do sensor: o GPIO4 e o esperado, mas cada placa S3 varia.
+OneWire* oneWire=nullptr;
+DallasTemperature* ds18b20=nullptr;
+uint8_t ds18b20Pin=0;
+// Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44 e strapping).
+static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,16,17,18,21,38,39,40,41,42,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
@@ -47,6 +51,28 @@ float vibrationSquares=0.0f,vibrationPeak=0.0f;
 float gravityX=0.0f,gravityY=0.0f,gravityZ=1.0f;
 float temperatureC=NAN;
 bool mpuReady=false,tempPending=false,tempReady=false;
+
+// Procura um DS18B20 nos pinos candidatos; so aceita ROM lida com CRC valido.
+void procurarDs18b20() {
+  for (uint8_t pino : DS18B20_CANDIDATOS) {
+    OneWire barramento(pino);
+    DallasTemperature sensor(&barramento);
+    sensor.begin();
+    DeviceAddress rom;
+    // getAddress ja rejeita ROM com CRC invalido (validAddress).
+    if (sensor.getDeviceCount() < 1 || !sensor.getAddress(rom,0)) continue;
+    ds18b20Pin=pino;
+    oneWire=new OneWire(pino);
+    ds18b20=new DallasTemperature(oneWire);
+    ds18b20->begin();
+    ds18b20->setWaitForConversion(false);
+    Serial.printf("[S3/DS18B20] encontrado no GPIO%u\n",pino);
+    if (pino!=DS18B20_PIN) Serial.printf("[S3/DS18B20] atencao: esperado no GPIO%u\n",DS18B20_PIN);
+    return;
+  }
+  Serial.printf("[S3/DS18B20] nenhum sensor no GPIO%u nem nos demais pinos livres;"
+                " confira DQ, GND, 3V3 e o resistor de 4k7 entre DQ e 3V3\n",DS18B20_PIN);
+}
 
 void publishStatus(const char* msg) {
   Serial.printf("[S3/status] %s\n",msg);
@@ -60,13 +86,15 @@ bool mpuWrite(uint8_t reg,uint8_t value) {
 }
 
 bool initMpu(bool avisarFalha) {
-  // WHO_AM_I (0x75) confirma que e um MPU6050, nao apenas um ACK no endereco.
+  // WHO_AM_I (0x75) so confirma presenca: clones MPU6500/9250 respondem 0x70/0x71/0x73
+  // e funcionam com os mesmos registradores, entao qualquer resposta e aceita.
   Wire.beginTransmission(MPU_ADDR);
   Wire.write((uint8_t)0x75);
-  bool ok=Wire.endTransmission(false)==0 && Wire.requestFrom(MPU_ADDR,(uint8_t)1,(bool)true)==1 && Wire.read()==0x68;
+  bool ok=Wire.endTransmission(false)==0 && Wire.requestFrom(MPU_ADDR,(uint8_t)1,(bool)true)==1;
+  const uint8_t id=ok?Wire.read():0;
   ok=ok&&mpuWrite(0x6B,0x00);  // wake up
   ok=ok&&mpuWrite(0x1C,0x08);  // +/-4 g -> 8192 LSB/g
-  if(ok) Serial.println("[S3/MPU6050] iniciado nos GPIO5/9");
+  if(ok) Serial.printf("[S3/MPU6050] iniciado nos GPIO5/9, WHO_AM_I=0x%02X\n",id);
   else if(avisarFalha) Serial.println("[S3/MPU6050] indisponivel; confira I2C e alimentacao (nova tentativa a cada 5 s)");
   return ok;
 }
@@ -98,8 +126,9 @@ void sampleMpu() {
 }
 
 void pollTemperature(uint32_t now) {
+  if(!ds18b20)return;
   if(tempPending && (uint32_t)(now-tempRequestedAt)>=TEMP_WAIT_MS) {
-    float reading=ds18b20.getTempCByIndex(0);
+    float reading=ds18b20->getTempCByIndex(0);
     tempReady=isfinite(reading) && reading>-55.0f && reading<125.0f &&
               reading!=85.0f && reading!=DEVICE_DISCONNECTED_C;
     temperatureC=tempReady?reading:NAN;
@@ -113,7 +142,7 @@ void pollTemperature(uint32_t now) {
   }
   if(!tempPending && (lastTempRequest==0 || (uint32_t)(now-lastTempRequest)>=TEMP_REQUEST_MS)) {
     lastTempRequest=now;
-    ds18b20.requestTemperatures(); // setWaitForConversion(false) no setup
+    ds18b20->requestTemperatures(); // setWaitForConversion(false) na deteccao
     tempRequestedAt=now;
     tempPending=true;
   }
@@ -160,8 +189,7 @@ void setup() {
   Wire.setClock(100000);
   mpuReady=initMpu(true);
   lastMpuRetry=millis();
-  ds18b20.begin();
-  ds18b20.setWaitForConversion(false);
+  procurarDs18b20();
   snprintf(telemetryTopic,sizeof(telemetryTopic),"%s/%s/telemetry",TOPIC_PREFIX,DEVICE_ID);
   snprintf(statusTopic,sizeof(statusTopic),"%s/%s/status",TOPIC_PREFIX,DEVICE_ID);
   snprintf(capabilitiesTopic,sizeof(capabilitiesTopic),"%s/%s/capabilities",TOPIC_PREFIX,DEVICE_ID);
