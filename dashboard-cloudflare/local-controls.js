@@ -1,20 +1,22 @@
 'use strict';
-// Somente interface dos perfis; comandos reais são enviados por remote-controls.js via MQTT.
+// Apenas a interface dos perfis; os comandos saem por remote-controls.js via MQTT.
 (() => {
   const $ = id => document.getElementById(id);
   const panel = document.querySelector('.control');
   const start = $('startBtn'), stop = $('stopBtn'), old = $('starBtn');
   if (!panel || !start || !stop) return;
-  window.iotmotorLocalControls = true; // Não deixar o gráfico sobrescrever os botões.
+  window.iotmotorLocalControls = true; // Os graficos nao controlam o estado destes botoes.
   start.textContent = '▶ Ligar · partida selecionada';
   stop.textContent = '■ Desligar todos';
   start.disabled = true;
   stop.disabled = true;
   if (old) old.hidden = true;
+  const armLabel = document.querySelector('.control-info span');
+  if (armLabel) armLabel.textContent = 'Controle remoto';
   const box = document.createElement('section');
   box.style.cssText = 'border:1px solid #50778a;border-radius:12px;padding:16px;background:#0a2936;margin:12px 0';
   box.innerHTML = `<h3 style="font-size:18px">Configuração da partida e dos relés</h3>
-    <p class="muted">Selecione o modo e os relés. Os botões Ligar e Desligar acima enviam comandos MQTT para o ESP32-01, sem chave nem página local.</p>
+    <p class="muted">Selecione o modo e os relés. Ligar e Desligar enviam comandos MQTT ao ESP32-01, sem chave, jumper ou página local.</p>
     <div class="field"><label for="startMode">Tipo de partida</label><select id="startMode" style="padding:9px;background:#102e3b;color:white;border:1px solid #608697;border-radius:8px"><option value="direct">Direta · relés selecionados</option><option value="sequence">Sequência temporizada de bancada · principal, estrela e triângulo</option></select></div>
     <div id="directSelect" style="margin:12px 0"><span class="muted">Relés acionados pelo botão Ligar:</span><div id="directChannels" class="buttons"></div></div>
     <div id="sequenceSelect" hidden style="margin:12px 0"><p class="muted">Ensaio apenas de relés, sem motor ou contatores conectados.</p><div class="fields" style="display:flex;flex-wrap:wrap"><label>Principal <select id="mainRelay"></select></label><label>Estrela <select id="starRelay"></select></label><label>Triângulo <select id="deltaRelay"></select></label><label>Tempo estrela (s) <input id="starSeconds" type="number" min="2" max="30" step="1" value="5" style="width:70px"></label></div></div>
