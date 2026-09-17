@@ -42,7 +42,7 @@ jobs:
           local = Path('dashboard-cloudflare/local-controls.js').read_text()
           page = Path('dashboard-cloudflare/index.html').read_text()
           assert 'mqttClient.subscribe(topicoComandos, 1)' in firmware
-          assert 'relay_pins' in firmware and 'createNestedArray("lcd")' not in firmware or 'relay_pins' in firmware and 'createNestedArray("lcd")' in firmware
+          assert 'relay_pins' in firmware and 'createNestedArray("lcd")' in firmware
           assert 'WebServer' not in firmware and 'server.on(' not in firmware and 'iotmotor_site.h' not in firmware
           assert not (root / 'iotmotor_site.h').exists()
           assert 'mbedtls' not in control and 'Preferences' not in control and 'cmd_key' not in control
