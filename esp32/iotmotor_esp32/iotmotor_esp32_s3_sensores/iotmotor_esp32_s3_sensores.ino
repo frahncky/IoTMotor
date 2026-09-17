@@ -16,8 +16,17 @@
 #include <math.h>
 #include "mqtt_websocket_client.h"
 
-static const char* WIFI_SSID = "IFMA_IOT";
-static const char* WIFI_PASS = "";  // Wi-Fi aberto
+// Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
+// wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
+#if __has_include("wifi_local.h")
+#include "wifi_local.h"
+#endif
+#ifndef WIFI_SSID_LOCAL
+#define WIFI_SSID_LOCAL "IFMA_IOT"
+#define WIFI_PASSWORD_LOCAL ""  // Wi-Fi aberto
+#endif
+static const char* WIFI_SSID = WIFI_SSID_LOCAL;
+static const char* WIFI_PASS = WIFI_PASSWORD_LOCAL;
 static const char* MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket: a IFMA_IOT bloqueia 1883/8883
 static const char* TOPIC_PREFIX = "iotmotor";

@@ -20,8 +20,17 @@
 #include <math.h>
 #include "mqtt_websocket_client.h"
 
-const char* WIFI_SSID = "IFMA_IOT";
-const char* WIFI_PASSWORD = "";
+// Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
+// wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
+#if __has_include("wifi_local.h")
+#include "wifi_local.h"
+#endif
+#ifndef WIFI_SSID_LOCAL
+#define WIFI_SSID_LOCAL "IFMA_IOT"
+#define WIFI_PASSWORD_LOCAL ""
+#endif
+const char* WIFI_SSID = WIFI_SSID_LOCAL;
+const char* WIFI_PASSWORD = WIFI_PASSWORD_LOCAL;
 constexpr unsigned long WIFI_RETRY_MS = 10000UL;
 unsigned long ultimaTentativaWifi = 0;
 
