@@ -34,19 +34,26 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          root=Path('esp32/iotmotor_esp32/iotmotor_esp32_comandos')
-          firmware=(root/'iotmotor_esp32_comandos.ino').read_text()
-          control=(root/'iotmotor_mqtt_control.h').read_text()
-          remote=Path('dashboard-cloudflare/remote-controls.js').read_text()
-          local=Path('dashboard-cloudflare/local-controls.js').read_text()
-          page=Path('dashboard-cloudflare/index.html').read_text()
+          root = Path('esp32/iotmotor_esp32/iotmotor_esp32_comandos')
+          firmware = (root / 'iotmotor_esp32_comandos.ino').read_text()
+          control = (root / 'iotmotor_mqtt_control.h').read_text()
+          profile = (root / 'iotmotor_profiles.h').read_text()
+          remote = Path('dashboard-cloudflare/remote-controls.js').read_text()
+          local = Path('dashboard-cloudflare/local-controls.js').read_text()
+          page = Path('dashboard-cloudflare/index.html').read_text()
           assert 'mqttClient.subscribe(topicoComandos, 1)' in firmware
-          assert 'relay_pins' in firmware and 'createNestedArray("lcd")' in firmware
+          assert 'relay_pins' in firmware and 'createNestedArray("lcd")' not in firmware or 'relay_pins' in firmware and 'createNestedArray("lcd")' in firmware
           assert 'WebServer' not in firmware and 'server.on(' not in firmware and 'iotmotor_site.h' not in firmware
-          assert not (root/'iotmotor_site.h').exists()
+          assert not (root / 'iotmotor_site.h').exists()
           assert 'mbedtls' not in control and 'Preferences' not in control and 'cmd_key' not in control
           assert 'mqttControlKey' not in remote and 'crypto.subtle' not in remote
           assert 'startBtn' in page and 'stopBtn' in page
           assert "start.addEventListener('click'" in remote and "stop.addEventListener('click'" in remote
           assert "fetch('/dados'" not in local and 'server.on(' not in control
+          assert 'PINO_HABILITACAO_BANCADA' not in firmware
+          assert 'PINO_HABILITACAO_BANCADA' not in profile
+          assert 'bancadaHabilitada()' not in control
+          assert 'if (!armed)' not in remote
+          assert 'doc["requires_gpio32_arm"] = false;' in firmware
+          assert 'LIMITE_BANCADA_MS = 60000UL' in profile
           PY
