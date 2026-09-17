@@ -11,14 +11,14 @@
 <script src="./hardware-mirror.js" defer></script>
 </head>
 <body><main>
-<header><div><span class="eyebrow">ESP32-01 · PZEM-004T · LCD 20×4</span><h1>Pinos e visor LCD</h1><p>Monitoramento da montagem de quatro relés, sem alterar os comandos em funcionamento.</p></div><a href="./index.html">← Voltar ao dashboard</a></header>
-<div class="notice">Os LEDs indicam o <b>estado lógico informado pelo firmware</b>, não a posição física de contatores. O visor é um espelho exato do buffer somente quando o firmware transmite <code>lcd</code> e <code>relays</code>; na versão antiga é uma <b>prévia calculada</b>. Esta tela não publica comandos no broker público.</div>
+<header><div><span class="eyebrow">ESP32-01 · PZEM-004T · LCD 20×4</span><h1>Pinos e visor LCD</h1></div><a href="./index.html">← Voltar ao dashboard</a></header>
+<div class="notice">Estado lógico informado pelo firmware; não confirma a posição física dos contatores.</div>
 <div class="layout">
-<section class="panel" aria-labelledby="relaysTitle"><h2 id="relaysTitle">Saídas de acionamento</h2><p id="relaySource" class="unit">Aguardando dados do ESP32.</p><div class="relays">
-<div class="relay unknown" id="relay0"><strong><i class="led"></i>K1 · Linha</strong><small>GPIO19</small><div class="reading" id="relayText0">Sem sinal</div></div>
-<div class="relay unknown" id="relay1"><strong><i class="led"></i>K2 · Estrela</strong><small>GPIO18</small><div class="reading" id="relayText1">Sem sinal</div></div>
-<div class="relay unknown" id="relay2"><strong><i class="led"></i>K3 · Triângulo</strong><small>GPIO23</small><div class="reading" id="relayText2">Sem sinal</div></div>
-<div class="relay unknown" id="relay3"><strong><i class="led"></i>K4 · Auxiliar</strong><small>GPIO27</small><div class="reading" id="relayText3">Sem sinal</div></div>
+<section class="panel" aria-labelledby="relaysTitle"><h2 id="relaysTitle">Contatores</h2><p id="relaySource" class="unit">Aguardando dados do ESP32.</p><div class="relays">
+<div class="relay unknown" id="relay0"><strong><i class="led"></i>CNT 1</strong><small>GPIO19</small><div class="reading" id="relayText0">Sem sinal</div></div>
+<div class="relay unknown" id="relay1"><strong><i class="led"></i>CNT 2</strong><small>GPIO18</small><div class="reading" id="relayText1">Sem sinal</div></div>
+<div class="relay unknown" id="relay2"><strong><i class="led"></i>CNT 3</strong><small>GPIO23</small><div class="reading" id="relayText2">Sem sinal</div></div>
+<div class="relay unknown" id="relay3"><strong><i class="led"></i>CNT 4</strong><small>GPIO27</small><div class="reading" id="relayText3">Sem sinal</div></div>
 </div><p class="unit">PZEM: TX → GPIO16 (RX2), RX → GPIO17 (TX2). LCD I²C: SDA → GPIO21, SCL → GPIO22.</p></section>
 <section class="panel" aria-labelledby="lcdTitle"><h2 id="lcdTitle">LCD 20 × 4</h2><p id="lcdSource" class="unit">Aguardando dados do ESP32.</p><div class="lcd" role="img" aria-label="Prévia do display de vinte colunas por quatro linhas"><pre id="lcdText">IoTMotor Modulo 1   
 Aguardando dados...  
@@ -26,5 +26,4 @@ Aguardando dados...
                     </pre></div><p class="unit" id="lastSeen">Nenhuma telemetria recente.</p></section>
 </div>
 <section class="panel"><h2>Conexão MQTT</h2><form class="settings" id="configForm"><div class="field"><label for="broker">Broker WSS</label><input id="broker" type="url" required value="wss://test.mosquitto.org:8081" autocomplete="off" spellcheck="false"></div><div class="field"><label for="prefix">Prefixo</label><input id="prefix" required value="iotmotor"></div><div class="field"><label for="device">Dispositivo de comandos</label><input id="device" required value="esp32-01"></div><button id="connectBtn" class="btn" type="submit">Conectar</button></form><p><span class="badge" id="connection">Desconectado</span></p><div class="grid"><span>Estado do acionamento</span><b id="stateValue">—</b><span>Modo de partida</span><b id="modeValue">—</b><span>PZEM</span><b id="pzemValue">—</b><span>Status MQTT recebido</span><b id="statusValue">—</b><span>Mensagens novas</span><b id="messageCount">0</b></div><p class="diag" role="status" aria-live="polite" id="diagnostic">Conecte para acompanhar a telemetria.</p></section>
-<footer>IoTMotor · Monitoramento de bancada · A tela não comanda motor, relés nem contatores.</footer>
 </main></body></html>

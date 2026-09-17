@@ -27,7 +27,7 @@ function parseTelemetry(json){
  const result={deviceId:String(json.device_id||source.device_id||''),demo:json.demo===true||source.demo===true||source.data_source==='simulated',
   dataSource:String(json.data_source||source.data_source||'não informada'),seq:numeric(source.seq),
   benchArmed:source.bench_armed===true,motorOn:typeof source.motor_on==='boolean'?source.motor_on:null,
-  mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak),
+  mode:typeof source.mode==='string'?source.mode:'—',phase:typeof source.start_phase==='string'?source.start_phase:null,vibrationPeak:numeric(source.vibration_peak),
   relays:Array.isArray(source.relays)&&source.relays.length===4&&source.relays.every(v=>typeof v==='boolean')?source.relays:null};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
@@ -71,10 +71,14 @@ function updateControl(){
  const active=freshness('command');const s=state.command.sample;
  if(!window.iotmotorLocalControls) $('startBtn').disabled=true; // Local controller owns this button.
  if(!window.iotmotorLocalControls) $('stopBtn').disabled=true; // Never override local stop.
- $('starBtn').disabled=true; // um rele nao executa estrela-triangulo com intertravamento
- if(!window.iotmotorLocalControls) text('armValue',active?(s.benchArmed?'Jumper local presente':'Sem jumper local'):'Sem telemetria elétrica recente');
- text('motorValue',active&&Array.isArray(s?.relays)?s.relays.map((on,i)=>`K${i+1}:${on?'L':'D'}`).join(' · '):'Sem estados lógicos recentes');
- text('modeValue',active?s.mode:'—');
+ const relays=active&&Array.isArray(s?.relays)?s.relays:null;
+ $('motorValue').replaceChildren(...[0,1,2,3].map(i=>{
+  const on=relays?.[i],chip=document.createElement('span');
+  chip.className=`cnt ${on===undefined?'':on?'on':'off'}`.trim();
+  chip.textContent=`CNT ${i+1} · ${on===undefined?'—':on?'ligado':'desligado'}`;
+  return chip;
+ }));
+ text('modeValue',active&&s.phase?s.phase:'—');
 }
 function svg(tag,attrs={},content){const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,v]of Object.entries(attrs))n.setAttribute(key,String(v));if(content!==undefined)n.textContent=String(content);return n;}
 function drawChart(target,metric){
@@ -102,11 +106,9 @@ function buildCards(){const root=$('metrics');for(const m of METRICS){
 }}
 function render(){
  for(const m of METRICS){const value=valueFor(m),source=state[m.source];text(`value-${m.key}`,value===null?'—':value.toFixed(m.digits));
- text(`hint-${m.key}`,value===null?'Sem leitura atual':source.sample.demo?'Simulado — não é medição':m.source==='command'?'ESP32 PZEM-004T':'ESP32-S3 sensores');}
- renderDevice('pzemState','command',`${state.config.commandDevice} (PZEM e relés)`);
+ text(`hint-${m.key}`,value===null?'':source.sample.demo?'Simulado — não é medição':m.source==='command'?'ESP32 PZEM-004T':'ESP32-S3 sensores');}
+ renderDevice('pzemState','command',`${state.config.commandDevice} (PZEM e contatores)`);
  renderDevice('sensorState','sensor',`${state.config.sensorDevice} (S3 sensores)`);
- text('commandCount',state.command.count);text('sensorCount',state.sensor.count);
- text('commandStatus',state.command.status);text('sensorStatus',state.sensor.status);
  text('commandAge',state.command.at?new Date(state.command.at).toLocaleTimeString('pt-BR'):'—');
  text('sensorAge',state.sensor.at?new Date(state.sensor.at).toLocaleTimeString('pt-BR'):'—');
  $('exportBtn').disabled=!state.records.length;updateControl();renderCharts();
@@ -138,7 +140,7 @@ function connect(){
  if(!window.mqtt||typeof window.mqtt.connect!=='function'){pill('MQTT.js indisponível','error');diag('Biblioteca MQTT.js não carregou; confira o acesso ao CDN.');return;}
  if(state.client)disconnect();state.config=config;
  try{localStorage.setItem(STORE,JSON.stringify(config));}catch{}
- text('brokerValue',config.broker);const generation=++state.generation;let client;
+ const generation=++state.generation;let client;
  try{client=window.mqtt.connect(config.broker,{clientId:`iotmotor_dual_${Math.random().toString(36).slice(2,11)}`,clean:true,protocolVersion:4,reconnectPeriod:4000,connectTimeout:10000,keepalive:30,resubscribe:true});}
  catch(e){pill('Falha MQTT','error');diag(e.message);return;}
  state.client=client;reset();pill('Conectando…','wait');diag(`Conectando ${config.broker}; dispositivos ${config.commandDevice} e ${config.sensorDevice}.`);
@@ -178,7 +180,7 @@ function init(){
  try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved)state.config=validateConfig(saved);}catch{}
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
  $('commandDevice').value=state.config.commandDevice;$('sensorDevice').value=state.config.sensorDevice;
- text('brokerValue',state.config.broker);buildCards();render();
+ buildCards();render();
  $('connectBtn').addEventListener('click',()=>state.client?disconnect():connect());
  $('connectionForm').addEventListener('submit',event=>{event.preventDefault();connect();});
  // Original startBtn and stopBtn are wired only by local-controls.js.

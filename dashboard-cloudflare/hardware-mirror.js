@@ -92,7 +92,7 @@
       const parsed=parse(payload.toString('utf8'));
       if(!parsed){message('Telemetria inválida ou de outro device_id.');return;}
       state.sample=parsed;state.lastAt=Date.now();state.count++;render();
-      message(parsed.lines&&parsed.leds?'Recebendo espelho do LCD e estados individuais dos quatro relés.':'Recebendo telemetria; para espelho exato o firmware precisa publicar lcd e relays.');
+      message(parsed.lines&&parsed.leds?'Recebendo espelho do LCD e estados individuais dos quatro contatores.':'Recebendo telemetria; para espelho exato o firmware precisa publicar lcd e relays.');
     });
     client.on('reconnect',()=>{if(!active())return;state.connected=false;badge('Reconectando…');render();});
     client.on('offline',()=>{if(!active())return;state.connected=false;badge('Broker indisponível','error');message('Não foi possível conectar via WebSocket seguro.');render();});
