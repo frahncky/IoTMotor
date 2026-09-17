@@ -1,6 +1,6 @@
 #pragma once
-// Comandos MQTT sem autenticação: ensaios SOMENTE com motor/contatores desconectados.
-// boot identifica a sessão atual e é publicado na telemetria; NÃO é uma chave.
+// Comandos MQTT sem autenticacao para ensaios com motor/contatores desconectados.
+// O identificador de boot evita aceitar comandos antigos, mas NAO e uma chave.
 #include <esp_system.h>
 #include <stdlib.h>
 
@@ -17,7 +17,7 @@ void iniciarControleMqtt() {
     sessaoControle[i * 2 + 1] = hex[bytes[i] & 15];
   }
   sessaoControle[16] = '\0';
-  Serial.println("[MQTT] Controle sem chave; sessao publicada em telemetria.");
+  Serial.println("[MQTT] Controle sem chave e sem jumper; boot publicado na telemetria.");
 }
 
 bool lerSequencia(const char* s, uint64_t& n) {
@@ -55,7 +55,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!lerSequencia(seq, numero)) return;
   const char* acao = doc["action"] | "";
 
-  // PARAR é prioritário e não depende do boot, da telemetria ou do jumper.
+  // Parar sempre: nao depende de telemetria, boot, estado ou partida pendente.
   if (!strcmp(acao, "stop")) {
     pararBancada();
     publicarRespostaControle(seq, true, acao, "stopped");
@@ -74,8 +74,8 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
   ultimaSequenciaControle = numero;
-  if (!bancadaHabilitada() || etapaPartida || WiFi.status() != WL_CONNECTED) {
-    publicarRespostaControle(seq, false, acao, "jumper_or_busy");
+  if (etapaPartida || WiFi.status() != WL_CONNECTED) {
+    publicarRespostaControle(seq, false, acao, "busy_or_offline");
     return;
   }
   for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i]) {
@@ -88,17 +88,17 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
   const char* modo = doc["mode"] | "";
-  int mascara = doc["mask"].as<int>();
-  int principal = doc["main"].as<int>();
-  int estrela = doc["star"].as<int>();
-  int triangulo = doc["delta"].as<int>();
-  int segundos = doc["seconds"].as<int>();
-  bool direta = !strcmp(modo, "direct") && mascara >= 1 && mascara <= 15 &&
-                principal == 0 && estrela == 0 && triangulo == 0 && segundos == 0;
-  bool sequencia = !strcmp(modo, "sequence") && mascara == 0 &&
-                   principal >= 1 && principal <= 4 && estrela >= 1 && estrela <= 4 &&
-                   triangulo >= 1 && triangulo <= 4 && principal != estrela &&
-                   principal != triangulo && estrela != triangulo && segundos >= 2 && segundos <= 30;
+  const int mascara = doc["mask"].as<int>();
+  const int principal = doc["main"].as<int>();
+  const int estrela = doc["star"].as<int>();
+  const int triangulo = doc["delta"].as<int>();
+  const int segundos = doc["seconds"].as<int>();
+  const bool direta = !strcmp(modo, "direct") && mascara >= 1 && mascara <= 15 &&
+                      principal == 0 && estrela == 0 && triangulo == 0 && segundos == 0;
+  const bool sequencia = !strcmp(modo, "sequence") && mascara == 0 &&
+                         principal >= 1 && principal <= 4 && estrela >= 1 && estrela <= 4 &&
+                         triangulo >= 1 && triangulo <= 4 && principal != estrela &&
+                         principal != triangulo && estrela != triangulo && segundos >= 2 && segundos <= 30;
   if (!direta && !sequencia) {
     publicarRespostaControle(seq, false, acao, "invalid_profile");
     return;
