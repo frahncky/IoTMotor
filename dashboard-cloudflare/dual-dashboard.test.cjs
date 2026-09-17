@@ -1,6 +1,19 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,METRICS}=require('./dual-dashboard.js');
+
+test('indicador de conexao combina telemetria recente e status online/offline',()=>{
+ const now=100000;
+ assert.equal(deviceConnection({brokerOk:false,status:'online',at:now,now}).label,'broker desconectado');
+ assert.equal(deviceConnection({brokerOk:true,status:'—',now}).kind,'');
+ assert.equal(deviceConnection({brokerOk:true,status:'online',statusAt:now-500,now}).kind,'wait');
+ assert.equal(deviceConnection({brokerOk:true,status:'online',statusAt:now-60000,at:now-2000,now}).kind,'live');
+ // LWT offline mais novo que a ultima telemetria derruba o indicador na hora.
+ assert.equal(deviceConnection({brokerOk:true,status:'offline',statusAt:now-1000,at:now-3000,now}).kind,'error');
+ // Offline retido antigo nao esconde telemetria nova.
+ assert.equal(deviceConnection({brokerOk:true,status:'offline',statusAt:now-9000,at:now-1000,now}).kind,'live');
+ assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-15000,now}).kind,'error');
+});
 
 test('PZEM: calcula potencias derivadas apenas quando ha dados validos',()=>{
  const x=parseTelemetry({device_id:'esp32-01',data_source:'pzem004t',voltage:220,current:5,power:880,pf:0.8,frequency:60,energy:1.25,motor_on:false,bench_armed:false,seq:12});

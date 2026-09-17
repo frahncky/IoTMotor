@@ -50,6 +50,22 @@ function diag(message){text('diagnostic',message);}
 function pill(message,kind=''){text('connectionText',message);$('connection').className=`pill ${kind}`.trim();$('connectBtn').textContent=state.client?'Desconectar':'Conectar ao MQTT';}
 function topic(device,kind){return `${state.config.prefix}/${device}/${kind}`;}
 function freshness(which){return state.connected&&state.subscribed&&state[which].at>0&&Date.now()-state[which].at<10000;}
+// Conexao do dispositivo: telemetria recente prevalece; senao usa o status retido/LWT mais novo.
+function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now()}){
+ if(!brokerOk)return {label:'broker desconectado',kind:''};
+ const fresh=at>0&&now-at<10000,st=String(status||'').trim().toLowerCase();
+ if(st==='offline'&&statusAt>=at)return {label:'desconectado',kind:'error'};
+ if(fresh)return {label:'conectado',kind:'live'};
+ if(st==='offline')return {label:'desconectado',kind:'error'};
+ if(st==='online')return {label:at?'online · sem dados há mais de 10 s':'online · aguardando dados',kind:'wait'};
+ return {label:at?'sem dados há mais de 10 s':'sem sinal',kind:at?'error':''};
+}
+function renderDevice(id,which,name){
+ const s=state[which],info=deviceConnection({brokerOk:state.connected&&state.subscribed,status:s.status,statusAt:s.statusAt,at:s.at});
+ const demo=info.kind==='live'&&s.sample?.demo?' · SIMULADO':'';
+ text(id,`${name} · ${info.label}${demo}`);$(id).className=`source ${info.kind}`.trim();
+ $(id).title=s.at?`Última telemetria: ${new Date(s.at).toLocaleTimeString('pt-BR')}`:'Nenhuma telemetria recebida';
+}
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
 function updateControl(){
  const active=freshness('command');const s=state.command.sample;
@@ -87,15 +103,15 @@ function buildCards(){const root=$('metrics');for(const m of METRICS){
 function render(){
  for(const m of METRICS){const value=valueFor(m),source=state[m.source];text(`value-${m.key}`,value===null?'—':value.toFixed(m.digits));
  text(`hint-${m.key}`,value===null?'Sem leitura atual':source.sample.demo?'Simulado — não é medição':m.source==='command'?'ESP32 PZEM-004T':'ESP32-S3 sensores');}
- text('pzemState',freshness('command')?(state.command.sample.demo?'SIMULADO':'PZEM · dados recebidos'):'PZEM · sem sinal');
- text('sensorState',freshness('sensor')?(state.sensor.sample.demo?'SIMULADO':'S3 · dados recebidos'):'S3 · sem sinal');
+ renderDevice('pzemState','command',`${state.config.commandDevice} (PZEM e relés)`);
+ renderDevice('sensorState','sensor',`${state.config.sensorDevice} (S3 sensores)`);
  text('commandCount',state.command.count);text('sensorCount',state.sensor.count);
  text('commandStatus',state.command.status);text('sensorStatus',state.sensor.status);
  text('commandAge',state.command.at?new Date(state.command.at).toLocaleTimeString('pt-BR'):'—');
  text('sensorAge',state.sensor.at?new Date(state.sensor.at).toLocaleTimeString('pt-BR'):'—');
  $('exportBtn').disabled=!state.records.length;updateControl();renderCharts();
 }
-function reset(){state.command={sample:null,at:0,count:0,status:'—'};state.sensor={sample:null,at:0,count:0,status:'—'};
+function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.records=[];state.pending=null;state.subscribed=false;
  text('commandFeedback','Nenhum comando enviado.');render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);reset();pill('Desconectado');diag('Desconectado.');}
@@ -139,7 +155,7 @@ function connect(){
   const which=destination.startsWith(`${config.prefix}/${config.commandDevice}/`)?'command':destination.startsWith(`${config.prefix}/${config.sensorDevice}/`)?'sensor':null;
   if(!which)return;
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'status')){
-   state[which].status=payload.toString('utf8').slice(0,80);render();return;
+   state[which].status=payload.toString('utf8').slice(0,80);state[which].statusAt=Date.now();render();return;
   }
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'telemetry'))ingest(which,payload.toString('utf8'),packet);
  });
@@ -178,4 +194,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,METRICS};
