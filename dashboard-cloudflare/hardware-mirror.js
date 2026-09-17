@@ -43,7 +43,7 @@
     const second=s.sensorOk&&s.voltage!==null&&s.current!==null?
       `V:${left(s.voltage.toFixed(1),5)}  I:${left(s.current.toFixed(2),6)}A`:'PZEM sem leitura';
     const third=s.sensorOk&&s.power!==null&&s.energy!==null?
-      `P:${left(s.power.toFixed(0),4)}W E:${left(s.energy.toFixed(2),8)}kWh`:'';
+      `P:${left(s.power.toFixed(0),4)}W E:${left(s.energy.toFixed(2),7)}kWh`:'';
     const names={estrela:'ESTRELA',tempo_morto:'COMUTA ',rodando:'RODANDO',parado:'PARADO '};
     const flags=relays?relays.map((on,i)=>on?String(i+1):'-').join(''):'????';
     const fourth=`${names[s.machine]||'SEM SINAL'} ${flags} MQ`;

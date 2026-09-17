@@ -90,7 +90,7 @@ void atualizarLcd() {
   if (pzemOk) snprintf(buffer, sizeof(buffer), "V:%5.1f  I:%6.2fA", ultimaTensao, ultimaCorrente);
   else snprintf(buffer, sizeof(buffer), "PZEM sem leitura");
   imprimirLinhaCompleta(1, buffer);
-  if (pzemOk) snprintf(buffer, sizeof(buffer), "P:%4.0fW E:%8.2fkWh", ultimaPotencia, ultimaEnergia);
+  if (pzemOk) snprintf(buffer, sizeof(buffer), "P:%4.0fW E:%7.2fkWh", ultimaPotencia, ultimaEnergia);
   else buffer[0] = '\0';
   imprimirLinhaCompleta(2, buffer);
   snprintf(buffer, sizeof(buffer), "R1:%c R2:%c R3:%c R4:%c",

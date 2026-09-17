@@ -1,9 +1,10 @@
-name: Compile ESP32 commands firmware
+name: Compile ESP32 firmwares
 on:
   push:
     branches: [main]
     paths:
       - 'esp32/iotmotor_esp32/iotmotor_esp32_comandos/**'
+      - 'esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/**'
       - '.github/workflows/esp32-compile.yml'
   workflow_dispatch:
 permissions:
@@ -21,7 +22,10 @@ jobs:
           arduino-cli core install esp32:esp32@3.2.1 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
       - name: Install firmware libraries
         run: |
-          arduino-cli lib install 'PZEM004Tv30@1.2.1' 'LiquidCrystal I2C' 'PubSubClient' 'ArduinoJson@6.21.5'
+          arduino-cli lib install 'PZEM004Tv30@1.2.1' 'LiquidCrystal I2C' 'PubSubClient' 'ArduinoJson@6.21.5' 'OneWire' 'DallasTemperature'
       - name: Compile four-relay ESP32 firmware
         run: |
           arduino-cli compile --fqbn esp32:esp32:esp32 esp32/iotmotor_esp32/iotmotor_esp32_comandos
+      - name: Compile ESP32-S3 sensor firmware
+        run: |
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores

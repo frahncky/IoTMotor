@@ -1,3 +1,6 @@
 # Firmware IoTMotor
 
-O firmware principal do ESP32-01 deve partir do sketch v6 de quatro relés e LCD que foi validado na bancada. O ESP32-S3 (`esp32-02`) mede vibração e temperatura. MQTT no broker público é destinado apenas à telemetria; o controle dos quatro canais permanece no painel HTTP da rede local. Não conecte motores ou contatores durante testes sem autenticação, intertravamento e proteções independentes.
+- **ESP32-01** (`iotmotor_esp32/iotmotor_esp32_comandos/`): PZEM-004T, LCD 20x4 e quatro relés (K1–K4) controlados por MQTT pelo painel Cloudflare. Detalhes em `LEIA-ME-BANCADA.md`.
+- **ESP32-S3** (`iotmotor_esp32/iotmotor_esp32_s3_sensores/`, `esp32-02`): mede vibração (MPU6050) e temperatura (DS18B20); não aciona saídas.
+
+Os comandos MQTT no broker público não têm autenticação. Não conecte motores ou contatores sem autenticação, intertravamento e proteções independentes.
