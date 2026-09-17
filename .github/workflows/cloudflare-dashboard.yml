@@ -56,4 +56,7 @@ jobs:
           assert 'if (!armed)' not in remote
           assert 'doc["requires_gpio32_arm"] = false;' in firmware
           assert 'LIMITE_BANCADA_MS = 60000UL' in profile
+          ws = (root / 'mqtt_websocket_client.h').read_text()
+          assert ws == Path('esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/mqtt_websocket_client.h').read_text(), 'adaptador WebSocket diferente entre os firmwares'
+          assert 'MqttWebSocketClient mqttTransport;' in firmware and 'MQTT_PORT = 8080' in firmware
           PY

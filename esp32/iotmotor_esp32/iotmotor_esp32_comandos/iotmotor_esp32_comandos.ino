@@ -6,7 +6,8 @@
     Reles K1..K4 -> GPIO19, GPIO18, GPIO23, GPIO27
 
   Nao hospeda pagina web, nao exige chave de comando nem jumper GPIO32.
-  Painel Cloudflare usa MQTT WSS; ESP32 publica telemetria e aceita JSON via TCP.
+  Painel Cloudflare usa MQTT WSS; ESP32 usa MQTT sobre WebSocket na porta 8080,
+  porque a rede IFMA_IOT bloqueia as portas MQTT 1883 e 8883.
   APENAS para ensaios de reles sem motor ou contatores no broker publico.
   Bibliotecas: PZEM004Tv30, LiquidCrystal I2C, PubSubClient, ArduinoJson 6.
 */
@@ -17,6 +18,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include "mqtt_websocket_client.h"
 
 const char* WIFI_SSID = "IFMA_IOT";
 const char* WIFI_PASSWORD = "";
@@ -52,9 +54,9 @@ unsigned long ultimaLeituraPzem = 0;
 constexpr unsigned long INTERVALO_PZEM_MS = 3000UL;
 
 static const char* MQTT_HOST = "test.mosquitto.org";
-static const uint16_t MQTT_PORT = 1883;
+static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket (ws://)
 static const char* DEVICE_ID = "esp32-01";
-WiFiClient mqttTransport;
+MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
 char topicoComandos[80], topicoResposta[80];
@@ -156,7 +158,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v9-open-mqtt-no-jumper";
+  doc["firmware_version"] = "v10-mqtt-websocket";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";

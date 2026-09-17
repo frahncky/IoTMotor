@@ -1,6 +1,6 @@
 # IoTMotor — ESP32-01: PZEM-004T, LCD 20x4 e 4 relés via MQTT
 
-Sketch `iotmotor_esp32_comandos.ino` (versão `v9-open-mqtt-no-jumper`) para **ESP32 DevKit V1**, identidade MQTT `esp32-01`. Lê as grandezas elétricas do **PZEM-004T v3**, mostra os dados no **LCD I2C 20x4** e aciona **4 relés (K1–K4)** por comandos MQTT. Não hospeda página web, não usa chave de comando e não usa jumper GPIO32. Vibração e temperatura ficam no ESP32-S3 (`esp32-02`), em `../iotmotor_esp32_s3_sensores/`.
+Sketch `iotmotor_esp32_comandos.ino` (versão `v10-mqtt-websocket`) para **ESP32 DevKit V1**, identidade MQTT `esp32-01`. Lê as grandezas elétricas do **PZEM-004T v3**, mostra os dados no **LCD I2C 20x4** e aciona **4 relés (K1–K4)** por comandos MQTT. Não hospeda página web, não usa chave de comando e não usa jumper GPIO32. Vibração e temperatura ficam no ESP32-S3 (`esp32-02`), em `../iotmotor_esp32_s3_sensores/`.
 
 A alteração no GitHub **não regrava** a placa. Instale o core ESP32 e as bibliotecas `PZEM004Tv30`, `LiquidCrystal I2C`, `PubSubClient` e `ArduinoJson` (6.x ou 7.x); compile e grave no ESP32. Monitor Serial a **115200 baud**.
 
@@ -20,7 +20,7 @@ Os relés são acionados em nível **alto** (`RELE_ATIVO_EM_NIVEL_BAIXO = false`
 | Item | Valor |
 | --- | --- |
 | Wi-Fi | `IFMA_IOT`, sem senha |
-| MQTT do ESP32 | `test.mosquitto.org:1883` (TCP) |
+| MQTT do ESP32 | `ws://test.mosquitto.org:8080` (MQTT sobre WebSocket; a rede IFMA_IOT bloqueia as portas 1883 e 8883) |
 | MQTT do painel | `wss://test.mosquitto.org:8081` (WSS) |
 | Telemetria (1 s) | `iotmotor/esp32-01/telemetry` |
 | Status (retido) | `iotmotor/esp32-01/status` (`online` / `offline`) |

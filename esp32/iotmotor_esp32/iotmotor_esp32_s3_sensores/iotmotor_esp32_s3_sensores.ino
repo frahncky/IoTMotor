@@ -14,11 +14,12 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <math.h>
+#include "mqtt_websocket_client.h"
 
 static const char* WIFI_SSID = "IFMA_IOT";
 static const char* WIFI_PASS = "";  // Wi-Fi aberto
 static const char* MQTT_HOST = "test.mosquitto.org";
-static const uint16_t MQTT_PORT = 1883;
+static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket: a IFMA_IOT bloqueia 1883/8883
 static const char* TOPIC_PREFIX = "iotmotor";
 static const char* DEVICE_ID = "esp32-02";
 
@@ -33,7 +34,7 @@ static const uint32_t PUBLISH_MS = 1000UL;
 static const uint32_t TEMP_REQUEST_MS = 2000UL;
 static const uint32_t TEMP_WAIT_MS = 800UL; // DS18B20 12-bit: ate 750 ms
 
-WiFiClient net;
+MqttWebSocketClient net;
 PubSubClient mqtt(net);
 OneWire oneWire(DS18B20_PIN);
 DallasTemperature ds18b20(&oneWire);
@@ -112,7 +113,7 @@ void pollTemperature(uint32_t now) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.0";
+  doc["firmware_version"]="s3-sensors-1.1-websocket";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
