@@ -1,25 +1,24 @@
 'use strict';
-// Interface Cloudflare: usa MQTT WSS para controlar a bancada sem chave manual.
-// Não usar broker público com motor ou contatores conectados.
+// Controle remoto MQTT sem chave ou jumper: exclusivamente para ensaios sem motor/contatores.
 (() => {
   const $ = id => document.getElementById(id);
   const start = $('startBtn'), stop = $('stopBtn');
   if (!start || !stop) return;
   let client = null, connected = false, prefix = '', device = '', boot = '';
-  let updatedAt = 0, relays = null, armed = false, pending = null, sequence = 0;
+  let updatedAt = 0, relays = null, pending = null, sequence = 0;
   const topic = kind => `${prefix}/${device}/${kind}`;
-  const recent = () => boot && Date.now() - updatedAt < 10000 && relays;
+  const recent = () => Boolean(boot && Date.now() - updatedAt < 10000 && relays);
   const feedback = message => {
     $('commandFeedback').textContent = message;
     if ($('profileStatus')) $('profileStatus').textContent = message;
   };
   function refresh() {
-    // Não bloqueia os botões por chave ou falta de telemetria.
+    // A pagina pode pedir a partida com MQTT conectado; nenhum jumper/chave.
     start.disabled = !connected || Boolean(pending && pending.action === 'start');
-    stop.disabled = !connected; // A parada pode sobrepor a partida pendente.
+    stop.disabled = !connected; // Parada prioritária mesmo durante uma partida pendente.
     if ($('armValue')) $('armValue').textContent = recent()
-      ? (armed ? 'Jumper GPIO32 presente' : 'Jumper GPIO32 ausente')
-      : 'Aguardando ESP32-01';
+      ? 'Controle MQTT disponível · sem jumper'
+      : 'Sem jumper · aguardando telemetria do ESP32-01';
   }
   function configuration() {
     const url = new URL(String($('broker').value || 'wss://test.mosquitto.org:8081').trim());
@@ -31,7 +30,7 @@
     return {url: url.toString(), p, d};
   }
   function connect() {
-    if (!window.mqtt?.connect) {feedback('Biblioteca MQTT indisponível.');return;}
+    if (!window.mqtt?.connect) { feedback('Biblioteca MQTT indisponível.'); return; }
     let settings;
     try { settings = configuration(); } catch (e) { feedback(e.message); return; }
     if (client) client.end(true);
@@ -61,7 +60,6 @@
             data.relays.some(v => typeof v !== 'boolean')) return;
         boot = data.boot;
         updatedAt = Date.now();
-        armed = data.bench_armed === true;
         relays = data.relays;
         if ($('relayStatuses')) $('relayStatuses').textContent = relays.map((on, i) =>
           `K${i + 1} GPIO${[19, 18, 23, 27][i]}: ${on ? 'LIGADO' : 'desligado'}`).join(' · ');
@@ -69,13 +67,13 @@
           $('physicalLcd').textContent = data.lcd.map(line => String(line).slice(0, 20).padEnd(20)).join('\n');
         if (pending && ((pending.action === 'start' && relays.some(Boolean)) ||
                         (pending.action === 'stop' && relays.every(v => !v)))) {
-          feedback(pending.action === 'start' ? 'Relés ligados, conforme telemetria do ESP32.' :
-                   'ESP32 confirmou os relés desligados.');
+          feedback(pending.action === 'start' ? 'ESP32 informou relés ligados.' :
+                   'ESP32 informou relés desligados.');
           pending = null;
         }
       } else if (name === topic('command_ack') && pending && data.seq === pending.seq) {
         if (!data.accepted) {
-          feedback('Comando recusado pelo ESP32: ' + (data.reason || 'verifique o jumper e o estado'));
+          feedback('Comando recusado pelo ESP32: ' + (data.reason || 'verifique o estado do dispositivo'));
           pending = null;
         } else {
           feedback(data.action === 'stop' ? 'Parada recebida; aguardando estado dos relés.' :
@@ -84,9 +82,9 @@
       }
       refresh();
     });
-    active.on('offline', () => {if (client === active) {connected = false;refresh();}});
-    active.on('close', () => {if (client === active) {connected = false;refresh();}});
-    active.on('error', error => {if (client === active) feedback('Erro MQTT: ' + error.message);});
+    active.on('offline', () => { if (client === active) {connected = false;refresh();} });
+    active.on('close', () => { if (client === active) {connected = false;refresh();} });
+    active.on('error', error => { if (client === active) feedback('Erro MQTT: ' + error.message); });
     refresh();
   }
   function send(action) {
@@ -94,7 +92,6 @@
     const options = {mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0};
     if (action === 'start') {
       if (!recent()) {feedback('Aguardando telemetria recente do ESP32-01.');return;}
-      if (!armed) {feedback('Conecte o jumper físico GPIO32–GND para habilitar a bancada.');return;}
       if (relays.some(Boolean)) {feedback('Há relés ligados; desligue antes de iniciar.');return;}
       options.mode = $('startMode').value;
       if (options.mode === 'direct') {
@@ -120,7 +117,7 @@
     pending = {seq, action};
     feedback('Enviando ' + (action === 'start' ? 'partida' : 'parada') + ' MQTT…');
     client.publish(topic('command'), JSON.stringify(command), {qos: 1, retain: false}, error => {
-      if (error && pending?.seq === seq) {feedback('Falha no envio: ' + error.message);pending = null;refresh();}
+      if (error && pending?.seq === seq) { feedback('Falha no envio: ' + error.message); pending = null;refresh(); }
     });
     setTimeout(() => {
       if (pending?.seq === seq) {feedback('Sem confirmação do ESP32. Verifique o Monitor Serial.');pending = null;refresh();}
