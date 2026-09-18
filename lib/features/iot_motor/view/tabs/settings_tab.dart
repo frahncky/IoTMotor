@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/providers/esp_local_comm_provider.dart';
 import '../../../../app/providers/mqtt_profiles_provider.dart';
@@ -7,6 +8,7 @@ import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/mqtt_connection_config.dart';
 import '../../models/telemetry_alert.dart';
+import '../../services/app_update_service.dart';
 import '../../services/mqtt_settings_validators.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
@@ -31,6 +33,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   final _retentionFocusNode = FocusNode();
   final _remoteRetentionFocusNode = FocusNode();
   final _espIpController = TextEditingController();
+  bool _verificandoAppUpdate = false;
 
   _RetentionUnit _retentionUnit = _RetentionUnit.days;
   _RetentionUnit _remoteRetentionUnit = _RetentionUnit.days;
@@ -456,10 +459,83 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
               icon: const Icon(Icons.system_update_alt_rounded),
               label: const Text('Atualizar firmware'),
             ),
+            OutlinedButton.icon(
+              onPressed: _verificandoAppUpdate ? null : _verificarAtualizacaoDoApp,
+              icon:
+                  _verificandoAppUpdate
+                      ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Icon(Icons.phone_android_rounded),
+              label: Text(
+                _verificandoAppUpdate
+                    ? 'Verificando...'
+                    : 'Atualizar este app',
+              ),
+            ),
           ],
         ),
       ],
     );
+  }
+
+  /// Confere o APK publicado pelo CI e oferece o download, sem cabo.
+  Future<void> _verificarAtualizacaoDoApp() async {
+    setState(() => _verificandoAppUpdate = true);
+    final AppUpdateService servico = AppUpdateService();
+    try {
+      final AppUpdateInfo info = await servico.check();
+      if (!mounted) return;
+      if (!info.updateAvailable) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'O app já está na versão publicada (${info.publishedVersion}).',
+            ),
+          ),
+        );
+        return;
+      }
+      final bool? baixar = await showDialog<bool>(
+        context: context,
+        builder:
+            (BuildContext dialogContext) => AlertDialog(
+              title: const Text('Nova versão do app'),
+              content: Text(
+                'Publicada: ${info.publishedVersion} (build ${info.publishedBuild}, commit ${info.commit}).\n'
+                'Instalada: ${info.installedVersion}'
+                '${info.installedBuild.isEmpty ? " (sem selo de build)" : " (build ${info.installedBuild})"}.\n\n'
+                'O download abre no navegador. O Android pede permissão para instalar '
+                'apps de fontes desconhecidas na primeira vez.',
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Agora não'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Baixar APK'),
+                ),
+              ],
+            ),
+      );
+      if ((baixar ?? false) && info.apkUrl.isNotEmpty) {
+        await launchUrl(
+          Uri.parse(info.apkUrl),
+          mode: LaunchMode.externalApplication,
+        );
+      }
+    } catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao verificar atualização: $erro')),
+      );
+    } finally {
+      servico.dispose();
+      if (mounted) setState(() => _verificandoAppUpdate = false);
+    }
   }
 
   Future<void> _confirmarManutencao(

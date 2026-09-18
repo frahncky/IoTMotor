@@ -38,6 +38,9 @@ dependencies:
   path_provider: ^2.1.5
   flutter_background_service: ^5.0.7
   flutter_secure_storage: ^9.2.2
+  # Verificação de atualização do app (release app-latest no GitHub).
+  package_info_plus: ^8.1.1
+  url_launcher: ^6.3.1
 
   shared_preferences: ^2.2.2
 
