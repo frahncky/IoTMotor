@@ -54,7 +54,7 @@ A resposta em `command_ack` traz `accepted` e `reason`: `accepted`, `stopped`, `
 2. **Direta**: liga os relés da máscara. **Sequência**: liga principal + estrela; após `seconds`, desliga a estrela (tempo morto de 0,7 s) e liga principal + triângulo.
 3. Todos os relés são desligados automaticamente:
    - **5 minutos** após o `start` (`LIMITE_BANCADA_MS`), em qualquer modo;
-   - ao perder o Wi-Fi ou a conexão MQTT, mesmo por pouco tempo.
+   - após **15 s** sem Wi-Fi ou MQTT (`TOLERANCIA_SEM_LINK_MS`); quedas mais curtas não desarmam o ensaio.
 
 ## Segurança
 

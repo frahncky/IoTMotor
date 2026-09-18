@@ -4,6 +4,9 @@
 // Desligamento automatico de seguranca: 5 minutos por ensaio.
 constexpr unsigned long LIMITE_BANCADA_MS = 300000UL;
 constexpr unsigned long TEMPO_MORTO_MS = 700UL;
+// Quedas curtas de MQTT/Wi-Fi sao toleradas; acima disso as saidas desligam.
+constexpr unsigned long TOLERANCIA_SEM_LINK_MS = 15000UL;
+unsigned long inicioSemLink = 0;  // 0 = conexao ok
 uint8_t etapaPartida = 0; // 0 parado, 1 aguarda, 2 estrela, 3 tempo morto, 4 triangulo, 5 direta.
 uint8_t modoPartida = 0;  // 0 direta, 1 sequencia.
 uint8_t mascaraDireta = 0;
@@ -47,10 +50,10 @@ void manterPartidaBancada(unsigned long agora) {
   bool ligada = etapaPartida != 0;
   for (uint8_t i = 0; i < NUM_RELES; ++i) ligada = ligada || estadoReles[i];
   if (!ligada) return;
-  // Falha da rede e limite de sessao desligam todas as saidas.
-  if (WiFi.status() != WL_CONNECTED || decorrido(agora, momentoPartida) > (int32_t)LIMITE_BANCADA_MS) {
+  // Limite de sessao; a perda de rede e tratada no loop com tolerancia.
+  if (decorrido(agora, momentoPartida) > (int32_t)LIMITE_BANCADA_MS) {
     pararBancada();
-    Serial.println("[BANCADA] saidas desligadas por perda da rede ou tempo limite");
+    Serial.println("[BANCADA] saidas desligadas pelo tempo limite do ensaio");
     return;
   }
   if (etapaPartida == 1 && decorrido(agora, momentoEtapa) >= 500) {

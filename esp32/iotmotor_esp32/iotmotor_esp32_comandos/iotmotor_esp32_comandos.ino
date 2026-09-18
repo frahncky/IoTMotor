@@ -18,6 +18,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <esp_system.h>
 #include "mqtt_websocket_client.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
@@ -74,6 +75,22 @@ constexpr unsigned long MQTT_RETRY_MS = 6000UL;
 constexpr unsigned long MQTT_PUBLISH_MS = 1000UL;
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
 uint32_t sequenciaMqtt = 0;
+
+// Ajuda a separar queda de tensao (brownout) de travamento (watchdog/panico).
+const char* motivoReinicio() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: return "energizacao";
+    case ESP_RST_EXT: return "reset externo";
+    case ESP_RST_SW: return "reinicio por software";
+    case ESP_RST_PANIC: return "travamento (panico)";
+    case ESP_RST_INT_WDT: return "watchdog de interrupcao";
+    case ESP_RST_TASK_WDT: return "watchdog de tarefa";
+    case ESP_RST_WDT: return "watchdog";
+    case ESP_RST_BROWNOUT: return "QUEDA DE TENSAO (brownout)";
+    case ESP_RST_DEEPSLEEP: return "saida de deep sleep";
+    default: return "desconhecido";
+  }
+}
 
 void aplicarEstadoRele(uint8_t indice) {
   if (indice >= NUM_RELES) return;
@@ -210,6 +227,7 @@ void publicarTelemetriaMqtt() {
   // Campo de compatibilidade: pronto para comandos; NAO representa jumper fisico.
   doc["bench_armed"] = true;
   doc["start_phase"] = nomeEtapa();
+  doc["reset_reason"] = motivoReinicio();
   if (WiFi.status() == WL_CONNECTED) doc["wifi_ip"] = WiFi.localIP().toString();
   doc["demo"] = false;
   doc["data_source"] = "pzem004t";
@@ -260,6 +278,7 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   Serial.println("=== IoTMotor ESP32-01 / MQTT sem chave e sem jumper ===");
+  Serial.printf("[BOOT] motivo do ultimo reinicio: %s\n", motivoReinicio());
   // Repouso ANTES de configurar saidas para evitar pulso no boot.
   for (uint8_t i = 0; i < NUM_RELES; ++i) {
     digitalWrite(PINOS_RELES[i], nivelDesligado());
@@ -313,9 +332,18 @@ void loop() {
   const unsigned long agora = millis();
   manterWifi(agora);
   manterMqtt(agora);
-  // Se o MQTT cair, nenhuma saida permanece energizada.
-  if (!mqttClient.connected() && (etapaPartida || estadoReles[0] || estadoReles[1] ||
-                                  estadoReles[2] || estadoReles[3])) pararBancada();
+  // Perda de MQTT/Wi-Fi desliga as saidas, mas so apos TOLERANCIA_SEM_LINK_MS,
+  // para nao desarmar o ensaio em quedas curtas do broker publico.
+  const bool comLink = mqttClient.connected() && WiFi.status() == WL_CONNECTED;
+  if (comLink) inicioSemLink = 0;
+  else if (!inicioSemLink) inicioSemLink = agora;
+  const bool saidasAtivas = etapaPartida || estadoReles[0] || estadoReles[1] ||
+                            estadoReles[2] || estadoReles[3];
+  if (!comLink && saidasAtivas && decorrido(agora, inicioSemLink) > (int32_t)TOLERANCIA_SEM_LINK_MS) {
+    pararBancada();
+    Serial.printf("[BANCADA] saidas desligadas: %lu s sem MQTT/Wi-Fi\n",
+                  TOLERANCIA_SEM_LINK_MS / 1000UL);
+  }
   manterPartidaBancada(agora);
   if (agora - ultimaLeituraPzem >= INTERVALO_PZEM_MS) {
     ultimaLeituraPzem = agora;
