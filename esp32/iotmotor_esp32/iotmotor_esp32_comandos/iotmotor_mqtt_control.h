@@ -55,6 +55,19 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!lerSequencia(seq, numero)) return;
   const char* acao = doc["action"] | "";
 
+  // Atualizacao pela internet: URL fixa no firmware, nunca vinda da mensagem.
+  if (!strcmp(acao, "update")) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || etapaPartida) {
+      publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de atualizar");
+      return;
+    }
+    publicarRespostaControle(seq, true, acao, "baixando firmware");
+    String motivo;
+    atualizarPelaInternet(OTA_ARQUIVO, motivo);  // Sucesso reinicia a placa.
+    publicarRespostaControle(seq, false, acao, motivo.c_str());
+    return;
+  }
+
   // Parar sempre: nao depende de telemetria, boot, estado ou partida pendente.
   if (!strcmp(acao, "stop")) {
     pararBancada();

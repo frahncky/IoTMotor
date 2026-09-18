@@ -59,4 +59,7 @@ jobs:
           ws = (root / 'mqtt_websocket_client.h').read_text()
           assert ws == Path('esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/mqtt_websocket_client.h').read_text(), 'adaptador WebSocket diferente entre os firmwares'
           assert 'MqttWebSocketClient mqttTransport;' in firmware and 'MQTT_PORT = 8080' in firmware
+          ota = (root / 'ota_update.h').read_text()
+          assert ota == Path('esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/ota_update.h').read_text(), 'ota_update.h diferente entre os firmwares'
+          assert 'OTA_BASE_URL' in ota and 'doc["url"]' not in control, 'a URL do OTA deve ser fixa no firmware'
           PY

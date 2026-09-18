@@ -48,6 +48,21 @@ Exemplos:
 
 A resposta em `command_ack` traz `accepted` e `reason`: `accepted`, `stopped`, `unknown_action`, `session_mismatch`, `duplicate`, `busy_or_offline`, `already_on` ou `invalid_profile`.
 
+## Atualização pela internet (OTA)
+
+A placa se regrava sozinha, sem cabo e de qualquer rede com saída HTTPS. Envie em `iotmotor/esp32-01/command`:
+
+```json
+{"v":1,"device_id":"esp32-01","seq":"1726580000000999","action":"update","boot":"","mode":"none","mask":0,"main":0,"star":0,"delta":0,"seconds":0}
+```
+
+O ESP32-S3 aceita o mesmo comando em `iotmotor/esp32-02/command`, com `device_id` `esp32-02`.
+
+- O firmware baixado é sempre o do release **`firmware-latest`** do repositório, publicado a cada commit na `main` pelo workflow `publish-firmware.yml`. A URL é fixa no código (`ota_update.h`): o comando apenas dispara a atualização e **não** escolhe de onde baixar, já que o broker é público.
+- A atualização é **recusada com as saídas ligadas**; pare antes.
+- Ao terminar, a placa reinicia com o firmware novo. A resposta vai para `command_ack`; em caso de falha, traz o motivo.
+- **Redes**: `wifi_local.h` aceita até quatro redes (`WIFI_SSID_2`, `_3`, `_4`). A placa usa a disponível de sinal mais forte, então trocar de Wi-Fi não exige cabo.
+
 ## Sequência de partida e desligamentos automáticos
 
 1. Após aceitar `start`, aguarda 0,5 s com tudo desligado.

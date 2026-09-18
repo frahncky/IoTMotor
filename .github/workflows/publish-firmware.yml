@@ -1,0 +1,43 @@
+name: Publish firmware for OTA
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'esp32/iotmotor_esp32/**'
+      - '.github/workflows/publish-firmware.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 board core
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.2.1 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      - name: Install firmware libraries
+        run: |
+          arduino-cli lib install 'PZEM004Tv30@1.2.1' 'LiquidCrystal I2C' 'PubSubClient' 'ArduinoJson@6.21.5' 'OneWire' 'DallasTemperature'
+      - name: Build both firmwares
+        run: |
+          mkdir -p dist
+          arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir build-01 esp32/iotmotor_esp32/iotmotor_esp32_comandos
+          arduino-cli compile --fqbn esp32:esp32:esp32s3 --output-dir build-02 esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores
+          cp build-01/iotmotor_esp32_comandos.ino.bin dist/esp32-01.bin
+          cp build-02/iotmotor_esp32_s3_sensores.ino.bin dist/esp32-02.bin
+          (cd dist && sha256sum esp32-01.bin esp32-02.bin > sha256.txt)
+          cat dist/sha256.txt
+      # As placas baixam sempre da tag fixa firmware-latest (ver ota_update.h).
+      - name: Publish release firmware-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view firmware-latest >/dev/null 2>&1 ||
+            gh release create firmware-latest --title 'Firmware OTA (ultimo build da main)' \
+              --notes 'Binarios atualizados automaticamente a cada commit na main. Usados pela atualizacao OTA dos ESP32.'
+          gh release upload firmware-latest dist/esp32-01.bin dist/esp32-02.bin dist/sha256.txt --clobber
+          gh release edit firmware-latest --notes "Build de ${GITHUB_SHA::7} em $(date -u '+%Y-%m-%d %H:%M UTC')."

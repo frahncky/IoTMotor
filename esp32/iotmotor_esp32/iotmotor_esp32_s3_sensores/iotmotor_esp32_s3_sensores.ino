@@ -8,6 +8,7 @@
  * Broker publico: nao enviar senhas ou dados confidenciais; sem comandos.
  */
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -15,6 +16,8 @@
 #include <DallasTemperature.h>
 #include <math.h>
 #include "mqtt_websocket_client.h"
+#define OTA_ARQUIVO "esp32-02.bin"
+#include "ota_update.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -27,6 +30,19 @@
 #endif
 static const char* WIFI_SSID = WIFI_SSID_LOCAL;
 static const char* WIFI_PASS = WIFI_PASSWORD_LOCAL;
+WiFiMulti wifiMulti;  // Aceita varias redes: veja wifi_local.exemplo.h
+void registrarRedes() {
+  wifiMulti.addAP(WIFI_SSID, WIFI_PASS);
+#ifdef WIFI_SSID_2
+  wifiMulti.addAP(WIFI_SSID_2, WIFI_PASSWORD_2);
+#endif
+#ifdef WIFI_SSID_3
+  wifiMulti.addAP(WIFI_SSID_3, WIFI_PASSWORD_3);
+#endif
+#ifdef WIFI_SSID_4
+  wifiMulti.addAP(WIFI_SSID_4, WIFI_PASSWORD_4);
+#endif
+}
 static const char* MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket: a IFMA_IOT bloqueia 1883/8883
 static const char* TOPIC_PREFIX = "iotmotor";
@@ -51,7 +67,7 @@ DallasTemperature* ds18b20=nullptr;
 uint8_t ds18b20Pin=0;
 // Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44 e strapping).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,16,17,18,21,38,39,40,41,42,47,48};
-char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96];
+char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -192,6 +208,25 @@ void publishTelemetry() {
   vibrationSquares=0.0f;vibrationPeak=0.0f;sampleCount=0;
 }
 
+// Unico comando aceito: atualizacao pela internet, com URL fixa no firmware.
+void onCommand(char* topic, uint8_t* payload, unsigned int length) {
+  if(!topic || strcmp(topic,commandTopic) || !length || length>512)return;
+  StaticJsonDocument<384> doc;
+  if(deserializeJson(doc,payload,length) || doc["v"].as<int>()!=1 ||
+     strcmp(doc["device_id"] | "",DEVICE_ID) || strcmp(doc["action"] | "","update"))return;
+  const char* seq=doc["seq"] | "";
+  StaticJsonDocument<256> resposta;
+  resposta["device_id"]=DEVICE_ID;resposta["seq"]=seq;resposta["action"]="update";
+  resposta["accepted"]=true;resposta["reason"]="baixando firmware";
+  char saida[256];size_t n=serializeJson(resposta,saida,sizeof(saida));
+  if(n)mqtt.publish(ackTopic,(const uint8_t*)saida,(unsigned int)n,false);
+  String motivo;
+  atualizarPelaInternet(OTA_ARQUIVO,motivo);  // Sucesso reinicia a placa.
+  resposta["accepted"]=false;resposta["reason"]=motivo;
+  n=serializeJson(resposta,saida,sizeof(saida));
+  if(n)mqtt.publish(ackTopic,(const uint8_t*)saida,(unsigned int)n,false);
+}
+
 void setup() {
   Serial.begin(115200);
   Wire.begin(SDA_PIN,SCL_PIN);
@@ -202,9 +237,13 @@ void setup() {
   snprintf(telemetryTopic,sizeof(telemetryTopic),"%s/%s/telemetry",TOPIC_PREFIX,DEVICE_ID);
   snprintf(statusTopic,sizeof(statusTopic),"%s/%s/status",TOPIC_PREFIX,DEVICE_ID);
   snprintf(capabilitiesTopic,sizeof(capabilitiesTopic),"%s/%s/capabilities",TOPIC_PREFIX,DEVICE_ID);
+  snprintf(commandTopic,sizeof(commandTopic),"%s/%s/command",TOPIC_PREFIX,DEVICE_ID);
+  snprintf(ackTopic,sizeof(ackTopic),"%s/%s/command_ack",TOPIC_PREFIX,DEVICE_ID);
   mqtt.setServer(MQTT_HOST,MQTT_PORT);
   mqtt.setBufferSize(768);
+  mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
+  registrarRedes();
   Serial.printf("[S3/boot] %s Wi-Fi=%s broker=%s:%u\n",DEVICE_ID,WIFI_SSID,MQTT_HOST,MQTT_PORT);
 }
 
@@ -220,8 +259,7 @@ void loop() {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
       Serial.printf("[S3/Wi-Fi] conectando, status=%d\n",WiFi.status());
-      if(strlen(WIFI_PASS))WiFi.begin(WIFI_SSID,WIFI_PASS);
-      else WiFi.begin(WIFI_SSID);
+      wifiMulti.run(3000);  // Tenta as redes cadastradas, a mais forte primeiro.
     }
     delay(2);return;
   }
@@ -231,7 +269,7 @@ void loop() {
       Serial.printf("[S3/MQTT] IP=%s conectando %s:%u\n",WiFi.localIP().toString().c_str(),MQTT_HOST,MQTT_PORT);
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
-        publishStatus("online");publishCapabilities();
+        publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());
     }

@@ -12,6 +12,7 @@
   Bibliotecas: PZEM004Tv30, LiquidCrystal I2C, PubSubClient, ArduinoJson 6.
 */
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <PZEM004Tv30.h>
@@ -32,6 +33,20 @@
 #endif
 const char* WIFI_SSID = WIFI_SSID_LOCAL;
 const char* WIFI_PASSWORD = WIFI_PASSWORD_LOCAL;
+WiFiMulti wifiMulti;  // Aceita varias redes: veja wifi_local.exemplo.h
+
+void registrarRedes() {
+  wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
+#ifdef WIFI_SSID_2
+  wifiMulti.addAP(WIFI_SSID_2, WIFI_PASSWORD_2);
+#endif
+#ifdef WIFI_SSID_3
+  wifiMulti.addAP(WIFI_SSID_3, WIFI_PASSWORD_3);
+#endif
+#ifdef WIFI_SSID_4
+  wifiMulti.addAP(WIFI_SSID_4, WIFI_PASSWORD_4);
+#endif
+}
 constexpr unsigned long WIFI_RETRY_MS = 10000UL;
 unsigned long ultimaTentativaWifi = 0;
 
@@ -97,6 +112,8 @@ void aplicarEstadoRele(uint8_t indice) {
   digitalWrite(PINOS_RELES[indice], estadoReles[indice] ? nivelLigado() : nivelDesligado());
 }
 
+#define OTA_ARQUIVO "esp32-01.bin"
+#include "ota_update.h"
 #include "iotmotor_profiles.h"
 #include "iotmotor_mqtt_control.h"
 
@@ -164,9 +181,7 @@ void manterWifi(unsigned long agora) {
   }
   if (agora - ultimaTentativaWifi < WIFI_RETRY_MS) return;
   ultimaTentativaWifi = agora;
-  WiFi.disconnect(false, false);
-  if (*WIFI_PASSWORD) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  else WiFi.begin(WIFI_SSID);
+  wifiMulti.run(3000);  // Tenta as redes cadastradas, a mais forte primeiro.
 }
 
 void lerPzem() {
@@ -302,11 +317,9 @@ void setup() {
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
-  if (*WIFI_PASSWORD) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  else WiFi.begin(WIFI_SSID);
+  registrarRedes();
   ultimaTentativaWifi = millis();
-  const unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < 15000UL) delay(250);
+  wifiMulti.run(15000);
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("[WiFi] IP: ");
     Serial.println(WiFi.localIP());
