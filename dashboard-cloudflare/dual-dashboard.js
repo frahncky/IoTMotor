@@ -182,6 +182,9 @@ function init(){
  $('commandDevice').value=state.config.commandDevice;$('sensorDevice').value=state.config.sensorDevice;
  buildCards();render();
  $('connectBtn').addEventListener('click',()=>state.client?disconnect():connect());
+ // Conecta sozinho, como remote-controls.js: sem isso os indicadores diziam
+ // "broker desconectado" enquanto os botoes Ligar/Desligar ja funcionavam.
+ connect();
  $('connectionForm').addEventListener('submit',event=>{event.preventDefault();connect();});
  // Original startBtn and stopBtn are wired only by local-controls.js.
  $('exportBtn').addEventListener('click',exportCsv);
