@@ -55,6 +55,20 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!lerSequencia(seq, numero)) return;
   const char* acao = doc["action"] | "";
 
+  // Abre o portal de cadastro de rede. A senha do Wi-Fi e digitada na rede da
+  // propria placa e NUNCA trafega pelo broker publico.
+  if (!strcmp(acao, "wifi_portal")) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || etapaPartida) {
+      publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de configurar");
+      return;
+    }
+    publicarRespostaControle(seq, true, acao, "portal " PORTAL_NOME " aberto por 180 s");
+    delay(200);  // Tempo de a resposta sair antes de o Wi-Fi virar ponto de acesso.
+    abrirPortalDeRede(PORTAL_NOME, PORTAL_SEGUNDOS, wifiMulti);
+    ESP.restart();  // Volta ao funcionamento normal ja com a rede nova.
+    return;
+  }
+
   // Atualizacao pela internet: URL fixa no firmware, nunca vinda da mensagem.
   if (!strcmp(acao, "update")) {
     for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || etapaPartida) {

@@ -17,7 +17,10 @@
 #include <math.h>
 #include "mqtt_websocket_client.h"
 #define OTA_ARQUIVO "esp32-02.bin"
+#define PORTAL_NOME "IoTMotor-esp32-02"
+constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
+#include "wifi_portal.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -213,8 +216,22 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(!topic || strcmp(topic,commandTopic) || !length || length>512)return;
   StaticJsonDocument<384> doc;
   if(deserializeJson(doc,payload,length) || doc["v"].as<int>()!=1 ||
-     strcmp(doc["device_id"] | "",DEVICE_ID) || strcmp(doc["action"] | "","update"))return;
+     strcmp(doc["device_id"] | "",DEVICE_ID))return;
+  const char* acao=doc["action"] | "";
   const char* seq=doc["seq"] | "";
+  // Abre o portal de cadastro de rede; a senha nao passa pelo broker publico.
+  if(!strcmp(acao,"wifi_portal")) {
+    StaticJsonDocument<256> aviso;
+    aviso["device_id"]=DEVICE_ID;aviso["seq"]=seq;aviso["action"]=acao;
+    aviso["accepted"]=true;aviso["reason"]="portal " PORTAL_NOME " aberto por 180 s";
+    char buf[256];size_t m=serializeJson(aviso,buf,sizeof(buf));
+    if(m)mqtt.publish(ackTopic,(const uint8_t*)buf,(unsigned int)m,false);
+    delay(200);
+    abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS,wifiMulti);
+    ESP.restart();
+    return;
+  }
+  if(strcmp(acao,"update"))return;
   StaticJsonDocument<256> resposta;
   resposta["device_id"]=DEVICE_ID;resposta["seq"]=seq;resposta["action"]="update";
   resposta["accepted"]=true;resposta["reason"]="baixando firmware";
@@ -244,6 +261,9 @@ void setup() {
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
   registrarRedes();
+  carregarRedeSalva(wifiMulti);
+  // Sem rede conhecida no boot: abre o portal para cadastrar uma, sem cabo.
+  if(wifiMulti.run(15000)!=WL_CONNECTED)abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS,wifiMulti);
   Serial.printf("[S3/boot] %s Wi-Fi=%s broker=%s:%u\n",DEVICE_ID,WIFI_SSID,MQTT_HOST,MQTT_PORT);
 }
 

@@ -13,6 +13,10 @@
     // A pagina pode pedir a partida com MQTT conectado; nenhum jumper/chave.
     start.disabled = !connected || Boolean(pending && pending.action === 'start');
     stop.disabled = !connected; // Parada prioritária mesmo durante uma partida pendente.
+    // Manutencao (Wi-Fi e firmware) so com as saidas confirmadas desligadas.
+    const paradas = Array.isArray(relays) && relays.every(v => !v);
+    for (const id of ['wifiBtn', 'updateBtn'])
+      if ($(id)) $(id).disabled = !connected || !recent() || !paradas;
   }
   function configuration() {
     const url = new URL(String($('broker').value || 'wss://test.mosquitto.org:8081').trim());
@@ -123,6 +127,22 @@
     refresh();
   }
   window.iotmotorRemoteControls = {connect, disconnect: desconectar};
+  // Manutencao: a senha do Wi-Fi e digitada na rede da propria placa, nunca aqui,
+  // porque o broker e publico. Aqui so pedimos que ela abra o portal.
+  function manutencao(action, aviso) {
+    if (!client?.connected || !confirm(aviso)) return;
+    const seq = String(sequence = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequence + 1));
+    feedback('Enviando pedido ao ESP32…');
+    client.publish(topic('command'), JSON.stringify({
+      v: 1, device_id: device, boot, seq, action, mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0
+    }), {qos: 1, retain: false});
+  }
+  $('wifiBtn')?.addEventListener('click', () => manutencao('wifi_portal',
+    'A placa vai sair da rede atual e abrir a rede "IoTMotor-" por 3 minutos.\n\n' +
+    'Conecte o celular nessa rede e informe o Wi-Fi novo na página que abrir.\n' +
+    'A senha vai direto para a placa, sem passar pelo broker público.\n\nContinuar?'));
+  $('updateBtn')?.addEventListener('click', () => manutencao('update',
+    'A placa vai baixar o firmware publicado no GitHub e reiniciar.\n\nContinuar?'));
   start.addEventListener('click', () => send('start'));
   stop.addEventListener('click', () => send('stop'));
   // Nao conecta sozinho: quem comanda a conexao e o botao Conectar do painel

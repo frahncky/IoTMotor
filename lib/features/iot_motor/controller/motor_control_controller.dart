@@ -626,6 +626,22 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
+  /// Pede ao ESP32 que abra o portal de Wi-Fi (`wifi_portal`) ou que se
+  /// atualize pela internet (`update`). Nenhuma senha trafega no broker.
+  Future<void> sendMaintenanceCommand(String action) async {
+    final bool enviado = _service.sendMaintenanceCommand(action);
+    if (!enviado) {
+      _pendingMessage = 'Conecte-se ao broker antes de enviar comandos.';
+      _notify();
+      return;
+    }
+    statusMessage =
+        action == 'wifi_portal'
+            ? 'Pedido enviado: a placa vai abrir a rede IoTMotor- por 3 minutos.'
+            : 'Pedido enviado: a placa vai baixar o firmware e reiniciar.';
+    _notify();
+  }
+
   Future<void> requestTelemetrySnapshot() async {
     const List<String> fields = telemetryRequestFields;
     final String? requestId = _service.requestTelemetry(

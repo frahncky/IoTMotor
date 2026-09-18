@@ -396,6 +396,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   text: controller.statusMessage,
                 ),
                 const SizedBox(height: 12),
+                _buildMaintenanceSection(context),
+                const SizedBox(height: 12),
                 _buildTopicPreview(context),
               ],
             );
@@ -403,6 +405,90 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         ),
       ),
     );
+  }
+
+  /// Manutenção do ESP32 pelo app: cadastrar Wi-Fi e atualizar firmware.
+  ///
+  /// A senha do Wi-Fi não é enviada por MQTT: o broker é público. O app apenas
+  /// pede que a placa abra a própria rede, onde a senha é digitada.
+  Widget _buildMaintenanceSection(BuildContext context) {
+    final bool conectado = widget.controller.isConnected;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Manutenção do ESP32',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: <Widget>[
+            OutlinedButton.icon(
+              onPressed:
+                  conectado
+                      ? () => _confirmarManutencao(
+                        context,
+                        action: 'wifi_portal',
+                        titulo: 'Cadastrar Wi-Fi na placa',
+                        texto:
+                            'A placa sai da rede atual e abre a rede "IoTMotor-" por 3 minutos.\n\n'
+                            'Conecte o celular nessa rede e informe o Wi-Fi novo na página que abrir. '
+                            'A senha vai direto para a placa, sem passar pelo broker público.',
+                      )
+                      : null,
+              icon: const Icon(Icons.wifi_password_rounded),
+              label: const Text('Cadastrar Wi-Fi'),
+            ),
+            OutlinedButton.icon(
+              onPressed:
+                  conectado
+                      ? () => _confirmarManutencao(
+                        context,
+                        action: 'update',
+                        titulo: 'Atualizar firmware',
+                        texto:
+                            'A placa baixa o firmware publicado no GitHub e reinicia. '
+                            'Só funciona com as saídas desligadas.',
+                      )
+                      : null,
+              icon: const Icon(Icons.system_update_alt_rounded),
+              label: const Text('Atualizar firmware'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmarManutencao(
+    BuildContext context, {
+    required String action,
+    required String titulo,
+    required String texto,
+  }) async {
+    final bool? confirmado = await showDialog<bool>(
+      context: context,
+      builder:
+          (BuildContext dialogContext) => AlertDialog(
+            title: Text(titulo),
+            content: Text(texto),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Continuar'),
+              ),
+            ],
+          ),
+    );
+    if (confirmado ?? false) {
+      await widget.controller.sendMaintenanceCommand(action);
+    }
   }
 
   Widget _buildProfilesPanel(BuildContext context) {

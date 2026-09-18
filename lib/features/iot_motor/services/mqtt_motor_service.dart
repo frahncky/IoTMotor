@@ -150,6 +150,48 @@ class MqttMotorService {
     return true;
   }
 
+  /// Comandos de manutenção do ESP32: `wifi_portal` e `update`.
+  ///
+  /// A senha do Wi-Fi nunca é enviada por aqui: `wifi_portal` só pede que a
+  /// placa abra a própria rede de configuração, porque o broker é público.
+  bool sendMaintenanceCommand(String action, {String? deviceId}) {
+    final MqttServerClient? client = _client;
+    final MqttConnectionConfig? config = _activeConfig;
+    if (client == null ||
+        config == null ||
+        client.connectionStatus?.state != MqttConnectionState.connected) {
+      return false;
+    }
+
+    final String targetDeviceId = _resolveTargetDeviceId(
+      config: config,
+      requestedDeviceId: deviceId,
+    );
+    final DateTime now = DateTime.now();
+    final String payload = jsonEncode(<String, dynamic>{
+      'v': 1,
+      'device_id': targetDeviceId,
+      'seq': '${now.millisecondsSinceEpoch}${now.microsecond.toString().padLeft(3, '0')}',
+      'action': action,
+      'boot': '',
+      'mode': 'none',
+      'mask': 0,
+      'main': 0,
+      'star': 0,
+      'delta': 0,
+      'seconds': 0,
+    });
+
+    final MqttClientPayloadBuilder builder =
+        MqttClientPayloadBuilder()..addString(payload);
+    client.publishMessage(
+      config.commandTopicForDevice(targetDeviceId),
+      MqttQos.atLeastOnce,
+      builder.payload!,
+    );
+    return true;
+  }
+
   String? requestCommand({
     required MotorCommandType type,
     String reason = 'auto_dispatch',

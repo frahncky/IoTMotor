@@ -113,7 +113,10 @@ void aplicarEstadoRele(uint8_t indice) {
 }
 
 #define OTA_ARQUIVO "esp32-01.bin"
+#define PORTAL_NOME "IoTMotor-esp32-01"
+constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
+#include "wifi_portal.h"
 #include "iotmotor_profiles.h"
 #include "iotmotor_mqtt_control.h"
 
@@ -318,8 +321,13 @@ void setup() {
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
   registrarRedes();
+  carregarRedeSalva(wifiMulti);
   ultimaTentativaWifi = millis();
-  wifiMulti.run(15000);
+  // Sem rede conhecida no boot: abre o portal para cadastrar uma, sem cabo.
+  if (wifiMulti.run(15000) != WL_CONNECTED) {
+    imprimirLinhaCompleta(1, "Config WiFi: " PORTAL_NOME);
+    abrirPortalDeRede(PORTAL_NOME, PORTAL_SEGUNDOS, wifiMulti);
+  }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("[WiFi] IP: ");
     Serial.println(WiFi.localIP());
