@@ -125,7 +125,9 @@
   window.iotmotorRemoteControls = {connect, disconnect: desconectar};
   start.addEventListener('click', () => send('start'));
   stop.addEventListener('click', () => send('stop'));
-  $('connectionForm')?.addEventListener('submit', () => setTimeout(connect, 0));
-  connect();
+  // Nao conecta sozinho: quem comanda a conexao e o botao Conectar do painel
+  // (dual-dashboard.js chama connect/disconnect deste modulo).
+  feedback('Desconectado. Use "Conectar ao MQTT" para comandar.');
+  refresh();
   setInterval(refresh, 1000);
 })();
