@@ -114,6 +114,15 @@
     }, 6500);
     refresh();
   }
+  // Encerra a conexao dos comandos junto com a do painel: antes, "Desconectar"
+  // so parava os graficos e os botoes continuavam publicando no broker.
+  function desconectar() {
+    if (client) client.end(true);
+    client = null; connected = false; boot = ''; updatedAt = 0; relays = null; pending = null;
+    feedback('Desconectado do broker; comandos indisponíveis.');
+    refresh();
+  }
+  window.iotmotorRemoteControls = {connect, disconnect: desconectar};
   start.addEventListener('click', () => send('start'));
   stop.addEventListener('click', () => send('stop'));
   $('connectionForm')?.addEventListener('submit', () => setTimeout(connect, 0));

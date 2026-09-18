@@ -116,7 +116,9 @@ function render(){
 function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.records=[];state.pending=null;state.subscribed=false;
  text('commandFeedback','Nenhum comando enviado.');render();}
-function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);reset();pill('Desconectado');diag('Desconectado.');}
+function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
+ window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
+ reset();pill('Desconectado');diag('Desconectado.');}
 function ingest(which,raw,packet){
  if(packet?.retain===true){diag(`Telemetria retida antiga de ${which==='command'?'ESP32 PZEM':'ESP32-S3'} ignorada.`);return false;}
  let json;try{json=JSON.parse(raw);}catch{diag('Mensagem MQTT recebida, mas JSON inválido.');return false;}
@@ -134,7 +136,8 @@ function ingest(which,raw,packet){
  }
  diag(`Recebendo ${which==='command'?'dados do PZEM / comandos':'vibração e temperatura do S3'} · seq ${sample.seq??'—'}.`);render();return true;
 }
-function connect(){
+function connect(automatico){
+ if(!automatico)window.iotmotorRemoteControls?.connect?.();  // Reconecta os comandos tambem.
  let config;try{config=validateConfig({broker:$('broker').value,prefix:$('prefix').value,commandDevice:$('commandDevice').value,sensorDevice:$('sensorDevice').value});}
  catch(e){diag(e.message);return;}
  if(!window.mqtt||typeof window.mqtt.connect!=='function'){pill('MQTT.js indisponível','error');diag('Biblioteca MQTT.js não carregou; confira o acesso ao CDN.');return;}
@@ -184,7 +187,7 @@ function init(){
  $('connectBtn').addEventListener('click',()=>state.client?disconnect():connect());
  // Conecta sozinho, como remote-controls.js: sem isso os indicadores diziam
  // "broker desconectado" enquanto os botoes Ligar/Desligar ja funcionavam.
- connect();
+ connect(true);  // remote-controls.js ja se conecta por conta propria ao carregar.
  $('connectionForm').addEventListener('submit',event=>{event.preventDefault();connect();});
  // Original startBtn and stopBtn are wired only by local-controls.js.
  $('exportBtn').addEventListener('click',exportCsv);
