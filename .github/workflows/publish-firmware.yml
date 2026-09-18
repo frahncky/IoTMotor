@@ -21,7 +21,7 @@ jobs:
           arduino-cli core install esp32:esp32@3.2.1 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
       - name: Install firmware libraries
         run: |
-          arduino-cli lib install 'PZEM004Tv30@1.2.1' 'LiquidCrystal I2C' 'PubSubClient' 'ArduinoJson@6.21.5' 'OneWire' 'DallasTemperature'
+          arduino-cli lib install 'PZEM004Tv30@1.2.1' 'LiquidCrystal I2C' 'PubSubClient' 'ArduinoJson@6.21.5' 'OneWire' 'DallasTemperature' 'WiFiManager@2.0.17'
       - name: Build both firmwares
         run: |
           mkdir -p dist
