@@ -45,6 +45,19 @@ void publicarRespostaControle(const char* seq, bool aceito, const char* acao, co
                               static_cast<unsigned int>(len), false);
 }
 
+// Lista de redes gravada na placa, sem senhas, com a chave publica para o
+// painel cifrar senhas novas. Retida para a aba "Wi-Fi" abrir ja preenchida.
+void publicarRedes() {
+  if (!mqttClient.connected()) return;
+  StaticJsonDocument<1024> doc;
+  doc["device_id"] = DEVICE_ID;
+  wifistore::descrever(doc);
+  char payload[1024];
+  const size_t len = serializeJson(doc, payload, sizeof(payload));
+  if (len) mqttClient.publish(topicoWifi, reinterpret_cast<const uint8_t*>(payload),
+                              static_cast<unsigned int>(len), true);
+}
+
 void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!topico || strcmp(topico, topicoComandos) || !tamanho || tamanho > 700) return;
   StaticJsonDocument<512> doc;
@@ -55,8 +68,18 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!lerSequencia(seq, numero)) return;
   const char* acao = doc["action"] | "";
 
-  // Abre o portal de cadastro de rede. A senha do Wi-Fi e digitada na rede da
-  // propria placa e NUNCA trafega pelo broker publico.
+  // Lista de redes (aba "Wi-Fi" do painel). A senha chega cifrada para a
+  // chave desta placa; o broker publico nunca ve a senha em texto aberto.
+  const char* motivoWifi = "";
+  const wifistore::Resultado resultadoWifi =
+      wifistore::tratarComando(acao, doc.as<JsonVariantConst>(), motivoWifi);
+  if (resultadoWifi != wifistore::Resultado::NaoEWifi) {
+    publicarRespostaControle(seq, resultadoWifi == wifistore::Resultado::Aceito, acao, motivoWifi);
+    publicarRedes();
+    return;
+  }
+
+  // Abre o portal de cadastro de rede na propria placa (ultimo recurso).
   if (!strcmp(acao, "wifi_portal")) {
     for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || etapaPartida) {
       publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de configurar");
@@ -64,7 +87,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     }
     publicarRespostaControle(seq, true, acao, "portal " PORTAL_NOME " aberto por 180 s");
     delay(200);  // Tempo de a resposta sair antes de o Wi-Fi virar ponto de acesso.
-    abrirPortalDeRede(PORTAL_NOME, PORTAL_SEGUNDOS, wifiMulti);
+    abrirPortalDeRede(PORTAL_NOME, PORTAL_SEGUNDOS);
     ESP.restart();  // Volta ao funcionamento normal ja com a rede nova.
     return;
   }

@@ -28,8 +28,9 @@ jobs:
           node --check dashboard-cloudflare/local-controls.js
           node --check dashboard-cloudflare/remote-controls.js
           node --check dashboard-cloudflare/hardware-mirror.js
+          node --check dashboard-cloudflare/wifi-manager.js
       - name: Run web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs
       - name: Verify MQTT-only firmware and controls
         run: |
           python3 - <<'PY'
@@ -62,4 +63,8 @@ jobs:
           ota = (root / 'ota_update.h').read_text()
           assert ota == Path('esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/ota_update.h').read_text(), 'ota_update.h diferente entre os firmwares'
           assert 'OTA_BASE_URL' in ota and 'doc["url"]' not in control, 'a URL do OTA deve ser fixa no firmware'
+          s3 = Path('esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores')
+          for nome in ('wifi_store.h', 'wifi_portal.h'):
+              assert (root / nome).read_text() == (s3 / nome).read_text(), nome + ' diferente entre os firmwares'
+          assert 'iotmotor-wifi-v1' in (root / 'wifi_store.h').read_text() and 'iotmotor-wifi-v1' in Path('dashboard-cloudflare/wifi-manager.js').read_text(), 'rotulo da cifragem divergente'
           PY

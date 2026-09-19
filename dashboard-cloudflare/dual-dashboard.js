@@ -118,6 +118,7 @@ function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0
  text('commandFeedback','Nenhum comando enviado.');render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
+ window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
  reset();pill('Desconectado');diag('Desconectado.');}
 function ingest(which,raw,packet){
  if(packet?.retain===true){diag(`Telemetria retida antiga de ${which==='command'?'ESP32 PZEM':'ESP32-S3'} ignorada.`);return false;}
@@ -137,7 +138,7 @@ function ingest(which,raw,packet){
  diag(`Recebendo ${which==='command'?'dados do PZEM / comandos':'vibração e temperatura do S3'} · seq ${sample.seq??'—'}.`);render();return true;
 }
 function connect(automatico){
- if(!automatico)window.iotmotorRemoteControls?.connect?.();  // Reconecta os comandos tambem.
+ if(!automatico){window.iotmotorRemoteControls?.connect?.();window.iotmotorWifi?.connect?.();}  // Comandos e aba Wi-Fi juntos.
  let config;try{config=validateConfig({broker:$('broker').value,prefix:$('prefix').value,commandDevice:$('commandDevice').value,sensorDevice:$('sensorDevice').value});}
  catch(e){diag(e.message);return;}
  if(!window.mqtt||typeof window.mqtt.connect!=='function'){pill('MQTT.js indisponível','error');diag('Biblioteca MQTT.js não carregou; confira o acesso ao CDN.');return;}

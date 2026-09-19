@@ -8,7 +8,6 @@
  * Broker publico: nao enviar senhas ou dados confidenciais; sem comandos.
  */
 #include <WiFi.h>
-#include <WiFiMulti.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <Wire.h>
@@ -31,21 +30,32 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #define WIFI_SSID_LOCAL "IFMA_IOT"
 #define WIFI_PASSWORD_LOCAL ""  // Wi-Fi aberto
 #endif
-static const char* WIFI_SSID = WIFI_SSID_LOCAL;
-static const char* WIFI_PASS = WIFI_PASSWORD_LOCAL;
-WiFiMulti wifiMulti;  // Aceita varias redes: veja wifi_local.exemplo.h
-void registrarRedes() {
-  wifiMulti.addAP(WIFI_SSID, WIFI_PASS);
+// Redes de wifi_local.h: so semeiam a lista gravada na placa no primeiro boot.
+// Depois, a lista e a ordem sao definidas pela aba "Wi-Fi" do painel.
+const char* const REDES_INICIAIS[]={
+  WIFI_SSID_LOCAL,
 #ifdef WIFI_SSID_2
-  wifiMulti.addAP(WIFI_SSID_2, WIFI_PASSWORD_2);
+  WIFI_SSID_2,
 #endif
 #ifdef WIFI_SSID_3
-  wifiMulti.addAP(WIFI_SSID_3, WIFI_PASSWORD_3);
+  WIFI_SSID_3,
 #endif
 #ifdef WIFI_SSID_4
-  wifiMulti.addAP(WIFI_SSID_4, WIFI_PASSWORD_4);
+  WIFI_SSID_4,
 #endif
-}
+};
+const char* const SENHAS_INICIAIS[]={
+  WIFI_PASSWORD_LOCAL,
+#ifdef WIFI_SSID_2
+  WIFI_PASSWORD_2,
+#endif
+#ifdef WIFI_SSID_3
+  WIFI_PASSWORD_3,
+#endif
+#ifdef WIFI_SSID_4
+  WIFI_PASSWORD_4,
+#endif
+};
 static const char* MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket: a IFMA_IOT bloqueia 1883/8883
 static const char* TOPIC_PREFIX = "iotmotor";
@@ -70,7 +80,7 @@ DallasTemperature* ds18b20=nullptr;
 uint8_t ds18b20Pin=0;
 // Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44 e strapping).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,16,17,18,21,38,39,40,41,42,47,48};
-char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96];
+char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -211,23 +221,46 @@ void publishTelemetry() {
   vibrationSquares=0.0f;vibrationPeak=0.0f;sampleCount=0;
 }
 
-// Unico comando aceito: atualizacao pela internet, com URL fixa no firmware.
+// Lista de redes gravada na placa, sem senhas, com a chave publica para o
+// painel cifrar senhas novas. Retida para a aba "Wi-Fi" abrir ja preenchida.
+void publishNetworks() {
+  if(!mqtt.connected())return;
+  StaticJsonDocument<1024> doc;
+  doc["device_id"]=DEVICE_ID;
+  wifistore::descrever(doc);
+  char payload[1024];size_t n=serializeJson(doc,payload,sizeof(payload));
+  if(n)mqtt.publish(wifiTopic,(const uint8_t*)payload,(unsigned int)n,true);
+}
+
+void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo) {
+  StaticJsonDocument<256> resposta;
+  resposta["device_id"]=DEVICE_ID;resposta["seq"]=seq;resposta["action"]=acao;
+  resposta["accepted"]=aceito;resposta["reason"]=motivo;
+  char saida[256];size_t n=serializeJson(resposta,saida,sizeof(saida));
+  if(n)mqtt.publish(ackTopic,(const uint8_t*)saida,(unsigned int)n,false);
+}
+
+// Comandos aceitos: lista de redes Wi-Fi, portal de cadastro e atualizacao.
 void onCommand(char* topic, uint8_t* payload, unsigned int length) {
-  if(!topic || strcmp(topic,commandTopic) || !length || length>512)return;
-  StaticJsonDocument<384> doc;
+  if(!topic || strcmp(topic,commandTopic) || !length || length>700)return;
+  StaticJsonDocument<512> doc;
   if(deserializeJson(doc,payload,length) || doc["v"].as<int>()!=1 ||
      strcmp(doc["device_id"] | "",DEVICE_ID))return;
   const char* acao=doc["action"] | "";
   const char* seq=doc["seq"] | "";
-  // Abre o portal de cadastro de rede; a senha nao passa pelo broker publico.
+  // Lista de redes: a senha chega cifrada para a chave desta placa.
+  const char* motivoWifi="";
+  const wifistore::Resultado resultado=wifistore::tratarComando(acao,doc.as<JsonVariantConst>(),motivoWifi);
+  if(resultado!=wifistore::Resultado::NaoEWifi) {
+    publishAck(seq,acao,resultado==wifistore::Resultado::Aceito,motivoWifi);
+    publishNetworks();
+    return;
+  }
+  // Portal de cadastro na propria placa (ultimo recurso).
   if(!strcmp(acao,"wifi_portal")) {
-    StaticJsonDocument<256> aviso;
-    aviso["device_id"]=DEVICE_ID;aviso["seq"]=seq;aviso["action"]=acao;
-    aviso["accepted"]=true;aviso["reason"]="portal " PORTAL_NOME " aberto por 180 s";
-    char buf[256];size_t m=serializeJson(aviso,buf,sizeof(buf));
-    if(m)mqtt.publish(ackTopic,(const uint8_t*)buf,(unsigned int)m,false);
+    publishAck(seq,acao,true,"portal " PORTAL_NOME " aberto por 180 s");
     delay(200);
-    abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS,wifiMulti);
+    abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS);
     ESP.restart();
     return;
   }
@@ -257,14 +290,16 @@ void setup() {
   snprintf(commandTopic,sizeof(commandTopic),"%s/%s/command",TOPIC_PREFIX,DEVICE_ID);
   snprintf(ackTopic,sizeof(ackTopic),"%s/%s/command_ack",TOPIC_PREFIX,DEVICE_ID);
   mqtt.setServer(MQTT_HOST,MQTT_PORT);
-  mqtt.setBufferSize(768);
+  snprintf(wifiTopic,sizeof(wifiTopic),"%s/%s/wifi",TOPIC_PREFIX,DEVICE_ID);
+  mqtt.setBufferSize(1536);
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
-  registrarRedes();
-  carregarRedeSalva(wifiMulti);
-  // Sem rede conhecida no boot: abre o portal para cadastrar uma, sem cabo.
-  if(wifiMulti.run(15000)!=WL_CONNECTED)abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS,wifiMulti);
-  Serial.printf("[S3/boot] %s Wi-Fi=%s broker=%s:%u\n",DEVICE_ID,WIFI_SSID,MQTT_HOST,MQTT_PORT);
+  wifistore::carregar(REDES_INICIAIS,SENHAS_INICIAIS,sizeof(REDES_INICIAIS)/sizeof(REDES_INICIAIS[0]));
+  wifistore::prepararChaves();
+  Serial.printf("[S3/Wi-Fi] %u rede(s) na lista da placa\n",wifistore::total);
+  // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
+  if(!wifistore::conectarEmOrdem(10000))abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS);
+  Serial.printf("[S3/boot] %s broker=%s:%u\n",DEVICE_ID,MQTT_HOST,MQTT_PORT);
 }
 
 void loop() {
@@ -279,7 +314,7 @@ void loop() {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
       Serial.printf("[S3/Wi-Fi] conectando, status=%d\n",WiFi.status());
-      wifiMulti.run(3000);  // Tenta as redes cadastradas, a mais forte primeiro.
+      wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
     }
     delay(2);return;
   }
@@ -289,7 +324,7 @@ void loop() {
       Serial.printf("[S3/MQTT] IP=%s conectando %s:%u\n",WiFi.localIP().toString().c_str(),MQTT_HOST,MQTT_PORT);
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
-        publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);
+        publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());
     }

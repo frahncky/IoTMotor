@@ -12,7 +12,6 @@
   Bibliotecas: PZEM004Tv30, LiquidCrystal I2C, PubSubClient, ArduinoJson 6.
 */
 #include <WiFi.h>
-#include <WiFiMulti.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <PZEM004Tv30.h>
@@ -31,22 +30,32 @@
 #define WIFI_SSID_LOCAL "IFMA_IOT"
 #define WIFI_PASSWORD_LOCAL ""
 #endif
-const char* WIFI_SSID = WIFI_SSID_LOCAL;
-const char* WIFI_PASSWORD = WIFI_PASSWORD_LOCAL;
-WiFiMulti wifiMulti;  // Aceita varias redes: veja wifi_local.exemplo.h
-
-void registrarRedes() {
-  wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
+// Redes de wifi_local.h: so semeiam a lista gravada na placa no primeiro boot.
+// Depois, a lista e a ordem sao definidas pela aba "Wi-Fi" do painel.
+const char* const REDES_INICIAIS[] = {
+  WIFI_SSID_LOCAL,
 #ifdef WIFI_SSID_2
-  wifiMulti.addAP(WIFI_SSID_2, WIFI_PASSWORD_2);
+  WIFI_SSID_2,
 #endif
 #ifdef WIFI_SSID_3
-  wifiMulti.addAP(WIFI_SSID_3, WIFI_PASSWORD_3);
+  WIFI_SSID_3,
 #endif
 #ifdef WIFI_SSID_4
-  wifiMulti.addAP(WIFI_SSID_4, WIFI_PASSWORD_4);
+  WIFI_SSID_4,
 #endif
-}
+};
+const char* const SENHAS_INICIAIS[] = {
+  WIFI_PASSWORD_LOCAL,
+#ifdef WIFI_SSID_2
+  WIFI_PASSWORD_2,
+#endif
+#ifdef WIFI_SSID_3
+  WIFI_PASSWORD_3,
+#endif
+#ifdef WIFI_SSID_4
+  WIFI_PASSWORD_4,
+#endif
+};
 constexpr unsigned long WIFI_RETRY_MS = 10000UL;
 unsigned long ultimaTentativaWifi = 0;
 
@@ -85,7 +94,7 @@ static const char* DEVICE_ID = "esp32-01";
 MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
-char topicoComandos[80], topicoResposta[80];
+char topicoComandos[80], topicoResposta[80], topicoWifi[80];
 constexpr unsigned long MQTT_RETRY_MS = 6000UL;
 constexpr unsigned long MQTT_PUBLISH_MS = 1000UL;
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
@@ -184,7 +193,7 @@ void manterWifi(unsigned long agora) {
   }
   if (agora - ultimaTentativaWifi < WIFI_RETRY_MS) return;
   ultimaTentativaWifi = agora;
-  wifiMulti.run(3000);  // Tenta as redes cadastradas, a mais forte primeiro.
+  wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
 }
 
 void lerPzem() {
@@ -288,6 +297,7 @@ void manterMqtt(unsigned long agora) {
     if (!mqttClient.subscribe(topicoComandos, 1))
       Serial.println("[MQTT] falha ao assinar comandos");
     publicarCapacidades();
+    publicarRedes();
     Serial.println("[MQTT] conectado: comandos e telemetria ativos");
   } else Serial.printf("[MQTT] falha rc=%d\n", mqttClient.state());
 }
@@ -320,13 +330,15 @@ void setup() {
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
-  registrarRedes();
-  carregarRedeSalva(wifiMulti);
+  wifistore::carregar(REDES_INICIAIS, SENHAS_INICIAIS,
+                      sizeof(REDES_INICIAIS) / sizeof(REDES_INICIAIS[0]));
+  wifistore::prepararChaves();
+  Serial.printf("[WiFi] %u rede(s) na lista da placa\n", wifistore::total);
   ultimaTentativaWifi = millis();
-  // Sem rede conhecida no boot: abre o portal para cadastrar uma, sem cabo.
-  if (wifiMulti.run(15000) != WL_CONNECTED) {
+  // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
+  if (!wifistore::conectarEmOrdem(10000)) {
     imprimirLinhaCompleta(1, "Config WiFi: " PORTAL_NOME);
-    abrirPortalDeRede(PORTAL_NOME, PORTAL_SEGUNDOS, wifiMulti);
+    abrirPortalDeRede(PORTAL_NOME, PORTAL_SEGUNDOS);
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("[WiFi] IP: ");
@@ -338,6 +350,7 @@ void setup() {
   snprintf(topicoCapacidades, sizeof(topicoCapacidades), "iotmotor/%s/capabilities", DEVICE_ID);
   snprintf(topicoComandos, sizeof(topicoComandos), "iotmotor/%s/command", DEVICE_ID);
   snprintf(topicoResposta, sizeof(topicoResposta), "iotmotor/%s/command_ack", DEVICE_ID);
+  snprintf(topicoWifi, sizeof(topicoWifi), "iotmotor/%s/wifi", DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);
   mqttClient.setCallback(receberComandoMqtt);

@@ -1,0 +1,302 @@
+'use strict';
+// Aba "Wi-Fi das placas": lista de redes gravada em cada ESP32, na ordem de
+// prioridade definida aqui. Fala com as placas pelo mesmo broker MQTT.
+//
+// A senha NUNCA vai em texto aberto: a placa publica uma chave publica P-256
+// no topico .../wifi; o navegador faz ECDH com uma chave efemera, deriva a
+// chave AES-256 como SHA-256("iotmotor-wifi-v1" || segredo) e cifra a senha em
+// AES-GCM usando o SSID como dado autenticado. Mesmo esquema de wifi_store.h.
+
+const ROTULO_KDF = 'iotmotor-wifi-v1';
+
+function paraBase64(dados) {
+  const bytes = new Uint8Array(dados);
+  let texto = '';
+  for (const b of bytes) texto += String.fromCharCode(b);
+  return btoa(texto);
+}
+
+function deBase64(texto) {
+  return Uint8Array.from(atob(texto), c => c.charCodeAt(0));
+}
+
+// Cifra a senha para a chave publica da placa. Exportada para os testes.
+async function cifrarSenha(chavePublicaB64, ssid, senha, cripto = globalThis.crypto) {
+  const sutil = cripto.subtle;
+  const chaveDaPlaca = await sutil.importKey('raw', deBase64(chavePublicaB64),
+    {name: 'ECDH', namedCurve: 'P-256'}, false, []);
+  const efemera = await sutil.generateKey({name: 'ECDH', namedCurve: 'P-256'}, true, ['deriveBits']);
+  const segredo = new Uint8Array(await sutil.deriveBits({name: 'ECDH', public: chaveDaPlaca},
+    efemera.privateKey, 256));
+  const rotulo = new TextEncoder().encode(ROTULO_KDF);
+  const material = new Uint8Array(rotulo.length + segredo.length);
+  material.set(rotulo);
+  material.set(segredo, rotulo.length);
+  const chaveAes = await sutil.importKey('raw', await sutil.digest('SHA-256', material),
+    'AES-GCM', false, ['encrypt']);
+  const iv = cripto.getRandomValues(new Uint8Array(12));
+  const cifrado = await sutil.encrypt({name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(ssid)},
+    chaveAes, new TextEncoder().encode(senha));
+  return {
+    epk: paraBase64(await sutil.exportKey('raw', efemera.publicKey)),
+    iv: paraBase64(iv),
+    ct: paraBase64(cifrado)
+  };
+}
+
+if (typeof document !== 'undefined') (() => {
+  const $ = id => document.getElementById(id);
+  if (!$('painel-wifi')) return;
+
+  // ---- abas ----
+  const abas = [...document.querySelectorAll('.tabs [role="tab"]')];
+  function mostrarAba(nome) {
+    for (const aba of abas) {
+      const ativa = aba.dataset.tab === nome;
+      aba.setAttribute('aria-selected', String(ativa));
+      aba.tabIndex = ativa ? 0 : -1;
+      $('painel-' + aba.dataset.tab).hidden = !ativa;
+    }
+    try { localStorage.setItem('iotmotor_aba', nome); } catch {}
+  }
+  abas.forEach((aba, i) => {
+    aba.addEventListener('click', () => mostrarAba(aba.dataset.tab));
+    aba.addEventListener('keydown', e => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const proxima = abas[(i + (e.key === 'ArrowRight' ? 1 : abas.length - 1)) % abas.length];
+      mostrarAba(proxima.dataset.tab);
+      proxima.focus();
+    });
+  });
+  try { const salva = localStorage.getItem('iotmotor_aba'); if (salva === 'wifi') mostrarAba('wifi'); } catch {}
+
+  // ---- estado ----
+  let client = null, connected = false, prefixo = '', dispositivos = ['esp32-01', 'esp32-02'];
+  let selecionado = 0, sequencia = 0, pendente = null;
+  const placas = {};  // device -> {pubkey, networks:[{ssid,open}], connected, max, em}
+  let ordemEditada = null;  // lista de SSIDs enquanto o usuario reordena
+
+  const topico = (dev, tipo) => `${prefixo}/${dev}/${tipo}`;
+  const atual = () => placas[dispositivos[selecionado]];
+  const aviso = texto => { $('wifiFeedback').textContent = texto; };
+
+  function lerConfiguracao() {
+    const url = new URL(String($('broker').value || 'wss://test.mosquitto.org:8081').trim());
+    const p = String($('prefix').value || 'iotmotor').trim().replace(/^\/+|\/+$/g, '');
+    const d = [String($('commandDevice').value || 'esp32-01').trim(), String($('sensorDevice').value || 'esp32-02').trim()];
+    if (url.protocol !== 'wss:' || url.username || url.password ||
+        !/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(p) || d.some(x => !/^[a-zA-Z0-9_-]+$/.test(x)))
+      throw Error('Configuração MQTT inválida.');
+    return {url: url.toString(), p, d};
+  }
+
+  function renderizar() {
+    const dev = dispositivos[selecionado];
+    $('wifiDev0').textContent = dispositivos[0];
+    $('wifiDev1').textContent = dispositivos[1];
+    $('wifiDev0').setAttribute('aria-pressed', String(selecionado === 0));
+    $('wifiDev1').setAttribute('aria-pressed', String(selecionado === 1));
+    const placa = atual();
+    const lista = $('wifiList');
+    lista.replaceChildren();
+
+    if (!connected) $('wifiStatus').textContent = 'Conecte ao MQTT (botão no topo) para ver e editar as redes.';
+    else if (!placa) $('wifiStatus').textContent = `Aguardando a lista de ${dev}. A placa precisa estar online e com o firmware atual.`;
+    else $('wifiStatus').textContent = placa.connected
+      ? `${dev} conectada em "${placa.connected}". ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`
+      : `${dev} publicou a lista, mas não informou a rede atual. ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`;
+
+    const ordem = placa ? (ordemEditada || placa.networks.map(r => r.ssid)) : [];
+    if (placa && !ordem.length) {
+      const vazio = document.createElement('li');
+      vazio.className = 'vazio';
+      vazio.textContent = 'Nenhuma rede cadastrada.';
+      lista.append(vazio);
+    }
+    ordem.forEach((ssid, i) => {
+      const rede = placa.networks.find(r => r.ssid === ssid) || {ssid, open: false};
+      const item = document.createElement('li');
+      if (placa.connected === ssid) item.className = 'atual';
+      const nome = document.createElement('span');
+      nome.className = 'nome';
+      nome.textContent = ssid;
+      const tipo = document.createElement('span');
+      tipo.className = 'tag';
+      tipo.textContent = rede.open ? 'aberta' : 'com senha';
+      item.append(nome, tipo);
+      if (placa.connected === ssid) {
+        const agora = document.createElement('span');
+        agora.className = 'tag on';
+        agora.textContent = 'conectada agora';
+        item.append(agora);
+      }
+      const ops = document.createElement('span');
+      ops.className = 'ops';
+      const botao = (rotulo, titulo, acao, desabilitado, classe) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = rotulo;
+        b.title = titulo;
+        b.setAttribute('aria-label', `${titulo}: ${ssid}`);
+        b.disabled = desabilitado || !connected;
+        if (classe) b.className = classe;
+        b.addEventListener('click', acao);
+        return b;
+      };
+      ops.append(
+        botao('↑', 'Subir prioridade', () => mover(i, -1), i === 0),
+        botao('↓', 'Descer prioridade', () => mover(i, 1), i === ordem.length - 1),
+        botao('✕', 'Remover', () => remover(ssid), ordem.length <= 1 || Boolean(ordemEditada), 'del'));
+      item.append(ops);
+      lista.append(item);
+    });
+
+    const mudou = Boolean(placa && ordemEditada &&
+      ordemEditada.join('\n') !== placa.networks.map(r => r.ssid).join('\n'));
+    $('wifiSaveOrder').disabled = !connected || !mudou || Boolean(pendente);
+    $('wifiUndoOrder').disabled = !mudou;
+    $('wifiAddBtn').disabled = !connected || !placa || Boolean(pendente) ||
+      (!$('wifiOpen').checked && !placa.pubkey);
+    $('wifiPass').disabled = $('wifiOpen').checked;
+  }
+
+  function mover(indice, passo) {
+    const placa = atual();
+    if (!placa) return;
+    const ordem = (ordemEditada || placa.networks.map(r => r.ssid)).slice();
+    const destino = indice + passo;
+    if (destino < 0 || destino >= ordem.length) return;
+    [ordem[indice], ordem[destino]] = [ordem[destino], ordem[indice]];
+    ordemEditada = ordem;
+    aviso('Ordem alterada. Clique em "Salvar ordem" para gravar na placa.');
+    renderizar();
+  }
+
+  function publicar(acao, extras) {
+    if (!client?.connected) { aviso('Sem conexão com o broker.'); return false; }
+    const dev = dispositivos[selecionado];
+    const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
+    pendente = {seq, dev, acao};
+    client.publish(topico(dev, 'command'), JSON.stringify({
+      v: 1, device_id: dev, seq, action: acao, boot: '', mode: 'none',
+      mask: 0, main: 0, star: 0, delta: 0, seconds: 0, ...extras
+    }), {qos: 1, retain: false});
+    setTimeout(() => {
+      if (pendente?.seq === seq) { pendente = null; aviso(`Sem resposta de ${dev}. Ela está online?`); renderizar(); }
+    }, 8000);
+    renderizar();
+    return true;
+  }
+
+  function remover(ssid) {
+    if (!confirm(`Remover a rede "${ssid}" da placa ${dispositivos[selecionado]}?`)) return;
+    if (publicar('wifi_remove', {ssid})) aviso(`Removendo "${ssid}"…`);
+  }
+
+  $('wifiSaveOrder').addEventListener('click', () => {
+    if (ordemEditada && publicar('wifi_order', {order: ordemEditada})) aviso('Gravando a nova ordem…');
+  });
+  $('wifiUndoOrder').addEventListener('click', () => { ordemEditada = null; aviso('Alterações desfeitas.'); renderizar(); });
+  $('wifiOpen').addEventListener('change', renderizar);
+  $('wifiShowPass').addEventListener('click', () => {
+    const mostrar = $('wifiPass').type === 'password';
+    $('wifiPass').type = mostrar ? 'text' : 'password';
+    $('wifiShowPass').textContent = mostrar ? 'Ocultar' : 'Mostrar';
+    $('wifiShowPass').setAttribute('aria-pressed', String(mostrar));
+  });
+  for (const i of [0, 1]) $('wifiDev' + i).addEventListener('click', () => {
+    selecionado = i;
+    ordemEditada = null;
+    renderizar();
+  });
+
+  $('wifiAddForm').addEventListener('submit', async evento => {
+    evento.preventDefault();
+    const placa = atual();
+    const ssid = $('wifiSsid').value.trim();
+    const aberta = $('wifiOpen').checked;
+    const senha = aberta ? '' : $('wifiPass').value;
+    const bytes = t => new TextEncoder().encode(t).length;
+    if (!placa) return;
+    if (!ssid || bytes(ssid) > 32) { aviso('O nome da rede precisa ter de 1 a 32 caracteres.'); return; }
+    if (!aberta && (bytes(senha) < 8 || bytes(senha) > 64)) { aviso('A senha Wi-Fi precisa ter de 8 a 64 caracteres.'); return; }
+    if (!aberta && !placa.pubkey) { aviso('A placa ainda não publicou a chave para cifrar a senha.'); return; }
+    const extras = {ssid, position: Number($('wifiPos').value), open: aberta};
+    try {
+      if (!aberta) Object.assign(extras, await cifrarSenha(placa.pubkey, ssid, senha));
+    } catch (erro) {
+      aviso('Não foi possível cifrar a senha neste navegador: ' + erro.message);
+      return;
+    }
+    if (publicar('wifi_add', extras)) {
+      aviso(`Enviando "${ssid}" (senha cifrada)…`);
+      $('wifiPass').value = '';
+    }
+  });
+
+  function conectar() {
+    let cfg;
+    try { cfg = lerConfiguracao(); } catch (e) { aviso(e.message); return; }
+    if (!window.mqtt?.connect) { aviso('Biblioteca MQTT indisponível.'); return; }
+    if (client) client.end(true);
+    prefixo = cfg.p;
+    dispositivos = cfg.d;
+    for (const k of Object.keys(placas)) delete placas[k];
+    ordemEditada = null;
+    pendente = null;
+    const ativo = window.mqtt.connect(cfg.url, {
+      clientId: `iotmotor_wifi_${Math.random().toString(36).slice(2, 12)}`,
+      clean: true, reconnectPeriod: 4000, connectTimeout: 10000, protocolVersion: 4, keepalive: 30
+    });
+    client = ativo;
+    ativo.on('connect', () => {
+      if (client !== ativo) return;
+      connected = true;
+      const topicos = dispositivos.flatMap(d => [topico(d, 'wifi'), topico(d, 'command_ack')]);
+      ativo.subscribe(topicos, {qos: 1});
+      renderizar();
+    });
+    ativo.on('message', (nome, payload) => {
+      if (client !== ativo) return;
+      let dados;
+      try { dados = JSON.parse(payload.toString('utf8')); } catch { return; }
+      const dev = dispositivos.find(d => nome === topico(d, 'wifi') || nome === topico(d, 'command_ack'));
+      if (!dev || dados?.device_id !== dev) return;
+      if (nome === topico(dev, 'wifi')) {
+        if (!Array.isArray(dados.networks)) return;
+        placas[dev] = {
+          pubkey: typeof dados.pubkey === 'string' ? dados.pubkey : '',
+          networks: dados.networks.filter(r => r && typeof r.ssid === 'string')
+            .map(r => ({ssid: r.ssid, open: r.open === true})),
+          connected: typeof dados.connected === 'string' ? dados.connected : '',
+          max: Number(dados.max) || 8,
+          em: Date.now()
+        };
+        if (dev === dispositivos[selecionado] && !pendente) ordemEditada = null;
+      } else if (pendente && dados.seq === pendente.seq) {
+        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
+        if (dados.accepted) ordemEditada = null;
+        pendente = null;
+      }
+      renderizar();
+    });
+    const caiu = () => { if (client === ativo) { connected = false; renderizar(); } };
+    ativo.on('offline', caiu);
+    ativo.on('close', caiu);
+    renderizar();
+  }
+
+  function desconectar() {
+    if (client) client.end(true);
+    client = null;
+    connected = false;
+    pendente = null;
+    renderizar();
+  }
+
+  // Ligado ao botao Conectar/Desconectar do painel (dual-dashboard.js).
+  window.iotmotorWifi = {connect: conectar, disconnect: desconectar};
+  renderizar();
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = {cifrarSenha, ROTULO_KDF};
