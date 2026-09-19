@@ -64,11 +64,15 @@ jobs:
           flutter build apk --release --build-number="$(date -u '+%y%m%d%H')" \
             --dart-define=IOTMOTOR_BUILD="$SELO"
       - name: Check APK signature
-        # Deve mostrar CN=IoTMotor; "Android Debug" indicaria a chave errada.
+        # O APK usa so assinatura v2/v3 (keytool -jarfile nao le): apksigner.
+        # Deve mostrar CN=IoTMotor; qualquer outra chave impede atualizar.
         run: |
-          keytool -printcert -jarfile build/app/outputs/flutter-apk/app-release.apk | tee certificado.txt | grep -E "Owner:|SHA256:"
-          if grep -q "Android Debug" certificado.txt; then
-            echo "::error::APK assinado com a chave de depuracao."
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER="$(find "$SDK/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          echo "apksigner: $APKSIGNER"
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | tee certificado.txt
+          if ! grep -q "CN=IoTMotor" certificado.txt; then
+            echo "::error::APK nao esta assinado com a chave de publicacao IoTMotor."
             exit 1
           fi
       - name: Upload APK
