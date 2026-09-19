@@ -150,6 +150,63 @@ class MqttMotorService {
     return true;
   }
 
+  int _ultimaSequencia = 0;
+
+  /// Número de sequência crescente exigido pelo firmware (recusa repetidos).
+  String _proximaSequencia() {
+    final DateTime agora = DateTime.now();
+    final int candidata = agora.microsecondsSinceEpoch;
+    _ultimaSequencia =
+        candidata > _ultimaSequencia ? candidata : _ultimaSequencia + 1;
+    return '$_ultimaSequencia';
+  }
+
+  /// Partida e parada da bancada no formato do firmware (v:1).
+  ///
+  /// Mesmo protocolo da página: `start` exige o `boot` publicado na telemetria
+  /// atual da placa e um perfil (direta com máscara ou sequência
+  /// estrela-triângulo); `stop` é sempre aceito.
+  bool sendBenchCommand({
+    required String deviceId,
+    required String action,
+    String boot = '',
+    String mode = 'none',
+    int mask = 0,
+    int main = 0,
+    int star = 0,
+    int delta = 0,
+    int seconds = 0,
+  }) {
+    final MqttServerClient? client = _client;
+    final MqttConnectionConfig? config = _activeConfig;
+    if (client == null ||
+        config == null ||
+        client.connectionStatus?.state != MqttConnectionState.connected) {
+      return false;
+    }
+    final String payload = jsonEncode(<String, dynamic>{
+      'v': 1,
+      'device_id': deviceId,
+      'seq': _proximaSequencia(),
+      'action': action,
+      'boot': boot,
+      'mode': mode,
+      'mask': mask,
+      'main': main,
+      'star': star,
+      'delta': delta,
+      'seconds': seconds,
+    });
+    final MqttClientPayloadBuilder builder =
+        MqttClientPayloadBuilder()..addString(payload);
+    client.publishMessage(
+      config.commandTopicForDevice(deviceId),
+      MqttQos.atLeastOnce,
+      builder.payload!,
+    );
+    return true;
+  }
+
   /// Comandos de manutenção do ESP32: `wifi_portal` e `update`.
   ///
   /// A senha do Wi-Fi nunca é enviada por aqui: `wifi_portal` só pede que a

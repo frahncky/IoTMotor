@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
@@ -170,6 +171,10 @@ class MotorControlController extends ChangeNotifier {
       <String, TelemetrySample>{};
   final Map<String, String> _statusByDevice = <String, String>{};
   final Map<String, bool> _motorOnByDevice = <String, bool>{};
+  // Da telemetria do ESP32 de comandos: sessão exigida pela partida e estado
+  // lógico dos quatro contatores (CNT 1 a CNT 4).
+  final Map<String, String> _bootByDevice = <String, String>{};
+  final Map<String, List<bool>> _relaysByDevice = <String, List<bool>>{};
   final Map<String, String> _modeByDevice = <String, String>{};
   final Map<String, DateTime> _lastSeenByDevice = <String, DateTime>{};
   final Map<String, DateTime> _lastTelemetryReceivedByDevice =
@@ -609,20 +614,70 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
+  /// Liga ou desliga os contatores no formato do firmware (v:1), o mesmo da
+  /// página. A partida usa os mesmos perfis padrão da página: direta liga o
+  /// CNT 1; estrela-triângulo usa principal CNT 1, estrela CNT 2, triângulo
+  /// CNT 3 e 5 s em estrela.
   Future<void> sendCommand(MotorCommandType type) async {
-    final String? requestId = _service.requestCommand(
-      type: type,
-      reason: 'automatic_dispatch',
-    );
-    if (requestId == null) {
-      _pendingMessage = 'Conecte-se ao broker antes de enviar comandos.';
+    final String? dev = _benchDeviceId;
+    if (dev == null) {
+      _pendingMessage =
+          'Aguardando telemetria do ESP32 de comandos para saber os contatores.';
       _notify();
       return;
     }
 
+    final bool enviado;
+    if (type.isStop) {
+      enviado = _service.sendBenchCommand(deviceId: dev, action: 'stop');
+    } else {
+      final String? boot = _bootByDevice[dev];
+      final DateTime? ultima = _lastTelemetryReceivedByDevice[dev];
+      if (boot == null ||
+          ultima == null ||
+          DateTime.now().difference(ultima) > const Duration(seconds: 10)) {
+        _pendingMessage =
+            'Sem telemetria recente de $dev: a partida exige a sessão atual da placa.';
+        _notify();
+        return;
+      }
+      if (_relaysByDevice[dev]?.any((ligado) => ligado) ?? false) {
+        _pendingMessage = 'Há contatores ligados; desligue antes de iniciar.';
+        _notify();
+        return;
+      }
+      final String modo = type.mode.toLowerCase();
+      final bool estrelaTriangulo =
+          modo.contains('star') || modo.contains('sequence') || modo.contains('estrela');
+      enviado =
+          estrelaTriangulo
+              ? _service.sendBenchCommand(
+                deviceId: dev,
+                action: 'start',
+                boot: boot,
+                mode: 'sequence',
+                main: 1,
+                star: 2,
+                delta: 3,
+                seconds: 5,
+              )
+              : _service.sendBenchCommand(
+                deviceId: dev,
+                action: 'start',
+                boot: boot,
+                mode: 'direct',
+                mask: 1,
+              );
+    }
+
+    if (!enviado) {
+      _pendingMessage = 'Conecte-se ao broker antes de enviar comandos.';
+      _notify();
+      return;
+    }
     lastCommandType = type;
     lastCommandAt = DateTime.now();
-    statusMessage = 'Comando em broadcast ($requestId): ${type.label}.';
+    statusMessage = 'Comando enviado a $dev: ${type.label}.';
     _notify();
   }
 
@@ -930,6 +985,8 @@ class MotorControlController extends ChangeNotifier {
     _latestByDevice.clear();
     _statusByDevice.clear();
     _motorOnByDevice.clear();
+    _bootByDevice.clear();
+    _relaysByDevice.clear();
     _modeByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
     _lastTelemetryStale = false;
@@ -1258,6 +1315,7 @@ class MotorControlController extends ChangeNotifier {
     _latestByDevice[deviceId] = sample;
     _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
+    _syncBenchFromTelemetry(deviceId: deviceId, payload: payload);
 
     _addSampleToHistory(deviceId: deviceId, sample: sample);
 
@@ -1689,6 +1747,44 @@ class MotorControlController extends ChangeNotifier {
     if (normalizedMode.isNotEmpty) {
       _modeByDevice[deviceId] = normalizedMode;
     }
+  }
+
+  /// O firmware atual publica `boot` e `relays` (em vez de `motor_on`):
+  /// o motor conta como ligado quando algum contator está ligado.
+  void _syncBenchFromTelemetry({
+    required String deviceId,
+    required String payload,
+  }) {
+    final Object? dados;
+    try {
+      dados = jsonDecode(payload);
+    } catch (_) {
+      return;
+    }
+    if (dados is! Map<String, dynamic>) return;
+    final Object? boot = dados['boot'];
+    if (boot is String && RegExp(r'^[0-9a-f]{16}$').hasMatch(boot)) {
+      _bootByDevice[deviceId] = boot;
+    }
+    final Object? relays = dados['relays'];
+    if (relays is List && relays.length == 4 && relays.every((v) => v is bool)) {
+      final List<bool> estados = relays.cast<bool>();
+      _relaysByDevice[deviceId] = estados;
+      _motorOnByDevice[deviceId] = estados.any((ligado) => ligado);
+    }
+  }
+
+  /// Placa que aciona os contatores: a selecionada, se publicar `relays`;
+  /// senão a primeira que publicar.
+  String? get _benchDeviceId {
+    if (_relaysByDevice.containsKey(selectedDeviceId)) return selectedDeviceId;
+    return _relaysByDevice.keys.isEmpty ? null : _relaysByDevice.keys.first;
+  }
+
+  /// Estado lógico de CNT 1 a CNT 4 informado pela placa de comandos.
+  List<bool>? get benchRelays {
+    final String? dev = _benchDeviceId;
+    return dev == null ? null : _relaysByDevice[dev];
   }
 
   TelemetryAlert? _evaluateTelemetryAlerts({
