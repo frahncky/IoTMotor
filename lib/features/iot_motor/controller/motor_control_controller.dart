@@ -646,27 +646,30 @@ class MotorControlController extends ChangeNotifier {
         _notify();
         return;
       }
-      final String modo = type.mode.toLowerCase();
-      final bool estrelaTriangulo =
-          modo.contains('star') || modo.contains('sequence') || modo.contains('estrela');
+      if (!type.profileIsValid) {
+        _pendingMessage = 'Revise os contatores da partida "${type.label}".';
+        _notify();
+        return;
+      }
+      // Contatores definidos no editor de partidas (tela Início).
       enviado =
-          estrelaTriangulo
+          type.sequence
               ? _service.sendBenchCommand(
                 deviceId: dev,
                 action: 'start',
                 boot: boot,
                 mode: 'sequence',
-                main: 1,
-                star: 2,
-                delta: 3,
-                seconds: 5,
+                main: type.main,
+                star: type.star,
+                delta: type.delta,
+                seconds: type.seconds,
               )
               : _service.sendBenchCommand(
                 deviceId: dev,
                 action: 'start',
                 boot: boot,
                 mode: 'direct',
-                mask: 1,
+                mask: type.mask,
               );
     }
 
@@ -889,7 +892,38 @@ class MotorControlController extends ChangeNotifier {
     }
   }
 
-  String? addStartType({required String label, required String mode}) {
+  /// Perfil (contatores) informado pelo editor de partidas.
+  MotorCommandType _comPerfil(
+    MotorCommandType base, {
+    required bool sequence,
+    required int mask,
+    required int main,
+    required int star,
+    required int delta,
+    required int seconds,
+  }) {
+    return base.copyAsStart(
+      label: base.label,
+      mode: base.mode,
+      sequence: sequence,
+      mask: mask,
+      main: main,
+      star: star,
+      delta: delta,
+      seconds: seconds,
+    );
+  }
+
+  String? addStartType({
+    required String label,
+    required String mode,
+    bool sequence = false,
+    int mask = 1,
+    int main = 1,
+    int star = 2,
+    int delta = 3,
+    int seconds = 5,
+  }) {
     final String normalizedLabel = _normalizeLabel(label);
     if (normalizedLabel.isEmpty) {
       _pendingMessage = 'Informe o nome da partida.';
@@ -906,11 +940,20 @@ class MotorControlController extends ChangeNotifier {
 
     final String id =
         'custom_${DateTime.now().millisecondsSinceEpoch}_${_startTypes.length}';
-    final MotorCommandType type = MotorCommandType.start(
-      id: id,
-      label: normalizedLabel,
-      mode: normalizedMode,
+    final MotorCommandType type = _comPerfil(
+      MotorCommandType.start(id: id, label: normalizedLabel, mode: normalizedMode),
+      sequence: sequence,
+      mask: mask,
+      main: main,
+      star: star,
+      delta: delta,
+      seconds: seconds,
     );
+    if (!type.profileIsValid) {
+      _pendingMessage = 'Contatores inválidos para esta partida.';
+      _notify();
+      return null;
+    }
     _startTypes.add(type);
     unawaited(_persistStartTypes());
     _pendingMessage = 'Partida "$normalizedLabel" adicionada.';
@@ -922,6 +965,12 @@ class MotorControlController extends ChangeNotifier {
     required String id,
     required String label,
     required String mode,
+    bool? sequence,
+    int? mask,
+    int? main,
+    int? star,
+    int? delta,
+    int? seconds,
   }) {
     final int index = _startTypes.indexWhere(
       (MotorCommandType item) => item.id == id,
@@ -946,10 +995,22 @@ class MotorControlController extends ChangeNotifier {
       return false;
     }
 
-    _startTypes[index] = _startTypes[index].copyAsStart(
+    final MotorCommandType atualizado = _startTypes[index].copyAsStart(
       label: normalizedLabel,
       mode: normalizedMode,
+      sequence: sequence,
+      mask: mask,
+      main: main,
+      star: star,
+      delta: delta,
+      seconds: seconds,
     );
+    if (!atualizado.profileIsValid) {
+      _pendingMessage = 'Contatores inválidos para esta partida.';
+      _notify();
+      return false;
+    }
+    _startTypes[index] = atualizado;
     unawaited(_persistStartTypes());
     _pendingMessage = 'Partida "$normalizedLabel" atualizada.';
     _notify();
@@ -1781,6 +1842,11 @@ class MotorControlController extends ChangeNotifier {
     return _relaysByDevice.keys.isEmpty ? null : _relaysByDevice.keys.first;
   }
 
+  /// Ligado quando algum contator da placa de comandos está ligado. É o que
+  /// decide Ligar/Desligar: a "placa selecionada" em modo automático alterna
+  /// entre o ESP32-01 e o S3, que não tem contatores.
+  bool get isBenchMotorOn => benchRelays?.any((ligado) => ligado) ?? false;
+
   /// Estado lógico de CNT 1 a CNT 4 informado pela placa de comandos.
   List<bool>? get benchRelays {
     final String? dev = _benchDeviceId;
@@ -2094,7 +2160,17 @@ class MotorControlController extends ChangeNotifier {
               : id;
 
       normalized.add(
-        MotorCommandType.start(id: normalizedId, label: label, mode: mode),
+        MotorCommandType.start(
+          id: normalizedId,
+          label: label,
+          mode: mode,
+          sequence: raw.sequence,
+          mask: raw.mask,
+          main: raw.main,
+          star: raw.star,
+          delta: raw.delta,
+          seconds: raw.seconds,
+        ),
       );
     }
 

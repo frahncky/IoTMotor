@@ -32,13 +32,41 @@ jobs:
           cache: true
       - name: Install dependencies
         run: flutter pub get
+      # Chave de publicacao fixa (segredos do repositorio). Sem ela cada build
+      # teria outra assinatura e o Android exigiria desinstalar para atualizar,
+      # entao o workflow para aqui em vez de publicar um APK incompativel.
+      - name: Restore release signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Segredos ANDROID_KEYSTORE_* ausentes: o APK sairia com assinatura diferente."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/iotmotor-release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/iotmotor-release.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > android/key.properties
       - name: Build Android APK
         # O selo do build vai dentro do APK e no app-latest.json: e assim que o
         # app sabe se ha versao mais nova, ja que a versao do pubspec nao muda.
+        # O build-number (versionCode) cresce a cada build: o Android recusa
+        # instalar uma versao "menor" por cima da instalada.
         run: |
           SELO="$(date -u '+%Y%m%d%H%M')"
           echo "IOTMOTOR_BUILD=$SELO" >> "$GITHUB_ENV"
-          flutter build apk --release --dart-define=IOTMOTOR_BUILD="$SELO"
+          flutter build apk --release --build-number="$(date -u '+%y%m%d%H')" \
+            --dart-define=IOTMOTOR_BUILD="$SELO"
+      - name: Check APK signature
+        run: |
+          APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --print-certs build/app/outputs/flutter-apk/app-release.apk | grep -E "Signer #1 certificate (DN|SHA-256)"
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

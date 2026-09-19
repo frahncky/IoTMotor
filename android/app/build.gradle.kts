@@ -1,8 +1,18 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Chave de publicacao fixa (android/key.properties, fora do Git). O Android so
+// aceita atualizar o app por cima se todas as versoes tiverem a mesma chave.
+// Sem o arquivo, o build release usa a chave de depuracao desta maquina.
+val chaveDePublicacao = Properties().apply {
+    val arquivo = rootProject.file("key.properties")
+    if (arquivo.exists()) arquivo.inputStream().use { load(it) }
 }
 
 android {
@@ -30,11 +40,21 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (chaveDePublicacao.getProperty("storeFile") != null) {
+            create("publicacao") {
+                storeFile = file(chaveDePublicacao.getProperty("storeFile"))
+                storePassword = chaveDePublicacao.getProperty("storePassword")
+                keyAlias = chaveDePublicacao.getProperty("keyAlias")
+                keyPassword = chaveDePublicacao.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig =
+                signingConfigs.findByName("publicacao") ?: signingConfigs.getByName("debug")
         }
     }
 }

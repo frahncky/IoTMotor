@@ -283,7 +283,7 @@ class _InicioTabState extends State<InicioTab> {
   }) {
     final bool connected = widget.controller.isConnected;
     final bool canSend = connected && !widget.controller.isBusy;
-    final bool motorOn = widget.controller.isSelectedDeviceMotorOn;
+    final bool motorOn = widget.controller.isBenchMotorOn;
     const double controlHeight = 50;
     const double selectorHeight = 74;
 
@@ -436,10 +436,23 @@ class _InicioTabState extends State<InicioTab> {
                           child: Row(
                             children: <Widget>[
                               Expanded(
-                                child: Text(
-                                  type.label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Text(
+                                      type.label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    // Contatores que esta partida aciona.
+                                    Text(
+                                      type.profileSummary,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                  ],
                                 ),
                               ),
                               if (type.id == selectedStartType.id)
@@ -623,62 +636,177 @@ class _InicioTabState extends State<InicioTab> {
     MotorCommandType? initial,
   }) async {
     String label = initial?.label ?? '';
-    String mode = initial?.mode ?? '';
+    // O modo so identifica a partida internamente; o que vai para a placa sao
+    // os contatores abaixo. Partida nova: modo gerado pelo nome.
+    final String mode = initial?.mode ?? '';
+    bool sequence = initial?.sequence ?? false;
+    int mask = initial?.mask ?? 1;
+    int main = initial?.main ?? 1;
+    int star = initial?.star ?? 2;
+    int delta = initial?.delta ?? 3;
+    int seconds = initial?.seconds ?? 5;
+
+    String? problema() {
+      if (label.trim().isEmpty) return 'Informe o nome da partida.';
+      if (!sequence) return mask == 0 ? 'Escolha ao menos um contator.' : null;
+      if (<int>{main, star, delta}.length != 3) {
+        return 'Principal, estrela e tri\u00e2ngulo precisam ser contatores diferentes.';
+      }
+      return null;
+    }
+
+    Widget seletorContator(
+      String rotulo,
+      int valor,
+      ValueChanged<int> aoMudar,
+    ) {
+      return SizedBox(
+        width: 124,
+        child: DropdownButtonFormField<int>(
+          initialValue: valor,
+          decoration: InputDecoration(labelText: rotulo),
+          items: <DropdownMenuItem<int>>[
+            for (int c = 1; c <= 4; c++)
+              DropdownMenuItem<int>(value: c, child: Text('CNT $c')),
+          ],
+          onChanged: (int? novo) {
+            if (novo != null) aoMudar(novo);
+          },
+        ),
+      );
+    }
 
     final bool? save = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text(initial == null ? 'Nova partida' : 'Editar partida'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                TextFormField(
-                  initialValue: label,
-                  autofocus: true,
-                  maxLength: 40,
-                  onChanged: (String value) {
-                    label = value;
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Nome da partida',
-                    hintText: 'Ex.: Soft Starter',
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter atualizar) {
+            final String? erro = problema();
+            return AlertDialog(
+              title: Text(initial == null ? 'Nova partida' : 'Editar partida'),
+              content: SizedBox(
+                width: 440,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      TextFormField(
+                        initialValue: label,
+                        autofocus: initial == null,
+                        maxLength: 40,
+                        onChanged: (String value) => atualizar(() => label = value),
+                        decoration: const InputDecoration(
+                          labelText: 'Nome da partida',
+                          hintText: 'Ex.: Direta com CNT 1 e CNT 4',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SegmentedButton<bool>(
+                        segments: const <ButtonSegment<bool>>[
+                          ButtonSegment<bool>(value: false, label: Text('Direta')),
+                          ButtonSegment<bool>(
+                            value: true,
+                            label: Text('Estrela-tri\u00e2ngulo'),
+                          ),
+                        ],
+                        selected: <bool>{sequence},
+                        onSelectionChanged:
+                            (Set<bool> escolha) =>
+                                atualizar(() => sequence = escolha.first),
+                      ),
+                      const SizedBox(height: 14),
+                      if (!sequence) ...<Widget>[
+                        Text(
+                          'Contatores ligados juntos',
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: <Widget>[
+                            for (int i = 0; i < 4; i++)
+                              FilterChip(
+                                label: Text('CNT ${i + 1}'),
+                                selected: mask & (1 << i) != 0,
+                                onSelected:
+                                    (bool marcado) => atualizar(
+                                      () =>
+                                          mask =
+                                              marcado
+                                                  ? mask | (1 << i)
+                                                  : mask & ~(1 << i),
+                                    ),
+                              ),
+                          ],
+                        ),
+                      ] else ...<Widget>[
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: <Widget>[
+                            seletorContator(
+                              'Principal',
+                              main,
+                              (int v) => atualizar(() => main = v),
+                            ),
+                            seletorContator(
+                              'Estrela',
+                              star,
+                              (int v) => atualizar(() => star = v),
+                            ),
+                            seletorContator(
+                              'Tri\u00e2ngulo',
+                              delta,
+                              (int v) => atualizar(() => delta = v),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Tempo em estrela: $seconds s',
+                          style: Theme.of(context).textTheme.labelLarge,
+                        ),
+                        Slider(
+                          value: seconds.toDouble(),
+                          min: 2,
+                          max: 30,
+                          divisions: 28,
+                          label: '$seconds s',
+                          onChanged:
+                              (double v) => atualizar(() => seconds = v.round()),
+                        ),
+                      ],
+                      if (erro != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            erro,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                TextFormField(
-                  initialValue: mode,
-                  onChanged: (String value) {
-                    mode = value;
-                  },
-                  decoration: const InputDecoration(
-                    labelText: 'Modo (payload)',
-                    hintText: 'Ex.: soft_starter',
-                  ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancelar'),
                 ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Se deixar o modo vazio, ele ser\u00e1 gerado pelo nome.',
-                    style: Theme.of(dialogContext).textTheme.bodySmall,
-                  ),
+                FilledButton(
+                  onPressed:
+                      erro == null
+                          ? () => Navigator.of(dialogContext).pop(true)
+                          : null,
+                  child: const Text('Salvar'),
                 ),
               ],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Salvar'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -693,7 +821,16 @@ class _InicioTabState extends State<InicioTab> {
       }
 
       if (initial == null) {
-        widget.controller.addStartType(label: label, mode: mode);
+        widget.controller.addStartType(
+          label: label,
+          mode: mode,
+          sequence: sequence,
+          mask: mask,
+          main: main,
+          star: star,
+          delta: delta,
+          seconds: seconds,
+        );
         return;
       }
 
@@ -701,6 +838,12 @@ class _InicioTabState extends State<InicioTab> {
         id: initial.id,
         label: label,
         mode: mode,
+        sequence: sequence,
+        mask: mask,
+        main: main,
+        star: star,
+        delta: delta,
+        seconds: seconds,
       );
     });
   }
