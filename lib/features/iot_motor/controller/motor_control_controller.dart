@@ -82,14 +82,21 @@ class MotorControlController extends ChangeNotifier {
   }
 
   // Construtor para injetar config MQTT diretamente
+  /// Monta o controlador a partir do perfil MQTT ativo.
+  ///
+  /// O perfil é o ponto de partida; o que o usuário digitar depois nos campos
+  /// de conexão é gravado e, ao reabrir o app, prevalece sobre o perfil — a
+  /// menos que o perfil ativo tenha mudado, quando o perfil novo é quem vale.
   factory MotorControlController.withMqttConfig(
     MqttConnectionConfig config, {
     MqttMotorService? service,
+    String profileId = '',
   }) {
     final controller = MotorControlController(
       service: service,
-      loadSettings: false,
+      loadSettings: true,
     );
+    controller.activeProfileId = profileId;
     controller.brokerController.text = config.host;
     controller.portController.text = config.port.toString();
     controller.clientIdController.text = config.clientId;
@@ -150,6 +157,8 @@ class MotorControlController extends ChangeNotifier {
   bool _startTypesLoaded = false;
   bool _settingsLoaded = false;
   bool _settingsRestored = false;
+  /// Perfil MQTT que montou esta tela (vazio fora do app com perfis).
+  String activeProfileId = '';
   bool _historyLoaded = false;
   bool _alertsLoaded = false;
   String? _pendingMessage;
@@ -782,13 +791,19 @@ class MotorControlController extends ChangeNotifier {
         return;
       }
 
-      brokerController.text = settings.broker;
-      portController.text = settings.port;
-      clientIdController.text = settings.clientId;
-      topicPrefixController.text = settings.topicPrefix;
-      usernameController.text = settings.username;
+      // Conexão: o que estava salvo vale, exceto quando o perfil MQTT ativo
+      // mudou — aí quem manda é o perfil novo, que já preencheu os campos.
+      final bool mesmoPerfil =
+          activeProfileId.isEmpty || settings.profileId == activeProfileId;
+      if (mesmoPerfil) {
+        brokerController.text = settings.broker;
+        portController.text = settings.port;
+        clientIdController.text = settings.clientId;
+        topicPrefixController.text = settings.topicPrefix;
+        usernameController.text = settings.username;
+        useTls = settings.useTls;
+      }
       passwordController.clear();
-      useTls = settings.useTls;
       telemetryAlertsEnabled = settings.telemetryAlertsEnabled;
       voltageMinController.text = settings.voltageMin;
       voltageMaxController.text = settings.voltageMax;
@@ -2231,6 +2246,7 @@ class MotorControlController extends ChangeNotifier {
 
   MotorAppSettings _buildSettingsSnapshot() {
     return MotorAppSettings(
+      profileId: activeProfileId,
       broker: brokerController.text.trim(),
       port: portController.text.trim(),
       clientId: clientIdController.text.trim(),

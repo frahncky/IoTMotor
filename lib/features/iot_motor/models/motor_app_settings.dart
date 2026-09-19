@@ -29,6 +29,7 @@ class MotorAppSettings {
     this.mechanicalPlotBId = defaultMechanicalPlotBId,
     this.historyRetentionDays = defaultHistoryRetentionDays,
     this.remoteHistoryRetentionDays = defaultRemoteHistoryRetentionDays,
+    this.profileId = '',
   });
 
   factory MotorAppSettings.initial() {
@@ -114,6 +115,10 @@ class MotorAppSettings {
     );
   }
 
+  /// Perfil MQTT a que esta conexão pertence. Trocar de perfil descarta o
+  /// que estava salvo e passa a valer a configuração do perfil novo.
+  final String profileId;
+
   static MotorAppSettings? fromMap(Map<String, dynamic> map) {
     final String broker = '${map['broker'] ?? ''}'.trim();
     final String port = '${map['port'] ?? ''}'.trim();
@@ -161,6 +166,7 @@ class MotorAppSettings {
         map['remote_history_retention_days'] ?? map['remote_retention_days'],
         fallback: defaultRemoteHistoryRetentionDays,
       ),
+      profileId: '${map['profile_id'] ?? ''}'.trim(),
     );
   }
 
@@ -185,6 +191,7 @@ class MotorAppSettings {
       'mechanical_plot_b': mechanicalPlotBId,
       'history_retention_days': historyRetentionDays,
       'remote_history_retention_days': remoteHistoryRetentionDays,
+      'profile_id': profileId,
     };
   }
 

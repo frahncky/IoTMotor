@@ -221,5 +221,8 @@ final motorControlControllerProvider =
         orElse: () => profilesState.profiles.first,
       );
 
-      return MotorControlController.withMqttConfig(activeProfile.config);
+      return MotorControlController.withMqttConfig(
+        activeProfile.config,
+        profileId: activeProfile.id,
+      );
     });
