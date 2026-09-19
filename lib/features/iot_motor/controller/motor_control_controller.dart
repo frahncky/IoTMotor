@@ -37,6 +37,23 @@ class MotorControlController extends ChangeNotifier {
     vibrationMaxController = TextEditingController(text: '1.5');
     temperatureMaxController = TextEditingController(text: '70');
 
+    // Sem isto, digitar broker, porta, client ID, prefixo, usuário ou limites
+    // não agendava a gravação: ao fechar o app, o que foi digitado se perdia.
+    for (final TextEditingController campo in <TextEditingController>[
+      brokerController,
+      portController,
+      clientIdController,
+      topicPrefixController,
+      usernameController,
+      voltageMinController,
+      voltageMaxController,
+      currentMaxController,
+      vibrationMaxController,
+      temperatureMaxController,
+    ]) {
+      campo.addListener(_scheduleSettingsPersist);
+    }
+
     _service.onConnected = _handleConnected;
     _service.onDisconnected = _handleDisconnected;
     _service.onAutoReconnect = _handleAutoReconnect;
@@ -54,6 +71,9 @@ class MotorControlController extends ChangeNotifier {
     if (loadSettings) {
       await loadPersistedSettings();
     }
+    // Só grava depois de ler o que estava salvo, senão os valores padrão
+    // sobrescreveriam o arquivo assim que o app abrisse.
+    _settingsRestored = true;
     await Future.wait([
       loadPersistedHistory(),
       loadPersistedAlerts(),
@@ -129,6 +149,7 @@ class MotorControlController extends ChangeNotifier {
   bool _disposed = false;
   bool _startTypesLoaded = false;
   bool _settingsLoaded = false;
+  bool _settingsRestored = false;
   bool _historyLoaded = false;
   bool _alertsLoaded = false;
   String? _pendingMessage;
@@ -568,6 +589,8 @@ class MotorControlController extends ChangeNotifier {
 
     isConnected = true;
     connectionMessage = result.message;
+    // Conexão bem-sucedida: grava estes dados sem esperar o próximo ajuste.
+    unawaited(_persistSettings());
 
     bool backgroundReady = false;
     try {
@@ -2189,7 +2212,7 @@ class MotorControlController extends ChangeNotifier {
   }
 
   void _scheduleSettingsPersist() {
-    if (_disposed) {
+    if (_disposed || !_settingsRestored) {
       return;
     }
     _settingsPersistTimer?.cancel();
