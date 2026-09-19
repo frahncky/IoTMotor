@@ -34,6 +34,10 @@
 <div class="wifi-actions"><button class="btn" type="button" id="wifiSaveOrder" disabled>Salvar ordem</button><button class="btn secondary" type="button" id="wifiUndoOrder" disabled>Desfazer</button></div>
 <h3>Adicionar rede</h3>
 <form id="wifiAddForm" class="wifi-form" autocomplete="off"><div class="field"><label for="wifiSsid">Nome da rede (SSID)</label><input id="wifiSsid" maxlength="32" required spellcheck="false"></div><div class="field"><label for="wifiPass">Senha</label><div class="pass"><input id="wifiPass" type="password" maxlength="64" autocomplete="new-password"><button type="button" class="btn secondary" id="wifiShowPass" aria-pressed="false">Mostrar</button></div></div><div class="field"><label for="wifiPos">Posição</label><select id="wifiPos"><option value="0">No topo (prioridade 1)</option><option value="-1">No fim da lista</option></select></div><label class="check"><input type="checkbox" id="wifiOpen"> Rede aberta (sem senha)</label><button class="btn" type="submit" id="wifiAddBtn" disabled>Adicionar</button></form>
+<h3>Rede própria da placa</h3>
+<p class="muted">A placa cria esta rede sozinha quando não encontra nenhuma rede da lista, ou quando você pede abaixo. Conecte o celular nela para cadastrar um Wi-Fi sem depender do painel.</p>
+<p class="wifi-status" id="apStatus">—</p>
+<form id="apForm" class="wifi-form" autocomplete="off"><div class="field"><label for="apName">Nome da rede da placa</label><input id="apName" maxlength="32" required spellcheck="false"></div><div class="field"><label for="apPass">Senha (8 a 63 caracteres)</label><input id="apPass" type="password" maxlength="63" autocomplete="new-password"></div><div class="field"><label class="check"><input type="checkbox" id="apOpen"> Sem senha (rede aberta)</label></div><button class="btn" type="submit" id="apSaveBtn" disabled>Salvar rede da placa</button><button class="btn secondary" type="button" id="apOpenNow" disabled>Abrir rede da placa agora</button></form>
 <p class="feedback" id="wifiFeedback" aria-live="polite">A senha é cifrada no navegador com a chave da placa: o broker público só vê o nome da rede.</p>
 </section>
 </div>

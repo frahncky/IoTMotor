@@ -20,6 +20,7 @@
 #include <mbedtls/sha256.h>
 #include <mbedtls/base64.h>
 #include <esp_random.h>
+#include <esp_wifi.h>
 
 namespace wifistore {
 
@@ -141,6 +142,20 @@ inline void carregar(const char* const* ssidsIniciais, const char* const* senhas
     antiga.end();
     if (ssid.length()) adicionar(ssid.c_str(), senha.c_str(), 0, false);
   }
+  // Rede que o driver de Wi-Fi lembra da ultima conexao (gravada pelo firmware
+  // anterior). E ela que mantem a placa na rede quando esta versao chega pela
+  // atualizacao OTA, que nao traz as senhas de wifi_local.h.
+  wifi_config_t lembrada = {};
+  if (esp_wifi_get_config(WIFI_IF_STA, &lembrada) == ESP_OK && lembrada.sta.ssid[0]) {
+    char ssid[MAX_SSID + 1] = {0};
+    char senha[MAX_SENHA + 1] = {0};
+    memcpy(ssid, lembrada.sta.ssid, MAX_SSID);
+    memcpy(senha, lembrada.sta.password, MAX_SENHA);
+    if (adicionar(ssid, senha, 0, false))
+      Serial.printf("[WiFi] rede lembrada pelo driver importada: %s\n", ssid);
+    memset(senha, 0, sizeof(senha));
+  }
+  memset(&lembrada, 0, sizeof(lembrada));
   salvar();
 }
 
@@ -263,6 +278,40 @@ inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
   return false;
 }
 
+// ---- Rede propria da placa (ponto de acesso usado pelo portal) ----
+// Nome e senha definidos pela aba "Wi-Fi" do painel; sem senha = rede aberta.
+inline char apNome[MAX_SSID + 1] = "";
+inline char apSenha[MAX_SENHA + 1] = "";
+
+inline void carregarRedePropria(const char* nomePadrao) {
+  Preferences memoria;
+  String nome, senha;
+  if (memoria.begin("iot-ap", true)) {
+    nome = memoria.getString("nome", "");
+    senha = memoria.getString("senha", "");
+    memoria.end();
+  }
+  strncpy(apNome, nome.length() ? nome.c_str() : nomePadrao, MAX_SSID);
+  apNome[MAX_SSID] = '\0';
+  strncpy(apSenha, senha.c_str(), MAX_SENHA);
+  apSenha[MAX_SENHA] = '\0';
+}
+
+inline bool salvarRedePropria(const char* nome, const char* senha) {
+  const size_t n = strlen(nome), s = strlen(senha);
+  if (!n || n > MAX_SSID || (s && (s < 8 || s > 63))) return false;  // WPA2: 8 a 63.
+  Preferences memoria;
+  if (!memoria.begin("iot-ap", false)) return false;
+  memoria.putString("nome", nome);
+  memoria.putString("senha", senha);
+  memoria.end();
+  strncpy(apNome, nome, MAX_SSID);
+  apNome[MAX_SSID] = '\0';
+  strncpy(apSenha, senha, MAX_SENHA);
+  apSenha[MAX_SENHA] = '\0';
+  return true;
+}
+
 enum class Resultado { NaoEWifi, Aceito, Recusado };
 
 // Comandos da aba "Wi-Fi" do painel: wifi_list, wifi_add, wifi_remove e
@@ -296,6 +345,20 @@ inline Resultado tratarComando(const char* acao, JsonVariantConst doc, const cha
     motivo = ok ? "rede removida" : "rede nao encontrada";
     return ok ? Resultado::Aceito : Resultado::Recusado;
   }
+  if (!strcmp(acao, "wifi_ap")) {  // Nome e senha da rede propria da placa.
+    const char* nome = doc["name"] | "";
+    char senha[MAX_SENHA + 1] = "";
+    const bool aberta = doc["open"] | false;
+    if (!aberta && !decifrarSenha(nome, doc["epk"] | "", doc["iv"] | "", doc["ct"] | "",
+                                   senha, sizeof(senha))) {
+      motivo = "senha nao pode ser decifrada";
+      return Resultado::Recusado;
+    }
+    const bool ok = salvarRedePropria(nome, senha);
+    memset(senha, 0, sizeof(senha));
+    motivo = ok ? "rede da placa configurada" : "nome de 1 a 32 caracteres e senha de 8 a 63";
+    return ok ? Resultado::Aceito : Resultado::Recusado;
+  }
   if (!strcmp(acao, "wifi_order")) {
     const bool ok = reordenar(doc["order"].as<JsonArrayConst>());
     motivo = ok ? "ordem gravada" : "ordem invalida";
@@ -314,6 +377,9 @@ inline void descrever(JsonDocument& doc) {
     rede["open"] = !*redes[i].senha;
   }
   doc["max"] = MAX_REDES;
+  JsonObject propria = doc.createNestedObject("ap");
+  propria["name"] = apNome;
+  propria["open"] = !*apSenha;
   if (WiFi.status() == WL_CONNECTED) doc["connected"] = WiFi.SSID();
   if (chavesProntas) {
     unsigned char texto[96];

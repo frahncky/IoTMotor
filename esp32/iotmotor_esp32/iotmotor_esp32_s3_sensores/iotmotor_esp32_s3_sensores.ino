@@ -258,9 +258,9 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   }
   // Portal de cadastro na propria placa (ultimo recurso).
   if(!strcmp(acao,"wifi_portal")) {
-    publishAck(seq,acao,true,"portal " PORTAL_NOME " aberto por 180 s");
+    publishAck(seq,acao,true,"rede da placa aberta por 180 s");
     delay(200);
-    abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS);
+    abrirPortalDeRede(PORTAL_SEGUNDOS);
     ESP.restart();
     return;
   }
@@ -296,9 +296,10 @@ void setup() {
   WiFi.mode(WIFI_STA);
   wifistore::carregar(REDES_INICIAIS,SENHAS_INICIAIS,sizeof(REDES_INICIAIS)/sizeof(REDES_INICIAIS[0]));
   wifistore::prepararChaves();
+  wifistore::carregarRedePropria(PORTAL_NOME);
   Serial.printf("[S3/Wi-Fi] %u rede(s) na lista da placa\n",wifistore::total);
   // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
-  if(!wifistore::conectarEmOrdem(10000))abrirPortalDeRede(PORTAL_NOME,PORTAL_SEGUNDOS);
+  if(!wifistore::conectarEmOrdem(10000))abrirPortalDeRede(PORTAL_SEGUNDOS);
   Serial.printf("[S3/boot] %s broker=%s:%u\n",DEVICE_ID,MQTT_HOST,MQTT_PORT);
 }
 

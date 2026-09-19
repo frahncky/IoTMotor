@@ -158,7 +158,23 @@ if (typeof document !== 'undefined') (() => {
     $('wifiAddBtn').disabled = !connected || !placa || Boolean(pendente) ||
       (!$('wifiOpen').checked && !placa.pubkey);
     $('wifiPass').disabled = $('wifiOpen').checked;
+
+    // Rede propria da placa (ponto de acesso).
+    const ap = placa?.ap;
+    $('apStatus').textContent = !placa ? '—' : ap
+      ? `Rede da placa: "${ap.name}" · ${ap.open ? 'aberta (sem senha)' : 'protegida por senha'}.`
+      : 'A placa não informou a rede própria (firmware antigo?).';
+    if (ap && apMostrada !== dev + '|' + ap.name) {  // Preenche ao trocar de placa ou ao receber.
+      apMostrada = dev + '|' + ap.name;
+      $('apName').value = ap.name;
+      $('apOpen').checked = ap.open;
+    }
+    $('apPass').disabled = $('apOpen').checked;
+    const livre = connected && Boolean(placa) && !pendente;
+    $('apSaveBtn').disabled = !livre || (!$('apOpen').checked && !placa.pubkey);
+    $('apOpenNow').disabled = !livre;
   }
+  let apMostrada = '';
 
   function mover(indice, passo) {
     const placa = atual();
@@ -234,6 +250,37 @@ if (typeof document !== 'undefined') (() => {
     }
   });
 
+  $('apOpen').addEventListener('change', renderizar);
+  $('apForm').addEventListener('submit', async evento => {
+    evento.preventDefault();
+    const placa = atual();
+    const nome = $('apName').value.trim();
+    const aberta = $('apOpen').checked;
+    const senha = aberta ? '' : $('apPass').value;
+    const bytes = t => new TextEncoder().encode(t).length;
+    if (!placa) return;
+    if (!nome || bytes(nome) > 32) { aviso('O nome da rede da placa precisa ter de 1 a 32 caracteres.'); return; }
+    if (!aberta && (bytes(senha) < 8 || bytes(senha) > 63)) { aviso('A senha da rede da placa precisa ter de 8 a 63 caracteres.'); return; }
+    const extras = {name: nome, open: aberta};
+    try {
+      if (!aberta) Object.assign(extras, await cifrarSenha(placa.pubkey, nome, senha));
+    } catch (erro) {
+      aviso('Não foi possível cifrar a senha neste navegador: ' + erro.message);
+      return;
+    }
+    if (publicar('wifi_ap', extras)) {
+      aviso(`Enviando a rede da placa "${nome}"${aberta ? '' : ' (senha cifrada)'}…`);
+      $('apPass').value = '';
+    }
+  });
+  $('apOpenNow').addEventListener('click', () => {
+    const placa = atual();
+    const nome = placa?.ap?.name || 'IoTMotor-';
+    if (!confirm(`A placa ${dispositivos[selecionado]} vai sair da rede atual e abrir a rede "${nome}" por 3 minutos.\n\n` +
+                 'Enquanto isso ela some do painel. Conecte o celular nessa rede para cadastrar um Wi-Fi.\n\nContinuar?')) return;
+    if (publicar('wifi_portal', {})) aviso(`Pedindo que ${dispositivos[selecionado]} abra a rede "${nome}"…`);
+  });
+
   function conectar() {
     let cfg;
     try { cfg = lerConfiguracao(); } catch (e) { aviso(e.message); return; }
@@ -269,6 +316,7 @@ if (typeof document !== 'undefined') (() => {
           networks: dados.networks.filter(r => r && typeof r.ssid === 'string')
             .map(r => ({ssid: r.ssid, open: r.open === true})),
           connected: typeof dados.connected === 'string' ? dados.connected : '',
+          ap: dados.ap && typeof dados.ap.name === 'string' ? {name: dados.ap.name, open: dados.ap.open === true} : null,
           max: Number(dados.max) || 8,
           em: Date.now()
         };

@@ -333,12 +333,13 @@ void setup() {
   wifistore::carregar(REDES_INICIAIS, SENHAS_INICIAIS,
                       sizeof(REDES_INICIAIS) / sizeof(REDES_INICIAIS[0]));
   wifistore::prepararChaves();
+  wifistore::carregarRedePropria(PORTAL_NOME);
   Serial.printf("[WiFi] %u rede(s) na lista da placa\n", wifistore::total);
   ultimaTentativaWifi = millis();
   // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
   if (!wifistore::conectarEmOrdem(10000)) {
-    imprimirLinhaCompleta(1, "Config WiFi: " PORTAL_NOME);
-    abrirPortalDeRede(PORTAL_NOME, PORTAL_SEGUNDOS);
+    imprimirLinhaCompleta(1, wifistore::apNome);  // Rede da placa aberta.
+    abrirPortalDeRede(PORTAL_SEGUNDOS);
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("[WiFi] IP: ");
