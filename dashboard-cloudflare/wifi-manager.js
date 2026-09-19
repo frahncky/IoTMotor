@@ -101,7 +101,8 @@ if (typeof document !== 'undefined') (() => {
     lista.replaceChildren();
 
     if (!connected) $('wifiStatus').textContent = 'Conecte ao MQTT (botão no topo) para ver e editar as redes.';
-    else if (!placa) $('wifiStatus').textContent = `Aguardando a lista de ${dev}. A placa precisa estar online e com o firmware atual.`;
+    else if (!placa) $('wifiStatus').textContent = `${dev} ainda não publicou a lista de redes. Se ela estiver online, ` +
+      'está com firmware antigo: use "Atualizar firmware desta placa".';
     else $('wifiStatus').textContent = placa.connected
       ? `${dev} conectada em "${placa.connected}". ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`
       : `${dev} publicou a lista, mas não informou a rede atual. ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`;
@@ -173,6 +174,8 @@ if (typeof document !== 'undefined') (() => {
     const livre = connected && Boolean(placa) && !pendente;
     $('apSaveBtn').disabled = !livre || (!$('apOpen').checked && !placa.pubkey);
     $('apOpenNow').disabled = !livre;
+    // Disponivel mesmo sem lista: e assim que uma placa com firmware antigo a recebe.
+    $('wifiUpdateFw').disabled = !connected || Boolean(pendente);
   }
   let apMostrada = '';
 
@@ -250,6 +253,12 @@ if (typeof document !== 'undefined') (() => {
     }
   });
 
+  $('wifiUpdateFw').addEventListener('click', () => {
+    const dev = dispositivos[selecionado];
+    if (!confirm(`A placa ${dev} vai baixar o firmware publicado no GitHub e reiniciar (cerca de 1 minuto fora do ar).\n\n` +
+                 'A placa de comandos recusa se houver contatores ligados.\n\nContinuar?')) return;
+    if (publicar('update', {})) aviso(`Pedindo que ${dev} atualize o firmware…`);
+  });
   $('apOpen').addEventListener('change', renderizar);
   $('apForm').addEventListener('submit', async evento => {
     evento.preventDefault();

@@ -189,7 +189,7 @@ void pollTemperature(uint32_t now) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.1-websocket";
+  doc["firmware_version"]="s3-sensors-1.2-wifi-list";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;

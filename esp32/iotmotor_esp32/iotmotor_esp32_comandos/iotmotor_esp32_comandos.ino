@@ -229,7 +229,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v10-mqtt-websocket";
+  doc["firmware_version"] = "v11-wifi-list";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
