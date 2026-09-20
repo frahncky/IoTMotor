@@ -78,6 +78,7 @@ if (typeof document !== 'undefined') (() => {
 
   const topico = (dev, tipo) => `${prefixo}/${dev}/${tipo}`;
   const atual = () => placas[dispositivos[selecionado]];
+  const nomeDaPlaca = () => selecionado === 0 ? 'Quadro de comando' : 'Sensores do motor';
   const aviso = texto => { $('wifiFeedback').textContent = texto; };
 
   function lerConfiguracao() {
@@ -92,8 +93,10 @@ if (typeof document !== 'undefined') (() => {
 
   function renderizar() {
     const dev = dispositivos[selecionado];
-    $('wifiDev0').textContent = dispositivos[0];
-    $('wifiDev1').textContent = dispositivos[1];
+    $('wifiDev0').textContent = 'Quadro de comando';
+    $('wifiDev1').textContent = 'Sensores do motor';
+    $('wifiDev0').title = dispositivos[0];
+    $('wifiDev1').title = dispositivos[1];
     $('wifiDev0').setAttribute('aria-pressed', String(selecionado === 0));
     $('wifiDev1').setAttribute('aria-pressed', String(selecionado === 1));
     const placa = atual();
@@ -101,11 +104,11 @@ if (typeof document !== 'undefined') (() => {
     lista.replaceChildren();
 
     if (!connected) $('wifiStatus').textContent = 'Conecte ao MQTT (botão no topo) para ver e editar as redes.';
-    else if (!placa) $('wifiStatus').textContent = `${dev} ainda não publicou a lista de redes. Se ela estiver online, ` +
+    else if (!placa) $('wifiStatus').textContent = `${nomeDaPlaca()} ainda não publicou a lista de redes. Se estiver online, ` +
       'está com firmware antigo: use "Atualizar firmware desta placa".';
     else $('wifiStatus').textContent = placa.connected
-      ? `${dev} conectada em "${placa.connected}". ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`
-      : `${dev} publicou a lista, mas não informou a rede atual. ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`;
+      ? `${nomeDaPlaca()}: conectada em "${placa.connected}". ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`
+      : `${nomeDaPlaca()}: lista recebida, sem informar a rede atual. ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`;
 
     const ordem = placa ? (ordemEditada || placa.networks.map(r => r.ssid)) : [];
     if (placa && !ordem.length) {
@@ -201,14 +204,14 @@ if (typeof document !== 'undefined') (() => {
       mask: 0, main: 0, star: 0, delta: 0, seconds: 0, ...extras
     }), {qos: 1, retain: false});
     setTimeout(() => {
-      if (pendente?.seq === seq) { pendente = null; aviso(`Sem resposta de ${dev}. Ela está online?`); renderizar(); }
+      if (pendente?.seq === seq) { pendente = null; aviso(`Sem resposta de ${nomeDaPlaca().toLowerCase()}. A placa está online?`); renderizar(); }
     }, 8000);
     renderizar();
     return true;
   }
 
   function remover(ssid) {
-    if (!confirm(`Remover a rede "${ssid}" da placa ${dispositivos[selecionado]}?`)) return;
+    if (!confirm(`Remover a rede "${ssid}" de ${nomeDaPlaca()}?`)) return;
     if (publicar('wifi_remove', {ssid})) aviso(`Removendo "${ssid}"…`);
   }
 
@@ -257,7 +260,7 @@ if (typeof document !== 'undefined') (() => {
     const dev = dispositivos[selecionado];
     if (!confirm(`A placa ${dev} vai baixar o firmware publicado no GitHub e reiniciar (cerca de 1 minuto fora do ar).\n\n` +
                  'A placa de comandos recusa se houver contatores ligados.\n\nContinuar?')) return;
-    if (publicar('update', {})) aviso(`Pedindo que ${dev} atualize o firmware…`);
+    if (publicar('update', {})) aviso(`Pedindo atualização de firmware para ${nomeDaPlaca().toLowerCase()}…`);
   });
   $('apOpen').addEventListener('change', renderizar);
   $('apForm').addEventListener('submit', async evento => {
@@ -287,7 +290,7 @@ if (typeof document !== 'undefined') (() => {
     const nome = placa?.ap?.name || 'IoTMotor-';
     if (!confirm(`A placa ${dispositivos[selecionado]} vai sair da rede atual e abrir a rede "${nome}" por 3 minutos.\n\n` +
                  'Enquanto isso ela some do painel. Conecte o celular nessa rede para cadastrar um Wi-Fi.\n\nContinuar?')) return;
-    if (publicar('wifi_portal', {})) aviso(`Pedindo que ${dispositivos[selecionado]} abra a rede "${nome}"…`);
+    if (publicar('wifi_portal', {})) aviso(`Pedindo que ${nomeDaPlaca().toLowerCase()} abra a rede "${nome}"…`);
   });
 
   function conectar() {

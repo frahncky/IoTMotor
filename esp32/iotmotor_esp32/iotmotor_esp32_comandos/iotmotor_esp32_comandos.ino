@@ -158,24 +158,17 @@ uint8_t detectarLcd() {
 
 // LCD 20x4. Cada linha cabe nas 20 colunas: acima disso o display corta o
 // texto e as informacoes aparecem coladas.
-//   L0  Estrela-tri.  287s MQ   (ou o estado da conexao quando parado)
+//   L0  Estrela-triangulo      (ou o estado da conexao quando parado)
 //   L1  V:220.1 I:  2.30A
 //   L2  P:  420W FP:0.81
 //   L3  CNT 1,2    60.0Hz
 void atualizarLcd() {
   char buffer[48];
-  const unsigned long agora = millis();
   const bool comWifi = WiFi.status() == WL_CONNECTED;
   const bool comMqtt = mqttClient.connected();
 
-  if (partidaAtiva) {  // Em ensaio: nome da partida e quanto falta do limite.
-    const uint32_t decorridoMs = tempoDePartidaMs(agora);
-    const uint32_t fim = fimDoPerfil(perfilEmExecucao);
-    const uint32_t limite = fim ? fim : LIMITE_BANCADA_MS;
-    const uint32_t restante = limite > decorridoMs ? (limite - decorridoMs) / 1000UL : 0;
-    // 12 + 1 + 4 + 1 + 2 = 20 colunas.
-    snprintf(buffer, sizeof(buffer), "%-12.12s %3lus %-2s", perfilEmExecucao.nome,
-             static_cast<unsigned long>(restante > 999 ? 999 : restante), comMqtt ? "MQ" : "--");
+  if (partidaAtiva) {  // Em ensaio, o nome da partida ocupa a linha inteira.
+    snprintf(buffer, sizeof(buffer), "%-20.20s", perfilEmExecucao.nome);
   } else if (!comWifi) {
     snprintf(buffer, sizeof(buffer), "WiFi: procurando");
   } else if (!comMqtt) {

@@ -15,6 +15,8 @@ const METRICS=[
  {key:'vibration',label:'Vibração RMS',unit:'g',digits:3,group:'mecanica',color:'#e6b2d4',source:'sensor'},
  {key:'temperature',label:'Temperatura',unit:'°C',digits:1,group:'mecanica',color:'#f69d84',source:'sensor'}
 ];
+// Nomes mostrados na tela; o identificador tecnico fica na dica do selo.
+const NOMES={command:'Quadro de comando',sensor:'Sensores do motor'};
 const alias={voltage:['voltage','tensao','v'],current:['current','corrente','i'],power:['power','potencia','w'],pf:['pf','power_factor','fator_potencia','fp'],frequency:['frequency','frequencia','hz'],energy:['energy','energy_kwh','energia','kwh'],vibration:['vibration','vibracao','vib'],temperature:['temperature','temperatura','temp']};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
@@ -64,7 +66,8 @@ function renderDevice(id,which,name){
  const s=state[which],info=deviceConnection({brokerOk:state.connected&&state.subscribed,status:s.status,statusAt:s.statusAt,at:s.at});
  const demo=info.kind==='live'&&s.sample?.demo?' · SIMULADO':'';
  text(id,`${name} · ${info.label}${demo}`);$(id).className=`source ${info.kind}`.trim();
- $(id).title=s.at?`Última telemetria: ${new Date(s.at).toLocaleTimeString('pt-BR')}`:'Nenhuma telemetria recebida';
+ const ident=which==='command'?state.config.commandDevice:state.config.sensorDevice;
+ $(id).title=`${ident} · ${s.at?`última telemetria ${new Date(s.at).toLocaleTimeString('pt-BR')}`:'nenhuma telemetria recebida'}`;
 }
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
 function updateControl(){
@@ -107,8 +110,8 @@ function buildCards(){const root=$('metrics');for(const m of METRICS){
 function render(){
  for(const m of METRICS){const value=valueFor(m),source=state[m.source];text(`value-${m.key}`,value===null?'—':value.toFixed(m.digits));
  text(`hint-${m.key}`,value===null?'':source.sample.demo?'Simulado — não é medição':m.source==='command'?'ESP32 PZEM-004T':'ESP32-S3 sensores');}
- renderDevice('pzemState','command',`${state.config.commandDevice} (PZEM e contatores)`);
- renderDevice('sensorState','sensor',`${state.config.sensorDevice} (S3 sensores)`);
+ renderDevice('pzemState','command',NOMES.command);
+ renderDevice('sensorState','sensor',NOMES.sensor);
  text('commandAge',state.command.at?new Date(state.command.at).toLocaleTimeString('pt-BR'):'—');
  text('sensorAge',state.sensor.at?new Date(state.sensor.at).toLocaleTimeString('pt-BR'):'—');
  $('exportBtn').disabled=!state.records.length;updateControl();renderCharts();
@@ -136,7 +139,7 @@ function ingest(which,raw,packet){
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target){
   text('commandFeedback',`ESP32 informou saída ${sample.motorOn?'ligada':'desligada'}; não confirma contatores ou motor físico.`);state.pending=null;
  }
- diag(`Recebendo ${which==='command'?'dados do PZEM / comandos':'vibração e temperatura do S3'} · seq ${sample.seq??'—'}.`);render();return true;
+ diag(`Recebendo ${which==='command'?'medições do quadro de comando':'vibração e temperatura dos sensores'} · seq ${sample.seq??'—'}.`);render();return true;
 }
 function connect(automatico){
 
@@ -198,7 +201,7 @@ function init(){
  setInterval(()=>{
   if(state.pending&&Date.now()-state.pending.at>6500){text('commandFeedback','Sem confirmação do ESP32. Não pressuponha que a saída esteja desligada.');state.pending=null;}
   if(state.connected&&state.subscribed&&(!freshness('command')||!freshness('sensor')))
-   diag(`Broker conectado; ${!freshness('command')?'sem dados recentes do PZEM/comandos':''}${!freshness('command')&&!freshness('sensor')?' e ':''}${!freshness('sensor')?'sem dados recentes do ESP32-S3':''}.`);
+   diag(`Broker conectado; ${!freshness('command')?'sem dados recentes do quadro de comando':''}${!freshness('command')&&!freshness('sensor')?' e ':''}${!freshness('sensor')?'sem dados recentes dos sensores':''}.`);
   render();
  },1500);
 }

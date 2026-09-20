@@ -690,12 +690,31 @@ class MotorControlController extends ChangeNotifier {
         _notify();
         return;
       }
+      // Partida da lista da placa: manda o id, e não os tempos. Assim a placa
+      // informa na telemetria qual partida está rodando, e o painel segue.
+      if (type.timings != null) {
+        enviado = _service.sendBenchCommand(
+          deviceId: dev,
+          action: 'start',
+          boot: boot,
+          profile: type.id,
+        );
+        if (enviado) {
+          lastCommandType = type;
+          lastCommandAt = DateTime.now();
+          statusMessage = 'Comando enviado a $dev: ${type.label}.';
+        } else {
+          _pendingMessage = 'Conecte-se ao broker antes de enviar comandos.';
+        }
+        _notify();
+        return;
+      }
       if (!type.profileIsValid) {
         _pendingMessage = 'Revise os contatores da partida "${type.label}".';
         _notify();
         return;
       }
-      // Contatores definidos no editor de partidas (tela Início).
+      // Partida antiga, só do app: vai no formato anterior (mode/máscara).
       enviado =
           type.sequence
               ? _service.sendBenchCommand(

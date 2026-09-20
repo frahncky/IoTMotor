@@ -13,9 +13,9 @@
 
   function renderizar() {
     const selo = $('alarmeEstado');
-    let mensagem = conectado ? 'aguardando o S3' : 'sem sinal', classe = '';
+    let mensagem = conectado ? 'aguardando os sensores' : 'sem sinal', classe = '';
     if (conectado && estado && !recente()) {
-      mensagem = 'S3 sem dados recentes'; classe = 'wait';
+      mensagem = 'sem dados recentes'; classe = 'wait';
     } else if (recente()) {
       if (!estado.enabled) { mensagem = 'alarme desligado'; classe = 'wait'; }
       else if (estado.active) { mensagem = 'ALARME: limite ultrapassado'; classe = 'error'; }
@@ -48,7 +48,7 @@
   }
 
   function publicar(acao, extras) {
-    if (!client?.connected || !recente()) { aviso('Aguarde dados recentes do ESP32-S3.'); return false; }
+    if (!client?.connected || !recente()) { aviso('Aguarde dados recentes dos sensores.'); return false; }
     if (pendente) return false;
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
     const ativo = client;
@@ -76,11 +76,11 @@
     if (!Number.isFinite(vib) || vib < 0.02 || vib > 8) { aviso('Vibração: informe de 0,02 a 8 g.'); return; }
     if (!Number.isFinite(temp) || temp < 1 || temp > 125) { aviso('Temperatura: informe de 1 a 125 °C.'); return; }
     if (publicar('alarm_set', {enabled: $('alarmeOn').checked, sounds: $('alarmeSons').checked, vibration_limit: vib, temperature_limit: temp}))
-      aviso('Gravando os limites no S3…');
+      aviso('Gravando os limites na placa…');
   });
   // Bipe curto: confirma na bancada que a placa esta ouvindo o painel.
   $('alarmeBipe').addEventListener('click', () => {
-    if (publicar('buzzer_beep', {count: 2, ms: 120})) aviso('Bipando no ESP32-S3…');
+    if (publicar('buzzer_beep', {count: 2, ms: 120})) aviso('Bipando na placa de sensores…');
   });
   $('alarmeTeste').addEventListener('click', () => {
     if (publicar('alarm_test', {})) aviso('Acendendo o LED e apitando por 1,5 s…');
@@ -106,7 +106,7 @@
       p = String($('prefix').value || '').trim().replace(/^\/+|\/+$/g, '');
       d = String($('sensorDevice').value || '').trim();
       if (!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(p)) throw Error('Prefixo inválido.');
-      if (!/^[a-zA-Z0-9_-]+$/.test(d)) throw Error('ID do ESP32-S3 inválido.');
+      if (!/^[a-zA-Z0-9_-]+$/.test(d)) throw Error('ID dos sensores inválido.');
     } catch (e) { aviso(e.message); return; }
     prefixo = p; dispositivo = d;
     let ativo;
@@ -123,7 +123,7 @@
       ativo.subscribe([topico('telemetry'), topico('command_ack'), topico('status')], {qos: 1}, (erro, permissoes) => {
         if (client !== ativo || !ativo.connected) return;
         conectado = !erro && !permissoes?.some(p => p.qos === 128);
-        aviso(conectado ? 'Conectado. Aguardando a telemetria do ESP32-S3.' : 'Falha ao assinar os tópicos do alarme.');
+        aviso(conectado ? 'Conectado. Aguardando a telemetria dos sensores.' : 'Falha ao assinar os tópicos do alarme.');
         renderizar();
       });
     });
@@ -132,7 +132,7 @@
       if (nome === topico('status')) {
         if (!pacote?.retain && payload.toString('utf8').trim() === 'offline') {
           estado = null; recebidoEm = 0; limparPendente();
-          aviso('ESP32-S3 desconectado.'); renderizar();
+          aviso('Placa de sensores desconectada.'); renderizar();
         }
         return;
       }
@@ -159,7 +159,7 @@
             vibration: pendente.extras.vibration_limit, temperature: pendente.extras.temperature_limit};
           editando = false;
         }
-        aviso((dados.accepted ? 'S3 confirmou: ' : 'S3 recusou: ') + (dados.reason || dados.action));
+        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
         limparPendente();
       }
       renderizar();

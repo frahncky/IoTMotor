@@ -176,6 +176,8 @@ class MqttMotorService {
     int star = 0,
     int delta = 0,
     int seconds = 0,
+    /// Partida gravada na placa; quando informada, os campos acima são ignorados.
+    String profile = '',
   }) {
     final MqttServerClient? client = _client;
     final MqttConnectionConfig? config = _activeConfig;
@@ -196,6 +198,7 @@ class MqttMotorService {
       'star': star,
       'delta': delta,
       'seconds': seconds,
+      if (profile.isNotEmpty) 'profile': profile,
     });
     final MqttClientPayloadBuilder builder =
         MqttClientPayloadBuilder()..addString(payload);
