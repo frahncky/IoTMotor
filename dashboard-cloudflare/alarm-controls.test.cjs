@@ -81,6 +81,7 @@ test('preserva limites e checkbox editados entre telemetrias e confirma somente 
   h.node('alarmeVib').value = '0.8'; h.node('alarmeVib').fire('input');
   h.node('alarmeTemp').value = '70'; h.node('alarmeTemp').fire('input');
   h.node('alarmeOn').checked = false; h.node('alarmeOn').fire('change');
+  h.node('alarmeSons').checked = true; h.node('alarmeSons').fire('change');
   h.telemetry(c);
   assert.equal(h.node('alarmeVib').value, '0.8');
   assert.equal(h.node('alarmeOn').checked, false);
@@ -89,7 +90,7 @@ test('preserva limites e checkbox editados entre telemetrias e confirma somente 
   assert.equal(cmd.topic, 'iotmotor/esp32-02/command');
   assert.equal(cmd.options.retain, false);
   assert.deepEqual(cmd.data, {v: 1, device_id: 'esp32-02', seq: cmd.data.seq,
-    action: 'alarm_set', enabled: false, vibration_limit: 0.8, temperature_limit: 70});
+    action: 'alarm_set', enabled: false, sounds: true, vibration_limit: 0.8, temperature_limit: 70});
   h.node('alarmeForm').fire('submit');
   assert.equal(c.published.length, 1);
   h.send(c, 'command_ack', {...cmd.data, action: 'alarm_test', accepted: true});
@@ -193,4 +194,13 @@ test('dashboard conecta os auxiliares depois de substituir a conexao e desconect
   assert.equal(calls.length, 3);
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   assert.match(html, /<script src="\.\/alarm-controls\.js" defer><\/script>/);
+});
+test('o botao Bipar pede um bipe curto ao S3, sem mexer nos limites', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c);
+  h.node('alarmeBipe').fire('click');
+  const cmd = c.published[0];
+  assert.equal(cmd.topic, 'iotmotor/esp32-02/command');
+  assert.deepEqual(cmd.data, {v: 1, device_id: 'esp32-02', seq: cmd.data.seq,
+    action: 'buzzer_beep', count: 2, ms: 120});
 });

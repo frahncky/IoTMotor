@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
   if (!$('alarmeForm')) return;
 
-  const CAMPOS = ['alarmeVib', 'alarmeTemp', 'alarmeOn'];
+  const CAMPOS = ['alarmeVib', 'alarmeTemp', 'alarmeOn', 'alarmeSons'];
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-02';
   let estado = null, recebidoEm = 0, pendente = null, sequencia = 0, editando = false;
   const aviso = texto => { $('alarmeFeedback').textContent = texto; };
@@ -29,10 +29,12 @@
       $('alarmeVib').value = estado.vibration;
       $('alarmeTemp').value = estado.temperature;
       $('alarmeOn').checked = estado.enabled;
+      $('alarmeSons').checked = estado.sounds;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
     $('alarmeSalvar').disabled = !recente() || Boolean(pendente);
     $('alarmeTeste').disabled = !recente() || Boolean(pendente);
+    $('alarmeBipe').disabled = !recente() || Boolean(pendente);
   }
 
   for (const id of CAMPOS) {
@@ -73,8 +75,12 @@
     const vib = Number($('alarmeVib').value), temp = Number($('alarmeTemp').value);
     if (!Number.isFinite(vib) || vib < 0.02 || vib > 8) { aviso('Vibração: informe de 0,02 a 8 g.'); return; }
     if (!Number.isFinite(temp) || temp < 1 || temp > 125) { aviso('Temperatura: informe de 1 a 125 °C.'); return; }
-    if (publicar('alarm_set', {enabled: $('alarmeOn').checked, vibration_limit: vib, temperature_limit: temp}))
+    if (publicar('alarm_set', {enabled: $('alarmeOn').checked, sounds: $('alarmeSons').checked, vibration_limit: vib, temperature_limit: temp}))
       aviso('Gravando os limites no S3…');
+  });
+  // Bipe curto: confirma na bancada que a placa esta ouvindo o painel.
+  $('alarmeBipe').addEventListener('click', () => {
+    if (publicar('buzzer_beep', {count: 2, ms: 120})) aviso('Bipando no ESP32-S3…');
   });
   $('alarmeTeste').addEventListener('click', () => {
     if (publicar('alarm_test', {})) aviso('Acendendo o LED e apitando por 1,5 s…');
@@ -142,13 +148,14 @@
         estado = {
           enabled: dados.alarm_enabled, active: dados.alarm_active,
           vibration: dados.vibration_limit, temperature: dados.temperature_limit,
+          sounds: dados.event_sounds === true,
           sensors: dados.mpu_ok || dados.temperature_ok
         };
         recebidoEm = Date.now();
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
                  dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
         if (dados.accepted && pendente.acao === 'alarm_set') {
-          estado = {...estado, enabled: pendente.extras.enabled,
+          estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds,
             vibration: pendente.extras.vibration_limit, temperature: pendente.extras.temperature_limit};
           editando = false;
         }

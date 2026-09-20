@@ -107,6 +107,7 @@ float temperatureC=NAN;
 bool mpuReady=false,tempPending=false,tempReady=false;
 // Alarme local: LED RGB e buzzer.
 bool alarmeHabilitado=true,estadoCritico=false,buzzerLigado=false;
+bool sonsDeEventos=true;  // Bipes curtos de evento, fora da emergencia.
 float limiteVibracao=VIBRACAO_LIMITE_PADRAO,limiteTemperatura=TEMPERATURA_LIMITE_PADRAO;
 uint32_t ultimoBeep=0,inicioDoTeste=0;
 bool testeAtivo=false;
@@ -138,20 +139,62 @@ void carregarLimites() {
     limiteVibracao=dados.vibracao;
     limiteTemperatura=dados.temperatura;
   }
+  sonsDeEventos=memoria.getBool("sons",true);
   memoria.end();
 }
 
-bool salvarLimites(bool ligado,float vibracao,float temperatura) {
+bool salvarLimites(bool ligado,float vibracao,float temperatura,bool sons) {
   if(!limitesValidos(vibracao,temperatura))return false;
   Preferences memoria;
   if(!memoria.begin("iot-alarme",false))return false;
   const LimitesGravados dados{ligado?1U:0U,vibracao,temperatura};
   const bool gravado=memoria.putBytes("config",&dados,sizeof(dados))==sizeof(dados);
+  memoria.putBool("sons",sons);
   memoria.end();
   if(!gravado)return false;
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-  alarmeHabilitado=ligado;limiteVibracao=vibracao;limiteTemperatura=temperatura;
+  alarmeHabilitado=ligado;limiteVibracao=vibracao;limiteTemperatura=temperatura;sonsDeEventos=sons;
   xSemaphoreGive(sensoresMutex);
+  return true;
+}
+
+// ---- Bipes curtos fora da emergencia ----
+// Avisos de conexao e de comando recebido, e o bipe pedido pelo painel. Sao
+// tocados sem travar o laco e nunca atrapalham o alarme, que tem prioridade.
+uint8_t beepsRestantes=0;
+uint16_t beepFrequencia=BEEP_HZ;
+uint32_t beepDuracao=80,beepProximo=0;
+bool beepTocando=false;
+
+void pedirBeep(uint8_t vezes,uint16_t frequencia,uint32_t duracaoMs) {
+  if(!vezes)return;
+  beepsRestantes=vezes;
+  beepFrequencia=frequencia;
+  beepDuracao=duracaoMs;
+  beepProximo=millis();
+  beepTocando=false;
+}
+
+void beepDeEvento(uint8_t vezes) {
+  if(sonsDeEventos)pedirBeep(vezes,BEEP_HZ,70);
+}
+
+// Retorna true enquanto estiver tocando um bipe (o alarme nao mexe no buzzer).
+bool atualizarBeeps(uint32_t now) {
+  if(!beepsRestantes&&!beepTocando)return false;
+  if((int32_t)(now-beepProximo)<0)return true;
+  if(beepTocando) {          // Fim do som: silencio do mesmo tamanho.
+    noTone(BUZZER_PIN);
+    beepTocando=false;
+    beepProximo=now+beepDuracao;
+    if(!beepsRestantes)return false;
+    return true;
+  }
+  if(!beepsRestantes)return false;
+  --beepsRestantes;
+  tone(BUZZER_PIN,beepFrequencia);
+  beepTocando=true;
+  beepProximo=now+beepDuracao;
   return true;
 }
 
@@ -166,8 +209,10 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   else aplicarLed(false,!estadoCritico,estadoCritico);
   if(!estadoCritico) {
     if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
+    atualizarBeeps(now);  // Fora da emergencia o buzzer fica com os bipes.
     return;
   }
+  beepsRestantes=0;beepTocando=false;  // Emergencia tem prioridade.
   if((uint32_t)(now-ultimoBeep)>=BEEP_MS) {  // Bipe intermitente.
     ultimoBeep=now;
     buzzerLigado=!buzzerLigado;
@@ -330,6 +375,7 @@ void publishTelemetry() {
   doc["temperature_ok"]=tempReady;
   doc["sample_count"]=amostrasAtuais;
   doc["alarm_enabled"]=alarmeHabilitado;
+  doc["event_sounds"]=sonsDeEventos;
   doc["alarm_active"]=estadoCritico;
   doc["vibration_limit"]=limiteVibracao;
   doc["temperature_limit"]=limiteTemperatura;
@@ -372,6 +418,7 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
      strcmp(doc["device_id"] | "",DEVICE_ID))return;
   const char* acao=doc["action"] | "";
   const char* seq=doc["seq"] | "";
+  beepDeEvento(1);  // Confirma na bancada que o comando chegou.
   // Lista de redes: a senha chega cifrada para a chave desta placa.
   const char* motivoWifi="";
   const wifistore::Resultado resultado=wifistore::tratarComando(acao,doc.as<JsonVariantConst>(),motivoWifi);
@@ -386,6 +433,14 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     delay(200);
     abrirPortalDeRede(PORTAL_SEGUNDOS);
     ESP.restart();
+    return;
+  }
+  if(!strcmp(acao,"buzzer_beep")) {  // Bipe pedido pelo painel ou pelo app.
+    const uint16_t frequencia=constrain((int)(doc["freq"] | BEEP_HZ),200,5000);
+    const uint32_t duracao=constrain((long)(doc["ms"] | 120),20,2000);
+    const uint8_t vezes=constrain((int)(doc["count"] | 1),1,5);
+    pedirBeep(vezes,frequencia,duracao);
+    publishAck(seq,acao,true,"bipe acionado");
     return;
   }
   if(!strcmp(acao,"alarm_test")) {  // Acende tudo e apita por 1,5 s.
@@ -403,7 +458,8 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
       return;
     }
     const bool ok=salvarLimites(doc["enabled"].as<bool>(),
-      doc["vibration_limit"].as<float>(),doc["temperature_limit"].as<float>());
+      doc["vibration_limit"].as<float>(),doc["temperature_limit"].as<float>(),
+      doc["sounds"] | sonsDeEventos);
     publishAck(seq,acao,ok,ok?"alarme configurado":"falha ao gravar limites");
     return;
   }
@@ -473,6 +529,7 @@ void loop() {
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
+        beepDeEvento(2);  // Dois bipes: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());
     }
