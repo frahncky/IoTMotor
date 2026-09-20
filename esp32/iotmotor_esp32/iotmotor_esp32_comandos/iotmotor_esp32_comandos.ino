@@ -158,7 +158,7 @@ uint8_t detectarLcd() {
 
 // LCD 20x4. Cada linha cabe nas 20 colunas: acima disso o display corta o
 // texto e as informacoes aparecem coladas.
-//   L0  Estrela-triangulo      (ou o estado da conexao quando parado)
+//   L0  Estrela-triangulo      (ou a ultima partida/estado da conexao)
 //   L1  V:220.1 I:  2.30A
 //   L2  P:  420W FP:0.81
 //   L3  CNT 1,2    60.0Hz
@@ -173,8 +173,10 @@ void atualizarLcd() {
     snprintf(buffer, sizeof(buffer), "WiFi: procurando");
   } else if (!comMqtt) {
     snprintf(buffer, sizeof(buffer), "MQTT reconectando");
+  } else if (perfilEmExecucao.nome[0]) {  // Parado: diz qual foi o ultimo ensaio.
+    snprintf(buffer, sizeof(buffer), "Ultima: %-12.12s", perfilEmExecucao.nome);
   } else {
-    snprintf(buffer, sizeof(buffer), "IP %-16.16s", WiFi.localIP().toString().c_str());
+    snprintf(buffer, sizeof(buffer), "Pronto para partida");
   }
   imprimirLinhaCompleta(0, buffer);
 
