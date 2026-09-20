@@ -22,6 +22,26 @@ O repositório publica **codigo-fonte** no GitHub, nao grava automaticamente o E
 
 Para Cloudflare Pages com Git, use a branch `main`, build command `exit 0` e output `dashboard-cloudflare`. Se usar Worker, publique os arquivos dessa pasta como assets estaticos do Worker. Um commit no GitHub nao atualiza automaticamente um Worker configurado sem deploy. Verifique se `/remote-controls.js` e `/dual-dashboard.js` sao servidos na versao atual. A disponibilidade do broker publico nao e garantida.
 
+## Quem pode abrir o painel
+
+O endereço é público: quem tiver o link abre a página. O que protege a bancada
+é a **senha de comando** (campo em "Conexão MQTT"), que cifra cada comando —
+sem ela, as placas com senha gravada recusam tudo o que chega pelo broker.
+
+Para fechar também a página, use o **Cloudflare Access** no projeto Pages
+`iotmotor` (plano gratuito cobre até 50 pessoas):
+
+1. Painel da Cloudflare → **Zero Trust** → Access → **Applications** → *Add an
+   application* → **Self-hosted**.
+2. Domínio: `iotmotor.pages.dev` (ou o domínio próprio, se houver).
+3. Policy: *Allow* → **Emails** → os e-mails do grupo do projeto.
+4. Identity provider: **One-time PIN** basta — cada pessoa recebe um código por
+   e-mail, sem precisar de conta.
+
+Feito isso, abrir o painel passa a exigir o código, e o link sozinho não serve
+mais. Isso não substitui a senha de comando: quem estiver no broker continua
+vendo a telemetria, que não é cifrada.
+
 ## Histórico no navegador
 
 As leituras ficam guardadas **neste navegador** (até 3000 amostras ou 24 horas,
