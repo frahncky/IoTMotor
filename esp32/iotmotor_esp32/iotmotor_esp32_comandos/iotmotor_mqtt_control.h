@@ -58,6 +58,45 @@ void publicarRedes() {
                               static_cast<unsigned int>(len), true);
 }
 
+// Lista de partidas gravada na placa: mesma lista para o painel e para o app.
+void publicarPerfis() {
+  if (!mqttClient.connected()) return;
+  StaticJsonDocument<2048> doc;
+  doc["device_id"] = DEVICE_ID;
+  descreverPerfis(doc);
+  char payload[2048];
+  const size_t len = serializeJson(doc, payload, sizeof(payload));
+  if (len) mqttClient.publish(topicoPerfis, reinterpret_cast<const uint8_t*>(payload),
+                              static_cast<unsigned int>(len), true);
+}
+
+// Converte os comandos antigos (mode direct/sequence) em um perfil temporario,
+// para o painel e o app anteriores continuarem funcionando.
+bool perfilDeComandoAntigo(JsonVariantConst doc, PerfilDePartida& perfil) {
+  const char* modo = doc["mode"] | "";
+  strncpy(perfil.id, "temp", MAX_ID_PERFIL);
+  if (!strcmp(modo, "direct")) {
+    const int mascara = doc["mask"] | 0;
+    if (mascara < 1 || mascara > 15) return false;
+    strncpy(perfil.nome, "Partida direta", MAX_NOME_PERFIL);
+    for (uint8_t i = 0; i < NUM_RELES; ++i)
+      perfil.contator[i] = {static_cast<bool>(mascara & (1U << i)), ATRASO_INICIAL_MS, 0};
+    return true;
+  }
+  if (strcmp(modo, "sequence")) return false;
+  const int principal = doc["main"] | 0, estrela = doc["star"] | 0;
+  const int triangulo = doc["delta"] | 0, segundos = doc["seconds"] | 0;
+  if (principal < 1 || principal > 4 || estrela < 1 || estrela > 4 || triangulo < 1 || triangulo > 4 ||
+      principal == estrela || principal == triangulo || estrela == triangulo ||
+      segundos < 2 || segundos > 30) return false;
+  strncpy(perfil.nome, "Estrela-triangulo", MAX_NOME_PERFIL);
+  const uint32_t fimEstrela = ATRASO_INICIAL_MS + static_cast<uint32_t>(segundos) * 1000UL;
+  perfil.contator[principal - 1] = {true, ATRASO_INICIAL_MS, 0};
+  perfil.contator[estrela - 1] = {true, ATRASO_INICIAL_MS, fimEstrela};
+  perfil.contator[triangulo - 1] = {true, fimEstrela + TEMPO_MORTO_MS, 0};
+  return true;
+}
+
 void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!topico || strcmp(topico, topicoComandos) || !tamanho || tamanho > 700) return;
   StaticJsonDocument<512> doc;
@@ -67,6 +106,22 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   uint64_t numero = 0;
   if (!lerSequencia(seq, numero)) return;
   const char* acao = doc["action"] | "";
+
+  // Lista de partidas: criada ou editada no painel ou no app, vale nos dois.
+  if (!strcmp(acao, "profile_list")) {
+    publicarRespostaControle(seq, true, acao, "lista publicada");
+    publicarPerfis();
+    return;
+  }
+  if (!strcmp(acao, "profile_save") || !strcmp(acao, "profile_remove")) {
+    const char* motivo = "";
+    const bool ok = !strcmp(acao, "profile_save")
+                        ? salvarPerfil(doc["profile"], motivo)
+                        : removerPerfil(doc["id"] | "", motivo);
+    publicarRespostaControle(seq, ok, acao, motivo);
+    publicarPerfis();
+    return;
+  }
 
   // Lista de redes (aba "Wi-Fi" do painel). A senha chega cifrada para a
   // chave desta placa; o broker publico nunca ve a senha em texto aberto.
@@ -81,7 +136,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
 
   // Abre o portal de cadastro de rede na propria placa (ultimo recurso).
   if (!strcmp(acao, "wifi_portal")) {
-    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || etapaPartida) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva) {
       publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de configurar");
       return;
     }
@@ -94,7 +149,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
 
   // Atualizacao pela internet: URL fixa no firmware, nunca vinda da mensagem.
   if (!strcmp(acao, "update")) {
-    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || etapaPartida) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva) {
       publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de atualizar");
       return;
     }
@@ -124,7 +179,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
   ultimaSequenciaControle = numero;
-  if (etapaPartida || WiFi.status() != WL_CONNECTED) {
+  if (partidaAtiva || WiFi.status() != WL_CONNECTED) {
     publicarRespostaControle(seq, false, acao, "busy_or_offline");
     return;
   }
@@ -132,38 +187,22 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     publicarRespostaControle(seq, false, acao, "already_on");
     return;
   }
-  if (!doc["mask"].is<int>() || !doc["main"].is<int>() || !doc["star"].is<int>() ||
-      !doc["delta"].is<int>() || !doc["seconds"].is<int>()) {
+
+  // Partida por perfil salvo na placa (painel e app novos) ou pelo formato
+  // antigo (mode direct/sequence), convertido no mesmo motor de tempos.
+  PerfilDePartida perfil;
+  const char* idPerfil = doc["profile"] | "";
+  if (idPerfil[0]) {
+    const int i = indiceDePerfil(idPerfil);
+    if (i < 0) {
+      publicarRespostaControle(seq, false, acao, "partida nao encontrada na placa");
+      return;
+    }
+    perfil = perfis[i];
+  } else if (!perfilDeComandoAntigo(doc, perfil)) {
     publicarRespostaControle(seq, false, acao, "invalid_profile");
     return;
   }
-  const char* modo = doc["mode"] | "";
-  const int mascara = doc["mask"].as<int>();
-  const int principal = doc["main"].as<int>();
-  const int estrela = doc["star"].as<int>();
-  const int triangulo = doc["delta"].as<int>();
-  const int segundos = doc["seconds"].as<int>();
-  const bool direta = !strcmp(modo, "direct") && mascara >= 1 && mascara <= 15 &&
-                      principal == 0 && estrela == 0 && triangulo == 0 && segundos == 0;
-  const bool sequencia = !strcmp(modo, "sequence") && mascara == 0 &&
-                         principal >= 1 && principal <= 4 && estrela >= 1 && estrela <= 4 &&
-                         triangulo >= 1 && triangulo <= 4 && principal != estrela &&
-                         principal != triangulo && estrela != triangulo && segundos >= 2 && segundos <= 30;
-  if (!direta && !sequencia) {
-    publicarRespostaControle(seq, false, acao, "invalid_profile");
-    return;
-  }
-  aplicarMascaraReles(0);
-  modoPartida = sequencia ? 1 : 0;
-  mascaraDireta = static_cast<uint8_t>(mascara);
-  if (sequencia) {
-    indicePrincipal = principal - 1;
-    indiceEstrela = estrela - 1;
-    indiceTriangulo = triangulo - 1;
-    tempoEstrelaMs = static_cast<unsigned long>(segundos) * 1000UL;
-  }
-  momentoPartida = millis();
-  momentoEtapa = momentoPartida;
-  etapaPartida = 1;
+  iniciarPerfil(perfil, millis());
   publicarRespostaControle(seq, true, acao, "accepted");
 }

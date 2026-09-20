@@ -83,38 +83,22 @@
   }
   function send(action) {
     if (!client?.connected || !connected || (action === 'start' && pending?.action === 'start')) return;
-    const options = {mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0};
+    const comando = {v: 1, device_id: device, boot: action === 'stop' ? '' : boot, action,
+      seq: String(sequence = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequence + 1))};
     if (action === 'start') {
       if (!recent()) {feedback('Aguardando telemetria recente do ESP32-01.');return;}
       if (relays.some(Boolean)) {feedback('Há contatores ligados; desligue antes de iniciar.');return;}
-      options.mode = $('startMode').value;
-      if (options.mode === 'direct') {
-        document.querySelectorAll('.directRelay:checked').forEach(el => {
-          options.mask |= 1 << (Number(el.value) - 1);
-        });
-        if (!options.mask) {feedback('Selecione pelo menos um contator.');return;}
-      } else if (options.mode === 'sequence') {
-        options.main = Number($('mainRelay').value);
-        options.star = Number($('starRelay').value);
-        options.delta = Number($('deltaRelay').value);
-        options.seconds = Number($('starSeconds').value);
-        if (new Set([options.main, options.star, options.delta]).size !== 3 ||
-            [options.main, options.star, options.delta].some(v => !Number.isInteger(v) || v < 1 || v > 4) ||
-            !Number.isInteger(options.seconds) || options.seconds < 2 || options.seconds > 30) {
-          feedback('Selecione três contatores distintos e tempo de 2 a 30 segundos.');return;
-        }
-      } else {feedback('Modo de partida inválido.');return;}
+      // A partida vem da lista gravada na placa (local-controls.js).
+      comando.profile = window.iotmotorPartidaSelecionada?.() || '';
+      if (!comando.profile) {feedback('Escolha uma partida.');return;}
     }
-    const seq = String(sequence = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequence + 1));
-    const command = {v: 1, device_id: device, boot: action === 'stop' ? '' : boot,
-      seq, action, ...options};
-    pending = {seq, action};
+    pending = {seq: comando.seq, action};
     feedback('Enviando ' + (action === 'start' ? 'partida' : 'parada') + ' MQTT…');
-    client.publish(topic('command'), JSON.stringify(command), {qos: 1, retain: false}, error => {
-      if (error && pending?.seq === seq) { feedback('Falha no envio: ' + error.message); pending = null;refresh(); }
+    client.publish(topic('command'), JSON.stringify(comando), {qos: 1, retain: false}, error => {
+      if (error && pending?.seq === comando.seq) { feedback('Falha no envio: ' + error.message); pending = null;refresh(); }
     });
     setTimeout(() => {
-      if (pending?.seq === seq) {feedback('Sem confirmação do ESP32. Verifique o Monitor Serial.');pending = null;refresh();}
+      if (pending?.seq === comando.seq) {feedback('Sem confirmação do ESP32. Verifique o Monitor Serial.');pending = null;refresh();}
     }, 6500);
     refresh();
   }
@@ -127,6 +111,7 @@
     refresh();
   }
   window.iotmotorRemoteControls = {connect, disconnect: desconectar};
+
   // Manutencao do firmware. As redes Wi-Fi ficam na aba "Wi-Fi" (wifi-manager.js).
   function manutencao(action, aviso) {
     if (!client?.connected || !confirm(aviso)) return;

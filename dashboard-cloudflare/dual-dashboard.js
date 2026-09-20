@@ -119,7 +119,7 @@ function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
  window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
- window.iotmotorAlarme?.disconnect?.();
+ window.iotmotorAlarme?.disconnect?.();window.iotmotorPerfis?.disconnect?.();
  reset();pill('Desconectado');diag('Desconectado.');}
 function ingest(which,raw,packet){
  if(packet?.retain===true){diag(`Telemetria retida antiga de ${which==='command'?'ESP32 PZEM':'ESP32-S3'} ignorada.`);return false;}
@@ -149,7 +149,7 @@ function connect(automatico){
  try{client=window.mqtt.connect(config.broker,{clientId:`iotmotor_dual_${Math.random().toString(36).slice(2,11)}`,clean:true,protocolVersion:4,reconnectPeriod:4000,connectTimeout:10000,keepalive:30,resubscribe:true});}
  catch(e){pill('Falha MQTT','error');diag(e.message);return;}
  state.client=client;reset();pill('Conectando…','wait');diag(`Conectando ${config.broker}; dispositivos ${config.commandDevice} e ${config.sensorDevice}.`);
- if(!automatico){window.iotmotorRemoteControls?.connect?.();window.iotmotorWifi?.connect?.();window.iotmotorAlarme?.connect?.();}
+ if(!automatico){window.iotmotorRemoteControls?.connect?.();window.iotmotorWifi?.connect?.();window.iotmotorAlarme?.connect?.();window.iotmotorPerfis?.connect?.();}
  const active=()=>state.client===client&&state.generation===generation;
  client.on('connect',()=>{
   if(!active())return;state.connected=true;pill('Broker conectado','live');

@@ -94,7 +94,7 @@ static const char* DEVICE_ID = "esp32-01";
 MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
-char topicoComandos[80], topicoResposta[80], topicoWifi[80];
+char topicoComandos[80], topicoResposta[80], topicoWifi[80], topicoPerfis[80];
 constexpr unsigned long MQTT_RETRY_MS = 6000UL;
 constexpr unsigned long MQTT_PUBLISH_MS = 1000UL;
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
@@ -156,21 +156,49 @@ uint8_t detectarLcd() {
   return achado;
 }
 
+// LCD 20x4. Prioriza o que muda durante o ensaio: estado da bancada, tempo
+// restante, contatores ligados e as grandezas com fator de potencia.
+//   L0  PARTIDA 12s  MQ ok      (ou o estado da conexao quando parado)
+//   L1  V:220.1 I:  2.30A
+//   L2  P: 420W FP:0.81 60Hz
+//   L3  CNT:1-3- E:  12.35kWh
 void atualizarLcd() {
   char buffer[48];
-  if (WiFi.status() == WL_CONNECTED)
-    snprintf(buffer, sizeof(buffer), "IP:%s", WiFi.localIP().toString().c_str());
-  else snprintf(buffer, sizeof(buffer), "WiFi desconectado");
+  const unsigned long agora = millis();
+  const bool comWifi = WiFi.status() == WL_CONNECTED;
+  const bool comMqtt = mqttClient.connected();
+
+  if (partidaAtiva) {  // Em ensaio: nome da partida e quanto falta do limite.
+    const uint32_t decorridoMs = tempoDePartidaMs(agora);
+    const uint32_t fim = fimDoPerfil(perfilEmExecucao);
+    const uint32_t limite = fim ? fim : LIMITE_BANCADA_MS;
+    const uint32_t restante = limite > decorridoMs ? (limite - decorridoMs) / 1000UL : 0;
+    snprintf(buffer, sizeof(buffer), "%-13.13s%3lus%s", perfilEmExecucao.nome,
+             static_cast<unsigned long>(restante), comMqtt ? " MQ" : " --");
+  } else if (!comWifi) {
+    snprintf(buffer, sizeof(buffer), "WiFi: procurando...");
+  } else if (!comMqtt) {
+    snprintf(buffer, sizeof(buffer), "MQTT reconectando...");
+  } else {
+    snprintf(buffer, sizeof(buffer), "Pronto %s", WiFi.localIP().toString().c_str());
+  }
   imprimirLinhaCompleta(0, buffer);
-  if (pzemOk) snprintf(buffer, sizeof(buffer), "V:%5.1f  I:%6.2fA", ultimaTensao, ultimaCorrente);
+
+  if (pzemOk) snprintf(buffer, sizeof(buffer), "V:%5.1f I:%6.2fA", ultimaTensao, ultimaCorrente);
   else snprintf(buffer, sizeof(buffer), "PZEM sem leitura");
   imprimirLinhaCompleta(1, buffer);
-  if (pzemOk) snprintf(buffer, sizeof(buffer), "P:%4.0fW E:%7.2fkWh", ultimaPotencia, ultimaEnergia);
+
+  if (pzemOk) snprintf(buffer, sizeof(buffer), "P:%4.0fW FP:%4.2f %2.0fHz",
+                       ultimaPotencia, ultimoFatorPotencia, ultimaFrequencia);
   else buffer[0] = '\0';
   imprimirLinhaCompleta(2, buffer);
-  snprintf(buffer, sizeof(buffer), "R1:%c R2:%c R3:%c R4:%c",
-           estadoReles[0] ? 'L' : 'D', estadoReles[1] ? 'L' : 'D',
-           estadoReles[2] ? 'L' : 'D', estadoReles[3] ? 'L' : 'D');
+
+  // Contatores ligados aparecem pelo numero: "1-3-" = CNT 1 e CNT 3 ligados.
+  char contatores[NUM_RELES + 1];
+  for (uint8_t i = 0; i < NUM_RELES; ++i) contatores[i] = estadoReles[i] ? char('1' + i) : '-';
+  contatores[NUM_RELES] = '\0';
+  if (pzemOk) snprintf(buffer, sizeof(buffer), "CNT:%s E:%7.2fkWh", contatores, ultimaEnergia);
+  else snprintf(buffer, sizeof(buffer), "CNT:%s", contatores);
   imprimirLinhaCompleta(3, buffer);
   lcdPrecisaAtualizar = false;
 }
@@ -262,7 +290,11 @@ void publicarTelemetriaMqtt() {
   doc["sensor_ok"] = pzemOk;
   doc["relay_commanded_only"] = true;
   doc["state"] = "manual_relays";
-  doc["mode"] = etapaPartida ? (modoPartida == 1 ? "star_delta_bench" : "direct_bench") : "manual_relays";
+  doc["mode"] = partidaAtiva ? "profile_bench" : "manual_relays";
+  if (partidaAtiva) {  // Painel e app mostram o andamento da partida.
+    doc["profile"] = perfilEmExecucao.id;
+    doc["profile_ms"] = tempoDePartidaMs(millis());
+  }
   if (pzemOk) {
     doc["voltage"] = ultimaTensao;
     doc["current"] = ultimaCorrente;
@@ -298,6 +330,7 @@ void manterMqtt(unsigned long agora) {
       Serial.println("[MQTT] falha ao assinar comandos");
     publicarCapacidades();
     publicarRedes();
+    publicarPerfis();
     Serial.println("[MQTT] conectado: comandos e telemetria ativos");
   } else Serial.printf("[MQTT] falha rc=%d\n", mqttClient.state());
 }
@@ -333,6 +366,7 @@ void setup() {
   wifistore::carregar(REDES_INICIAIS, SENHAS_INICIAIS,
                       sizeof(REDES_INICIAIS) / sizeof(REDES_INICIAIS[0]));
   wifistore::prepararChaves();
+  carregarPerfis();
   wifistore::carregarRedePropria(PORTAL_NOME);
   Serial.printf("[WiFi] %u rede(s) na lista da placa\n", wifistore::total);
   ultimaTentativaWifi = millis();
@@ -352,6 +386,7 @@ void setup() {
   snprintf(topicoComandos, sizeof(topicoComandos), "iotmotor/%s/command", DEVICE_ID);
   snprintf(topicoResposta, sizeof(topicoResposta), "iotmotor/%s/command_ack", DEVICE_ID);
   snprintf(topicoWifi, sizeof(topicoWifi), "iotmotor/%s/wifi", DEVICE_ID);
+  snprintf(topicoPerfis, sizeof(topicoPerfis), "iotmotor/%s/profiles", DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);
   mqttClient.setCallback(receberComandoMqtt);
@@ -372,7 +407,7 @@ void loop() {
   const bool comLink = mqttClient.connected() && WiFi.status() == WL_CONNECTED;
   if (comLink) inicioSemLink = 0;
   else if (!inicioSemLink) inicioSemLink = agora;
-  const bool saidasAtivas = etapaPartida || estadoReles[0] || estadoReles[1] ||
+  const bool saidasAtivas = partidaAtiva || estadoReles[0] || estadoReles[1] ||
                             estadoReles[2] || estadoReles[3];
   if (!comLink && saidasAtivas && decorrido(agora, inicioSemLink) > (int32_t)TOLERANCIA_SEM_LINK_MS) {
     pararBancada();
