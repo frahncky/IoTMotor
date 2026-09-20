@@ -156,12 +156,12 @@ uint8_t detectarLcd() {
   return achado;
 }
 
-// LCD 20x4. Prioriza o que muda durante o ensaio: estado da bancada, tempo
-// restante, contatores ligados e as grandezas com fator de potencia.
-//   L0  PARTIDA 12s  MQ ok      (ou o estado da conexao quando parado)
+// LCD 20x4. Cada linha cabe nas 20 colunas: acima disso o display corta o
+// texto e as informacoes aparecem coladas.
+//   L0  Estrela-tri.  287s MQ   (ou o estado da conexao quando parado)
 //   L1  V:220.1 I:  2.30A
-//   L2  P: 420W FP:0.81 60Hz
-//   L3  CNT:1-3- E:  12.35kWh
+//   L2  P:  420W FP:0.81
+//   L3  CNT 1,2    60.0Hz
 void atualizarLcd() {
   char buffer[48];
   const unsigned long agora = millis();
@@ -173,14 +173,15 @@ void atualizarLcd() {
     const uint32_t fim = fimDoPerfil(perfilEmExecucao);
     const uint32_t limite = fim ? fim : LIMITE_BANCADA_MS;
     const uint32_t restante = limite > decorridoMs ? (limite - decorridoMs) / 1000UL : 0;
-    snprintf(buffer, sizeof(buffer), "%-13.13s%3lus%s", perfilEmExecucao.nome,
-             static_cast<unsigned long>(restante), comMqtt ? " MQ" : " --");
+    // 12 + 1 + 4 + 1 + 2 = 20 colunas.
+    snprintf(buffer, sizeof(buffer), "%-12.12s %3lus %-2s", perfilEmExecucao.nome,
+             static_cast<unsigned long>(restante > 999 ? 999 : restante), comMqtt ? "MQ" : "--");
   } else if (!comWifi) {
-    snprintf(buffer, sizeof(buffer), "WiFi: procurando...");
+    snprintf(buffer, sizeof(buffer), "WiFi: procurando");
   } else if (!comMqtt) {
-    snprintf(buffer, sizeof(buffer), "MQTT reconectando...");
+    snprintf(buffer, sizeof(buffer), "MQTT reconectando");
   } else {
-    snprintf(buffer, sizeof(buffer), "Pronto %s", WiFi.localIP().toString().c_str());
+    snprintf(buffer, sizeof(buffer), "IP %-16.16s", WiFi.localIP().toString().c_str());
   }
   imprimirLinhaCompleta(0, buffer);
 
@@ -188,17 +189,23 @@ void atualizarLcd() {
   else snprintf(buffer, sizeof(buffer), "PZEM sem leitura");
   imprimirLinhaCompleta(1, buffer);
 
-  if (pzemOk) snprintf(buffer, sizeof(buffer), "P:%4.0fW FP:%4.2f %2.0fHz",
-                       ultimaPotencia, ultimoFatorPotencia, ultimaFrequencia);
+  if (pzemOk) snprintf(buffer, sizeof(buffer), "P:%5.0fW FP:%4.2f", ultimaPotencia, ultimoFatorPotencia);
   else buffer[0] = '\0';
   imprimirLinhaCompleta(2, buffer);
 
-  // Contatores ligados aparecem pelo numero: "1-3-" = CNT 1 e CNT 3 ligados.
-  char contatores[NUM_RELES + 1];
-  for (uint8_t i = 0; i < NUM_RELES; ++i) contatores[i] = estadoReles[i] ? char('1' + i) : '-';
-  contatores[NUM_RELES] = '\0';
-  if (pzemOk) snprintf(buffer, sizeof(buffer), "CNT:%s E:%7.2fkWh", contatores, ultimaEnergia);
-  else snprintf(buffer, sizeof(buffer), "CNT:%s", contatores);
+  // Contatores ligados separados por virgula: "1,2" em vez de "12" colado.
+  char contatores[2 * NUM_RELES] = "";
+  uint8_t escritos = 0;
+  for (uint8_t i = 0; i < NUM_RELES; ++i) {
+    if (!estadoReles[i]) continue;
+    if (escritos) contatores[escritos++] = ',';
+    contatores[escritos++] = char('1' + i);
+  }
+  contatores[escritos] = '\0';
+  if (!escritos) strcpy(contatores, "-");
+  // 4 + 7 + 1 + 6 + 2 = 20 colunas.
+  if (pzemOk) snprintf(buffer, sizeof(buffer), "CNT %-7.7s %4.1fHz", contatores, ultimaFrequencia);
+  else snprintf(buffer, sizeof(buffer), "CNT %-7.7s", contatores);
   imprimirLinhaCompleta(3, buffer);
   lcdPrecisaAtualizar = false;
 }
