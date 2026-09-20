@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/motor_app_settings.dart';
+import '../models/device_names.dart';
 import '../models/motor_command_type.dart';
 import '../models/mqtt_connection_config.dart';
 import '../models/telemetry_alert.dart';
@@ -721,7 +722,7 @@ class MotorControlController extends ChangeNotifier {
           ultima == null ||
           DateTime.now().difference(ultima) > const Duration(seconds: 10)) {
         _pendingMessage =
-            'Sem telemetria recente de $dev: a partida exige a sessão atual da placa.';
+            'Sem telemetria recente de ${nomeDaPlaca(dev)}: a partida exige a sessão atual da placa.';
         _notify();
         return;
       }
@@ -742,7 +743,7 @@ class MotorControlController extends ChangeNotifier {
         if (enviado) {
           lastCommandType = type;
           lastCommandAt = DateTime.now();
-          statusMessage = 'Comando enviado a $dev: ${type.label}.';
+          statusMessage = 'Comando enviado a ${nomeDaPlaca(dev)}: ${type.label}.';
         } else {
           _pendingMessage = _service.seal.impedimento(dev) ??
               'Conecte-se ao broker antes de enviar comandos.';
@@ -785,7 +786,7 @@ class MotorControlController extends ChangeNotifier {
     }
     lastCommandType = type;
     lastCommandAt = DateTime.now();
-    statusMessage = 'Comando enviado a $dev: ${type.label}.';
+    statusMessage = 'Comando enviado a ${nomeDaPlaca(dev)}: ${type.label}.';
     _notify();
   }
 
@@ -2207,7 +2208,7 @@ class MotorControlController extends ChangeNotifier {
         metricKey: 'voltage',
         title: 'Tensão fora da faixa',
         message:
-            'ESP $deviceId: tensão ${value.toStringAsFixed(1)} V fora da faixa $range.',
+            '${nomeDaPlaca(deviceId)}: tensão ${value.toStringAsFixed(1)} V fora da faixa $range.',
         severity: TelemetryAlertSeverity.warning,
       );
     }
@@ -2242,7 +2243,7 @@ class MotorControlController extends ChangeNotifier {
         metricKey: metricKey,
         title: title,
         message:
-            'ESP $deviceId: $metricLabel ${value.toStringAsFixed(digits)} $unit acima do limite ${limit.toStringAsFixed(digits)} $unit.',
+            '${nomeDaPlaca(deviceId)}: $metricLabel ${value.toStringAsFixed(digits)} $unit acima do limite ${limit.toStringAsFixed(digits)} $unit.',
         severity: severity,
       );
     }

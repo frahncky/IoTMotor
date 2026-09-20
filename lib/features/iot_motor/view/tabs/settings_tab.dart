@@ -6,6 +6,7 @@ import '../../../../app/providers/esp_local_comm_provider.dart';
 import '../../../../app/providers/mqtt_profiles_provider.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
+import '../../models/device_names.dart';
 import '../../models/mqtt_connection_config.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/app_update_service.dart';
@@ -306,7 +307,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                                   size: 10, 
                                   color: isOnline ? AppTheme.brandMint : Colors.grey),
                                 const SizedBox(width: 8),
-                                Text(isKnown ? id : '$id (manual)'),
+                                Text(
+                                  isKnown
+                                      ? nomeComId(id)
+                                      : '${nomeDaPlaca(id)} (manual)',
+                                ),
                               ],
                             ),
                           );

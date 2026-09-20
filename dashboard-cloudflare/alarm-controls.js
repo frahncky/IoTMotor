@@ -94,13 +94,10 @@
         item.append(nome, estadoAtual);
         alvo.append(item);
       }
-    } else {
-      if (recente() && estado.enabled) mensagem = 'Nenhum alarme ativo.';
-      const vazio = document.createElement('li');
-      vazio.className = 'vazio';
-      vazio.textContent = mensagem;
-      alvo.append(vazio);
+    } else if (recente() && estado.enabled) {
+      mensagem = 'Nenhum alarme ativo.';
     }
+    // Sem nada disparado a lista fica vazia: a frase aparece so no resumo.
     resumo.textContent = mensagem;
   }
 

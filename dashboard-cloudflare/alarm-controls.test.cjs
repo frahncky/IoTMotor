@@ -183,6 +183,10 @@ test('a telemetria diz quais alarmes estao disparados agora', () => {
   assert.match(ativos[0].children[0].textContent, /Vibração/);
   assert.doesNotMatch(ativos[0].children[0].textContent, /Temperatura/);
   assert.equal(h.node('alarmeAtivosResumo').textContent, '1 alarme ativo neste momento.');
+  // Sem nada disparado a frase aparece so no resumo, nao repetida na lista.
+  h.telemetry(c, {alarm_active: false, alarms_firing: []});
+  assert.equal(h.node('alarmeAtivosLista').children.length, 0);
+  assert.equal(h.node('alarmeAtivosResumo').textContent, 'Nenhum alarme ativo.');
 });
 
 test('o botao Salvar envia apenas o interruptor geral e os bipes de evento', () => {
