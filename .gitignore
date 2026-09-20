@@ -46,3 +46,6 @@ app.*.map.json
 
 # Credenciais de Wi-Fi locais dos firmwares ESP32 (nunca versionar)
 wifi_local.h
+
+# Saida de compilacao dos sketches (arduino-cli --build-path)
+esp32/iotmotor_esp32/**/build/

@@ -1,11 +1,11 @@
-/* IoTMotor — ESP32-S3 (esp32-02): somente sensores, SEM acionamento.
+/* IoTMotor — ESP32-S3 (esp32-02): sensores e alarme local, SEM reles.
  * Este sketch pressupoe MPU6050 (SDA GPIO5, SCL GPIO9) e DS18B20
  * (DQ GPIO4, resistor pull-up 4k7 a 3V3), como no projeto de dois modulos.
  * Confirme os pinos da SUA placa S3 antes de gravar. Sensores reais por padrao:
  * campos invalidos sao omitidos; nao inventamos temperatura ou vibracao.
  * O RMS de vibracao e estimativa da aceleracao dinamica em g; nao e mm/s.
  * Bibliotecas: PubSubClient, ArduinoJson 6.x, OneWire, DallasTemperature.
- * Broker publico: nao enviar senhas ou dados confidenciais; sem comandos.
+ * Comandos de alarme, Wi-Fi e OTA; nenhum comando de motor.
  */
 #include <WiFi.h>
 #include <PubSubClient.h>
@@ -14,6 +14,10 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <math.h>
+#include <Preferences.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 #include "mqtt_websocket_client.h"
 #define OTA_ARQUIVO "esp32-02.bin"
 #define PORTAL_NOME "IoTMotor-esp32-02"
@@ -64,6 +68,17 @@ static const char* DEVICE_ID = "esp32-02";
 static const uint8_t SDA_PIN = 5;
 static const uint8_t SCL_PIN = 9;
 static const uint8_t DS18B20_PIN = 4;
+// Sinalizacao local da placa (mesma pinagem do modulo 2 original).
+static const uint8_t BUZZER_PIN = 42;      // Passivo: acionado com tone().
+static const uint8_t LED_AZUL_PIN = 16;
+static const uint8_t LED_VERDE_PIN = 17;
+static const uint8_t LED_VERM_PIN = 18;
+static const bool RGB_ANODO_COMUM = false;  // Catodo comum: nivel alto acende.
+static const uint32_t BEEP_MS = 400UL;      // Intervalo do alarme intermitente.
+static const uint16_t BEEP_HZ = 2000;
+// Limites padrao do alarme; ajustaveis pelo painel e gravados na placa.
+static const float VIBRACAO_LIMITE_PADRAO = 0.50f;
+static const float TEMPERATURA_LIMITE_PADRAO = 60.0f;
 static const uint8_t MPU_ADDR = 0x68;
 static const uint32_t WIFI_RETRY_MS = 12000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
@@ -78,8 +93,9 @@ PubSubClient mqtt(net);
 OneWire* oneWire=nullptr;
 DallasTemperature* ds18b20=nullptr;
 uint8_t ds18b20Pin=0;
-// Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44 e strapping).
-static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,16,17,18,21,38,39,40,41,42,47,48};
+// Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44, strapping
+// e dos pinos do LED/buzzer 16/17/18/42).
+static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
@@ -89,6 +105,84 @@ float vibrationSquares=0.0f,vibrationPeak=0.0f;
 float gravityX=0.0f,gravityY=0.0f,gravityZ=1.0f;
 float temperatureC=NAN;
 bool mpuReady=false,tempPending=false,tempReady=false;
+// Alarme local: LED RGB e buzzer.
+bool alarmeHabilitado=true,estadoCritico=false,buzzerLigado=false;
+float limiteVibracao=VIBRACAO_LIMITE_PADRAO,limiteTemperatura=TEMPERATURA_LIMITE_PADRAO;
+uint32_t ultimoBeep=0,inicioDoTeste=0;
+bool testeAtivo=false;
+float picoAtual=0.0f,rmsAtual=0.0f;
+uint32_t amostrasAtuais=0;
+// Sensores e sinalizacao continuam durante reconexao Wi-Fi, portal e MQTT.
+SemaphoreHandle_t sensoresMutex=nullptr;
+struct LimitesGravados { uint32_t ligado; float vibracao; float temperatura; };
+
+bool limitesValidos(float vibracao,float temperatura) {
+  return isfinite(vibracao)&&vibracao>=0.02f&&vibracao<=8.0f&&
+         isfinite(temperatura)&&temperatura>=1.0f&&temperatura<=125.0f;
+}
+
+void aplicarLed(bool azul,bool verde,bool vermelho) {
+  digitalWrite(LED_AZUL_PIN, azul==!RGB_ANODO_COMUM?HIGH:LOW);
+  digitalWrite(LED_VERDE_PIN, verde==!RGB_ANODO_COMUM?HIGH:LOW);
+  digitalWrite(LED_VERM_PIN, vermelho==!RGB_ANODO_COMUM?HIGH:LOW);
+}
+
+void carregarLimites() {
+  Preferences memoria;
+  if(!memoria.begin("iot-alarme",true))return;
+  LimitesGravados dados{};
+  if(memoria.getBytesLength("config")==sizeof(dados)&&
+     memoria.getBytes("config",&dados,sizeof(dados))==sizeof(dados)&&
+     dados.ligado<=1&&limitesValidos(dados.vibracao,dados.temperatura)) {
+    alarmeHabilitado=dados.ligado!=0;
+    limiteVibracao=dados.vibracao;
+    limiteTemperatura=dados.temperatura;
+  }
+  memoria.end();
+}
+
+bool salvarLimites(bool ligado,float vibracao,float temperatura) {
+  if(!limitesValidos(vibracao,temperatura))return false;
+  Preferences memoria;
+  if(!memoria.begin("iot-alarme",false))return false;
+  const LimitesGravados dados{ligado?1U:0U,vibracao,temperatura};
+  const bool gravado=memoria.putBytes("config",&dados,sizeof(dados))==sizeof(dados);
+  memoria.end();
+  if(!gravado)return false;
+  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+  alarmeHabilitado=ligado;limiteVibracao=vibracao;limiteTemperatura=temperatura;
+  xSemaphoreGive(sensoresMutex);
+  return true;
+}
+
+// Azul: sem sensor valido. Verde: tudo normal. Vermelho: limite ultrapassado.
+void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
+  const bool vibracaoCritica=mpuReady&&vibracaoPico>limiteVibracao;
+  const bool temperaturaCritica=tempReady&&temperatureC>limiteTemperatura;
+  estadoCritico=alarmeHabilitado&&(vibracaoCritica||temperaturaCritica);
+  if(testeAtivo&&(uint32_t)(now-inicioDoTeste)<1500UL)return;
+  testeAtivo=false;  // Subtracao unsigned suporta a volta de millis() a zero.
+  if(!mpuReady&&!tempReady)aplicarLed(true,false,false);
+  else aplicarLed(false,!estadoCritico,estadoCritico);
+  if(!estadoCritico) {
+    if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
+    return;
+  }
+  if((uint32_t)(now-ultimoBeep)>=BEEP_MS) {  // Bipe intermitente.
+    ultimoBeep=now;
+    buzzerLigado=!buzzerLigado;
+    if(buzzerLigado)tone(BUZZER_PIN,BEEP_HZ);
+    else noTone(BUZZER_PIN);
+  }
+}
+
+void testarSinalizacao(uint32_t now) {
+  inicioDoTeste=now;testeAtivo=true;
+  ultimoBeep=now;
+  aplicarLed(true,true,true);
+  tone(BUZZER_PIN,BEEP_HZ);
+  buzzerLigado=true;
+}
 
 // Procura um DS18B20 nos pinos candidatos; so aceita ROM lida com CRC valido.
 void procurarDs18b20() {
@@ -186,10 +280,35 @@ void pollTemperature(uint32_t now) {
   }
 }
 
+// Executada independentemente das operacoes de rede potencialmente bloqueantes.
+void tarefaSensores(void*) {
+  uint32_t ultimaJanela=millis();
+  for(;;) {
+    const uint32_t now=millis();
+    xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+    if((uint32_t)(now-lastSample)>=SAMPLE_MS){lastSample=now;sampleMpu();}
+    if(!mpuReady&&(uint32_t)(now-lastMpuRetry)>=MPU_RETRY_MS) {
+      lastMpuRetry=now;
+      mpuReady=initMpu(false);
+    }
+    pollTemperature(now);
+    if((uint32_t)(now-ultimaJanela)>=PUBLISH_MS) {
+      ultimaJanela=now;
+      amostrasAtuais=mpuReady?sampleCount:0;
+      picoAtual=amostrasAtuais>=10?vibrationPeak:0.0f;
+      rmsAtual=amostrasAtuais>=10?sqrtf(vibrationSquares/amostrasAtuais):0.0f;
+      vibrationSquares=0.0f;vibrationPeak=0.0f;sampleCount=0;
+    }
+    atualizarSinalizacao(now,fmaxf(picoAtual,vibrationPeak));
+    xSemaphoreGive(sensoresMutex);
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
+
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.2-wifi-list";
+  doc["firmware_version"]="s3-sensors-1.3-alarm";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -201,24 +320,29 @@ void publishCapabilities() {
 
 void publishTelemetry() {
   if(!mqtt.connected())return;
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<768> doc;
+  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   doc["device_id"]=DEVICE_ID;
   doc["seq"]=++sequence;
   doc["demo"]=false;
   doc["data_source"]="mpu6050_ds18b20";
   doc["mpu_ok"]=mpuReady;
   doc["temperature_ok"]=tempReady;
-  doc["sample_count"]=sampleCount;
-  if(mpuReady && sampleCount>=10) {
-    doc["vibration"]=sqrtf(vibrationSquares/sampleCount); // RMS de aceleracao dinamica, g
-    doc["vibration_peak"]=vibrationPeak;
+  doc["sample_count"]=amostrasAtuais;
+  doc["alarm_enabled"]=alarmeHabilitado;
+  doc["alarm_active"]=estadoCritico;
+  doc["vibration_limit"]=limiteVibracao;
+  doc["temperature_limit"]=limiteTemperatura;
+  if(mpuReady && amostrasAtuais>=10) {
+    doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
+    doc["vibration_peak"]=picoAtual;
   }
   if(tempReady && isfinite(temperatureC))doc["temperature"]=temperatureC;
-  char payload[384];size_t n=serializeJson(doc,payload,sizeof(payload));
+  xSemaphoreGive(sensoresMutex);
+  char payload[768];size_t n=serializeJson(doc,payload,sizeof(payload));
   if(!n||!mqtt.publish(telemetryTopic,(const uint8_t*)payload,(unsigned int)n,false))
     Serial.printf("[S3/MQTT] falha publicando, state=%d bytes=%u\n",mqtt.state(),(unsigned int)n);
-  else if(sequence%10==1)Serial.printf("[S3/MQTT] telemetria seq=%lu, amostras=%lu, temp_ok=%d\n",(unsigned long)sequence,(unsigned long)sampleCount,tempReady);
-  vibrationSquares=0.0f;vibrationPeak=0.0f;sampleCount=0;
+  else if(sequence%10==1)Serial.printf("[S3/MQTT] telemetria seq=%lu, amostras=%lu, temp_ok=%d\n",(unsigned long)sequence,doc["sample_count"].as<unsigned long>(),doc["temperature_ok"].as<bool>());
 }
 
 // Lista de redes gravada na placa, sem senhas, com a chave publica para o
@@ -240,7 +364,7 @@ void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo)
   if(n)mqtt.publish(ackTopic,(const uint8_t*)saida,(unsigned int)n,false);
 }
 
-// Comandos aceitos: lista de redes Wi-Fi, portal de cadastro e atualizacao.
+// Comandos aceitos: alarme, lista de redes Wi-Fi, portal e atualizacao.
 void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(!topic || strcmp(topic,commandTopic) || !length || length>700)return;
   StaticJsonDocument<512> doc;
@@ -264,6 +388,25 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     ESP.restart();
     return;
   }
+  if(!strcmp(acao,"alarm_test")) {  // Acende tudo e apita por 1,5 s.
+    xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+    testarSinalizacao(millis());
+    xSemaphoreGive(sensoresMutex);
+    publishAck(seq,acao,true,"LED e buzzer acionados por 1,5 s");
+    return;
+  }
+  if(!strcmp(acao,"alarm_set")) {  // Liga/desliga e ajusta os limites.
+    if(!doc["enabled"].is<bool>()||!doc["vibration_limit"].is<float>()||
+       !doc["temperature_limit"].is<float>()||
+       !limitesValidos(doc["vibration_limit"].as<float>(),doc["temperature_limit"].as<float>())) {
+      publishAck(seq,acao,false,"limites fora da faixa ou campos invalidos");
+      return;
+    }
+    const bool ok=salvarLimites(doc["enabled"].as<bool>(),
+      doc["vibration_limit"].as<float>(),doc["temperature_limit"].as<float>());
+    publishAck(seq,acao,ok,ok?"alarme configurado":"falha ao gravar limites");
+    return;
+  }
   if(strcmp(acao,"update"))return;
   StaticJsonDocument<256> resposta;
   resposta["device_id"]=DEVICE_ID;resposta["seq"]=seq;resposta["action"]="update";
@@ -281,9 +424,18 @@ void setup() {
   Serial.begin(115200);
   Wire.begin(SDA_PIN,SCL_PIN);
   Wire.setClock(100000);
+  pinMode(LED_AZUL_PIN,OUTPUT);pinMode(LED_VERDE_PIN,OUTPUT);pinMode(LED_VERM_PIN,OUTPUT);
+  pinMode(BUZZER_PIN,OUTPUT);noTone(BUZZER_PIN);
+  carregarLimites();
+  aplicarLed(true,false,false);  // Azul ate haver sensor valido.
   mpuReady=initMpu(true);
   lastMpuRetry=millis();
   procurarDs18b20();
+  sensoresMutex=xSemaphoreCreateMutex();
+  if(!sensoresMutex||xTaskCreate(tarefaSensores,"sensores",4096,nullptr,1,nullptr)!=pdPASS) {
+    Serial.println("[S3/alarme] falha ao iniciar tarefa de sensores");
+    for(;;)delay(1000);
+  }
   snprintf(telemetryTopic,sizeof(telemetryTopic),"%s/%s/telemetry",TOPIC_PREFIX,DEVICE_ID);
   snprintf(statusTopic,sizeof(statusTopic),"%s/%s/status",TOPIC_PREFIX,DEVICE_ID);
   snprintf(capabilitiesTopic,sizeof(capabilitiesTopic),"%s/%s/capabilities",TOPIC_PREFIX,DEVICE_ID);
@@ -305,12 +457,7 @@ void setup() {
 
 void loop() {
   uint32_t now=millis();
-  if((uint32_t)(now-lastSample)>=SAMPLE_MS){lastSample=now;sampleMpu();}
-  if(!mpuReady && (uint32_t)(now-lastMpuRetry)>=MPU_RETRY_MS) {
-    lastMpuRetry=now;
-    mpuReady=initMpu(false);  // Falha ja avisada; so informa quando voltar.
-  }
-  pollTemperature(now);
+
   if(WiFi.status()!=WL_CONNECTED) {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
@@ -331,6 +478,7 @@ void loop() {
     }
     delay(2);return;
   }
+
   mqtt.loop();
   now=millis();
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {

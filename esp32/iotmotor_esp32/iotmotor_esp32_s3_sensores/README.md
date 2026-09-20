@@ -1,6 +1,6 @@
 # IoTMotor — ESP32-S3, módulo de vibração e temperatura
 
-Firmware: `iotmotor_esp32_s3_sensores.ino` para **ESP32-S3**, identidade MQTT `esp32-02`. Não há GPIO de relé, lógica de partida nem inscrição em tópico de comando. Os valores vêm **somente dos sensores físicos**; quando ausentes ou inválidos, o JSON omite o campo e o dashboard exibe `—`.
+Firmware: `iotmotor_esp32_s3_sensores.ino` para **ESP32-S3**, identidade MQTT `esp32-02`. Não há GPIO de relé nem lógica de partida. O tópico de comando permite configurar/testar o alarme local, gerenciar Wi-Fi e atualizar o firmware. Os valores vêm **somente dos sensores físicos**; quando ausentes ou inválidos, o JSON omite o campo e o dashboard exibe `—`.
 
 A pinagem abaixo foi extraída da proposta de dois módulos do projeto, **não foi confirmada na sua montagem**. Confira o modelo exato do S3 e os módulos de sensor antes de ligar.
 
@@ -11,10 +11,43 @@ A pinagem abaixo foi extraída da proposta de dois módulos do projeto, **não f
 | MPU6050 VCC/GND | Alimentação compatível com 3,3 V / GND |
 | DS18B20 DQ | GPIO4, com resistor pull-up 4,7 kΩ para 3,3 V |
 | DS18B20 VCC/GND | 3,3 V / GND |
+| Buzzer passivo | GPIO42, sinal de 2 kHz |
+| LED RGB azul / verde / vermelho | GPIO16 / GPIO17 / GPIO18, catodo comum |
+
+## Alarme local
+
+A pinagem do LED e do buzzer foi recuperada do firmware original do módulo 2.
+Esses quatro pinos ficam excluídos da busca automática do DS18B20.
+
+O LED fica verde quando há sensor válido e nenhum limite excedido; vermelho
+e buzzer intermitente quando o alarme está habilitado e há valor acima do
+limite; azul quando ambos os sensores estão sem leitura válida. Desabilitar
+o alarme silencia o buzzer e remove a indicação vermelha.
+
+Os padrões são **0,50 g de pico de aceleração dinâmica** e **60 °C**.
+No painel, use **Alarme do ESP32-S3** para salvar limites (0,02 a 8 g e
+1 a 125 °C), ligar/desligar o alarme ou testar todas as cores e o buzzer
+durante 1,5 s. O limite de vibração compara o pico, não o RMS dos gráficos.
+Os limites e a habilitação são gravados juntos na memória persistente; a
+confirmação de sucesso só é enviada depois da gravação.
+
+Sensores e sinalização usam uma tarefa independente da rede. Continuam
+funcionando durante perda de Wi-Fi/MQTT e abertura do portal, sem depender
+de um navegador aberto. A janela de vibração é renovada a cada segundo,
+inclusive offline. Reinicialização e gravação de firmware interrompem a execução.
+
+Comandos em `iotmotor/esp32-02/command`:
+- `{"v":1,"device_id":"esp32-02","seq":"123","action":"alarm_set","enabled":true,"vibration_limit":0.5,"temperature_limit":60}`
+- `{"v":1,"device_id":"esp32-02","seq":"124","action":"alarm_test"}`
+
+Respostas em `command_ack` contêm `seq`, `action`, `accepted` e `reason`.
+A telemetria inclui `alarm_enabled`, `alarm_active`, `vibration_limit`
+e `temperature_limit`. O painel só habilita os controles com telemetria
+compatível recebida há menos de 10 s e ignora telemetria/ACK retidos.
 
 Instale no Arduino IDE o core ESP32 e as bibliotecas `PubSubClient`, `ArduinoJson` **6.x**, `OneWire` e `DallasTemperature`. Selecione a placa ESP32-S3 correta e compile/grave este arquivo na **S3**; mudanças no GitHub ou no Cloudflare não atualizam o firmware. Monitor Serial: **115200 baud**. Não foi feita validação física na sua placa.
 
-A placa usa Wi-Fi aberto `IFMA_IOT` e publica via MQTT sobre WebSocket em `ws://test.mosquitto.org:8080` (a rede bloqueia as portas MQTT 1883 e 8883); o navegador usa `wss://test.mosquitto.org:8081`. Tópicos: `iotmotor/esp32-02/telemetry` e `iotmotor/esp32-02/status`. O painel agrega esses dados aos elétricos de `iotmotor/esp32-01/telemetry`, mas comandos são destinados **somente** ao `esp32-01`.
+A placa usa Wi-Fi aberto `IFMA_IOT` e publica via MQTT sobre WebSocket em `ws://test.mosquitto.org:8080` (a rede bloqueia as portas MQTT 1883 e 8883); o navegador usa `wss://test.mosquitto.org:8081`. Tópicos: `iotmotor/esp32-02/telemetry` e `iotmotor/esp32-02/status`. O painel agrega esses dados aos elétricos de `iotmotor/esp32-01/telemetry`, e os comandos de contatores são destinados **somente** ao `esp32-01`; o alarme usa o `esp32-02`.
 
 O MPU6050 é amostrado aproximadamente a 50 Hz e o JSON publica `vibration` (RMS estimado da aceleração dinâmica em **g**) e `vibration_peak`; esse índice precisa de calibração e validação antes de interpretação como condição de máquina. A temperatura do DS18B20 é solicitada sem bloquear a comunicação, aproximadamente a cada 2 s. Erros de sensores são indicados em `mpu_ok` e `temperature_ok`; não há simulação neste firmware.
 

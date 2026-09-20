@@ -29,8 +29,9 @@ jobs:
           node --check dashboard-cloudflare/remote-controls.js
           node --check dashboard-cloudflare/hardware-mirror.js
           node --check dashboard-cloudflare/wifi-manager.js
+          node --check dashboard-cloudflare/alarm-controls.js
       - name: Run web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs
       - name: Verify MQTT-only firmware and controls
         run: |
           python3 - <<'PY'

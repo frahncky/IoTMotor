@@ -21,3 +21,20 @@ A interface web fica em `dashboard-cloudflare/index.html`. O **ESP32-01** le o P
 O repositório publica **codigo-fonte** no GitHub, nao grava automaticamente o ESP32 nem faz deploy automatico no Cloudflare. Grave no ESP32-01 o sketch `iotmotor_esp32_comandos.ino` com os dois headers da mesma pasta; grave o firmware da pasta `iotmotor_esp32_s3_sensores` no S3. Abra o Monitor Serial em 115200 para conferir conexao Wi-Fi, MQTT e sensores. No dashboard Cloudflare, use os mesmos broker, prefixo e IDs.
 
 Para Cloudflare Pages com Git, use a branch `main`, build command `exit 0` e output `dashboard-cloudflare`. Se usar Worker, publique os arquivos dessa pasta como assets estaticos do Worker. Um commit no GitHub nao atualiza automaticamente um Worker configurado sem deploy. Verifique se `/remote-controls.js` e `/dual-dashboard.js` sao servidos na versao atual. A disponibilidade do broker publico nao e garantida.
+
+## Alarme do ESP32-S3
+
+A seção **Alarme do ESP32-S3** permite habilitar o alarme local, salvar os
+limites de vibração de pico (0,02 a 8 g) e temperatura (1 a 125 °C), e testar
+o LED RGB e buzzer por 1,5 s. Os padrões são 0,50 g e 60 °C. Os limites
+persistem na placa; o alarme funciona sem o painel e durante perda de rede.
+
+Publique também `alarm-controls.js` junto dos demais arquivos do dashboard.
+O S3 precisa do firmware `s3-sensors-1.3-alarm` ou posterior com os campos de
+alarme. Os controles aguardam telemetria recente e a confirmação do dispositivo
+ao salvar. O indicador mostra sensores ausentes e dados antigos explicitamente.
+
+Validação do painel:
+```sh
+node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs
+```
