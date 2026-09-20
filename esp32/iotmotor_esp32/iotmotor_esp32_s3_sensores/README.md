@@ -19,6 +19,20 @@ A pinagem abaixo foi extraída da proposta de dois módulos do projeto, **não f
 A pinagem do LED e do buzzer foi recuperada do firmware original do módulo 2.
 Esses quatro pinos ficam excluídos da busca automática do DS18B20.
 
+**Buzzer sem som (setembro de 2026):** em ensaio na bancada, o firmware
+aciona o GPIO42 e responde `bipe acionado`, mas nada é ouvido — a causa é
+elétrica (ligação/alimentação do buzzer), não de software. Depois de refazer
+a ligação, o comando `buzzer_probe` percorre os pinos livres tocando cada um
+por 0,7 s, primeiro como buzzer **passivo** (`tone`, 2 kHz) e depois como
+**ativo** (nível alto), anunciando cada passo em `command_ack`:
+
+```json
+{"v":1,"device_id":"esp32-02","seq":"1726580000000999","action":"buzzer_probe","ms":700}
+```
+
+Ouvindo em qual passo sai som, ajuste `BUZZER_PIN` no sketch e, se o buzzer
+for do tipo ativo, troque `tone()`/`noTone()` por `digitalWrite()`.
+
 O LED fica verde quando há sensor válido e nenhum limite excedido; vermelho
 e buzzer intermitente quando o alarme está habilitado e há valor acima do
 limite; azul quando ambos os sensores estão sem leitura válida. Desabilitar
