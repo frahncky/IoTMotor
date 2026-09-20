@@ -193,9 +193,22 @@
       }
       renderizar();
     });
-    const caiu = () => { if (client === ativo) { conectado = false; renderizar(); } };
+    // Mesma tolerancia dos botoes Ligar/Desligar: quedas curtas do broker
+    // publico nao devem apagar a lista de partidas da tela.
+    let quedaTimer = null;
+    const caiu = () => {
+      if (client !== ativo || quedaTimer) return;
+      quedaTimer = setTimeout(() => {
+        quedaTimer = null;
+        if (client !== ativo || ativo.connected) return;
+        conectado = false;
+        renderizar();
+      }, 6000);
+    };
     ativo.on('offline', caiu);
     ativo.on('close', caiu);
+    ativo.on('reconnect', caiu);
+    ativo.on('connect', () => { if (quedaTimer) { clearTimeout(quedaTimer); quedaTimer = null; } });
     renderizar();
   }
 

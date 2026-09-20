@@ -7,7 +7,9 @@
   let client = null, connected = false, prefix = '', device = '', boot = '';
   let updatedAt = 0, relays = null, pending = null, sequence = 0;
   const topic = kind => `${prefix}/${device}/${kind}`;
-  const recent = () => Boolean(boot && Date.now() - updatedAt < 10000 && relays);
+  // Janela de telemetria "recente". Medido no broker publico: intervalos de
+  // 8 a 20 s sao comuns, e 10 s desabilitavam os botoes o tempo todo.
+  const recent = () => Boolean(boot && Date.now() - updatedAt < 25000 && relays);
   const feedback = message => { $('commandFeedback').textContent = message; };
   function refresh() {
     // A pagina pode pedir a partida com MQTT conectado; nenhum jumper/chave.
@@ -76,8 +78,29 @@
       }
       refresh();
     });
-    active.on('offline', () => { if (client === active) {connected = false;refresh();} });
-    active.on('close', () => { if (client === active) {connected = false;refresh();} });
+    // Quedas curtas do broker publico (a biblioteca reconecta em 4 s) nao
+    // desabilitam os botoes na hora: isso fazia eles piscarem sem motivo.
+    // So depois de QUEDA_TOLERADA_MS sem voltar o painel se da por desconectado.
+    const QUEDA_TOLERADA_MS = 6000;
+    let quedaTimer = null;
+    const caiu = () => {
+      if (client !== active || quedaTimer) return;
+      feedback('Conexão instável; reconectando ao broker…');
+      quedaTimer = setTimeout(() => {
+        quedaTimer = null;
+        if (client !== active || active.connected) return;
+        connected = false;
+        feedback('Desconectado do broker; comandos indisponíveis.');
+        refresh();
+      }, QUEDA_TOLERADA_MS);
+    };
+    const voltou = () => {
+      if (quedaTimer) { clearTimeout(quedaTimer); quedaTimer = null; }
+    };
+    active.on('offline', caiu);
+    active.on('close', caiu);
+    active.on('reconnect', caiu);
+    active.on('connect', voltou);
     active.on('error', error => { if (client === active) feedback('Erro MQTT: ' + error.message); });
     refresh();
   }
