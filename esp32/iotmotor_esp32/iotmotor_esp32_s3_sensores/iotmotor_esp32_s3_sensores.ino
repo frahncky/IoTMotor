@@ -435,6 +435,35 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     ESP.restart();
     return;
   }
+  // Procura o buzzer: percorre os pinos livres tocando de dois jeitos, para
+  // descobrir em qual pino ele esta e se e passivo (tone) ou ativo (nivel).
+  // Cada passo e anunciado em command_ack, entao da para casar o som com o pino.
+  if(!strcmp(acao,"buzzer_probe")) {
+    static const uint8_t CANDIDATOS[]={42,41,40,39,38,47,48,21,14,13,12,11,10,8,7,6,2,1};
+    const uint32_t passo=constrain((long)(doc["ms"] | 700),200,2000);
+    publishAck(seq,acao,true,"procurando o buzzer: ouca a placa");
+    for(uint8_t pino : CANDIDATOS) {
+      if(pino==LED_AZUL_PIN||pino==LED_VERDE_PIN||pino==LED_VERM_PIN||pino==ds18b20Pin)continue;
+      char aviso[64];
+      for(uint8_t modo=0;modo<2;++modo) {   // 0 = passivo (tone), 1 = ativo (nivel).
+        snprintf(aviso,sizeof(aviso),"GPIO%u %s",pino,modo?"nivel alto (ativo)":"tone (passivo)");
+        publishAck(seq,acao,true,aviso);
+        Serial.printf("[BUZZER] %s\n",aviso);
+        if(modo) {pinMode(pino,OUTPUT);digitalWrite(pino,HIGH);}
+        else tone(pino,BEEP_HZ);
+        const uint32_t fim=millis()+passo;
+        while((int32_t)(millis()-fim)<0){mqtt.loop();delay(10);}
+        if(modo)digitalWrite(pino,LOW);
+        else noTone(pino);
+        pinMode(pino,INPUT);              // Solta o pino antes do proximo.
+        const uint32_t pausa=millis()+250;
+        while((int32_t)(millis()-pausa)<0){mqtt.loop();delay(10);}
+      }
+    }
+    pinMode(BUZZER_PIN,OUTPUT);
+    publishAck(seq,acao,true,"procura encerrada");
+    return;
+  }
   if(!strcmp(acao,"buzzer_beep")) {  // Bipe pedido pelo painel ou pelo app.
     const uint16_t frequencia=constrain((int)(doc["freq"] | BEEP_HZ),200,5000);
     const uint32_t duracao=constrain((long)(doc["ms"] | 120),20,2000);
