@@ -49,3 +49,6 @@ wifi_local.h
 
 # Saida de compilacao dos sketches (arduino-cli --build-path)
 esp32/iotmotor_esp32/**/build/
+
+# Cache local do Wrangler (Cloudflare)
+.wrangler/

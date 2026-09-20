@@ -10,13 +10,20 @@ function setup() {
   const timers = new Map(), intervals = [];
   let timerId = 0;
   const nodes = new Map();
-  function node(id) {
-    if (!nodes.has(id)) nodes.set(id, {
-      value: '', checked: true, disabled: false, textContent: '', className: '', handlers: {},
+  function criar() {
+    return {
+      value: '', checked: true, disabled: false, textContent: '', className: '', title: '',
+      type: '', step: '', handlers: {}, children: [], atributos: {},
+      get options() { return this.children; },
       addEventListener(name, fn) { this.handlers[name] = fn; },
       fire(name) { this.handlers[name]?.({preventDefault() {}}); },
-      replaceChildren() {}, append() {}, setAttribute() {}
-    });
+      replaceChildren() { this.children = []; },
+      append(...filhos) { this.children.push(...filhos); },
+      setAttribute(nome, valor) { this.atributos[nome] = valor; }
+    };
+  }
+  function node(id) {
+    if (!nodes.has(id)) nodes.set(id, criar());
     return nodes.get(id);
   }
   node('broker').value = 'wss://test.mosquitto.org:8081';
@@ -24,7 +31,7 @@ function setup() {
   node('sensorDevice').value = 'esp32-02';
   const clients = [];
   const context = vm.createContext({
-    document: {getElementById: node, createElement: () => node(Symbol()), querySelectorAll: () => []},
+    document: {getElementById: node, createElement: criar, createTextNode: t => ({textContent: t}), querySelectorAll: () => []},
     window: {mqtt: {connect() {
       const c = new EventEmitter();
       c.connected = false; c.published = [];
@@ -36,7 +43,7 @@ function setup() {
       clients.push(c);
       return c;
     }}},
-    URL, Date: {now: () => now}, Math, JSON,
+    URL, Date: {now: () => now}, Math, JSON, Number, Set, Map, Array, String, Boolean,
     setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id; },
     clearTimeout(id) { timers.delete(id); },
     setInterval(fn) { intervals.push(fn); },
@@ -53,10 +60,17 @@ function setup() {
     `${node('prefix').value}/${node('sensorDevice').value}/${kind}`,
     Buffer.from(JSON.stringify({device_id: node('sensorDevice').value, ...extra})), {retain});
   const telemetry = (client, extra = {}, retain = false) => send(client, 'telemetry', {
-    alarm_enabled: true, alarm_active: false, vibration_limit: 0.5, temperature_limit: 60,
-    mpu_ok: true, temperature_ok: true, ...extra
+    alarm_enabled: true, alarm_active: false, mpu_ok: true, temperature_ok: true, ...extra
   }, retain);
-  return {node, clients, context, connect, send, telemetry, timers,
+  const PADRAO = [
+    {id: 'vib', field: 'vibration_peak', board: 'sensors', above: true, limit: 0.5, on: true, firing: false},
+    {id: 'temp', field: 'temperature', board: 'sensors', above: true, limit: 60, on: true, firing: false}
+  ];
+  const alarms = (client, lista = PADRAO, max = 8) => send(client, 'alarms', {alarms: lista, max}, true);
+  // Cada linha da lista tem: nome, limite, origem, [disparado], ligado, ops.
+  const linhas = () => node('alarmeLista').children;
+  const parte = (linha, classe) => linha.children.find(c => c.className === classe);
+  return {node, clients, context, connect, send, telemetry, alarms, timers, linhas, parte, PADRAO,
     advance(ms) { now += ms; intervals.forEach(fn => fn()); }};
 }
 
@@ -68,53 +82,121 @@ test('espera telemetria atual do firmware de alarme; dados retidos ou de outro S
   h.telemetry(c, {alarm_enabled: undefined});
   assert.equal(h.node('alarmeSalvar').disabled, true);
   h.telemetry(c);
-  assert.equal(h.node('alarmeVib').value, 0.5);
   assert.equal(h.node('alarmeSalvar').disabled, false);
   h.advance(10000);
   assert.equal(h.node('alarmeSalvar').disabled, true);
   assert.match(h.node('alarmeEstado').textContent, /sem dados recentes/);
 });
 
-test('preserva limites e checkbox editados entre telemetrias e confirma somente o ACK correto', () => {
+test('a lista retida da placa vira as linhas editaveis do painel', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c);
-  h.node('alarmeVib').value = '0.8'; h.node('alarmeVib').fire('input');
-  h.node('alarmeTemp').value = '70'; h.node('alarmeTemp').fire('input');
+  assert.match(h.node('alarmeResumo').textContent, /firmware antigo/);
+  assert.equal(h.node('alarmeAddBtn').disabled, true);
+  h.alarms(c);
+  assert.equal(h.node('alarmeResumo').textContent, '2 de 8 alarmes gravados na placa.');
+  assert.equal(h.linhas().length, 2);
+  assert.equal(h.parte(h.linhas()[0], 'nome').textContent, 'Vibração (pico) (g) acima de');
+  assert.equal(h.parte(h.linhas()[0], 'limite').value, '0.5');
+  assert.equal(h.node('alarmeAddBtn').disabled, false);
+  // Lista cheia: nao ha espaco para outro alarme na placa.
+  h.alarms(c, [h.PADRAO[0]], 1);
+  assert.equal(h.node('alarmeAddBtn').disabled, true);
+});
+
+test('editar o limite de uma linha e confirmar grava so aquele alarme', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  const linha = h.linhas()[1];
+  h.parte(linha, 'limite').value = '75';
+  h.parte(linha, 'limite').fire('input');
+  h.parte(linha, 'ops').children[0].fire('click');
+  assert.deepEqual(c.published[0].data, {
+    v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq, action: 'alarm_save',
+    alarm: {id: 'temp', field: 'temperature', board: 'sensors', above: true, limit: 75, on: true}
+  });
+  // O rascunho sobrevive a uma telemetria nova enquanto a placa nao confirma.
+  h.telemetry(c);
+  assert.equal(h.parte(h.linhas()[1], 'limite').value, '75');
+  h.send(c, 'command_ack', {...c.published[0].data, accepted: true, reason: 'alarme atualizado'});
+  h.alarms(c, [h.PADRAO[0], {...h.PADRAO[1], limit: 75}]);
+  assert.equal(h.parte(h.linhas()[1], 'limite').value, '75');
+  assert.equal(h.timers.size, 0);
+});
+
+test('adiciona alarme de corrente do quadro de comando e recusa limite fora da faixa', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  assert.equal(h.node('alarmeGrandeza').options.length, 8);
+  h.node('alarmeGrandeza').value = 'current';
+  h.node('alarmeLimite').value = '500';
+  h.node('alarmeAddForm').fire('submit');
+  assert.equal(c.published.length, 0);
+  assert.match(h.node('alarmeFeedback').textContent, /Corrente \(A\): informe de 0 a 200/);
+  h.node('alarmeLimite').value = '12.5';
+  h.node('alarmeAddForm').fire('submit');
+  assert.deepEqual(c.published[0].data.alarm, {
+    id: 'current', field: 'current', board: 'command', above: true, limit: 12.5, on: true
+  });
+  h.send(c, 'command_ack', {...c.published[0].data, accepted: true, reason: 'alarme criado'});
+  // O id novo nao colide com o que ja esta na placa.
+  h.alarms(c, [...h.PADRAO, {id: 'current', field: 'current', board: 'command', above: true, limit: 12.5, on: true}]);
+  h.node('alarmeLado').value = 'below';
+  h.node('alarmeLimite').value = '3';
+  h.node('alarmeAddForm').fire('submit');
+  assert.deepEqual(c.published[1].data.alarm, {
+    id: 'current2', field: 'current', board: 'command', above: false, limit: 3, on: true
+  });
+});
+
+test('o botao de remover tira o alarme da placa', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  h.parte(h.linhas()[0], 'ops').children[1].fire('click');
+  assert.deepEqual(c.published[0].data, {
+    v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq, action: 'alarm_remove', id: 'vib'
+  });
+  assert.match(h.node('alarmeFeedback').textContent, /Removendo/);
+});
+
+test('a telemetria diz quais alarmes estao disparados agora', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  assert.equal(h.linhas()[0].className, '');
+  h.telemetry(c, {alarm_active: true, alarms_firing: ['vib']});
+  assert.equal(h.linhas()[0].className, 'atual');
+  assert.equal(h.linhas()[1].className, '');
+  assert.match(h.node('alarmeEstado').textContent, /ALARME/);
+});
+
+test('o botao Salvar envia apenas o interruptor geral e os bipes de evento', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c);
   h.node('alarmeOn').checked = false; h.node('alarmeOn').fire('change');
   h.node('alarmeSons').checked = true; h.node('alarmeSons').fire('change');
   h.telemetry(c);
-  assert.equal(h.node('alarmeVib').value, '0.8');
   assert.equal(h.node('alarmeOn').checked, false);
   h.node('alarmeForm').fire('submit');
-  const cmd = c.published[0];
-  assert.equal(cmd.topic, 'iotmotor/esp32-02/command');
-  assert.equal(cmd.options.retain, false);
-  assert.deepEqual(cmd.data, {v: 1, device_id: 'esp32-02', seq: cmd.data.seq,
-    action: 'alarm_set', enabled: false, sounds: true, vibration_limit: 0.8, temperature_limit: 70});
+  assert.deepEqual(c.published[0].data, {v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq,
+    action: 'alarm_set', enabled: false, sounds: true});
   h.node('alarmeForm').fire('submit');
   assert.equal(c.published.length, 1);
-  h.send(c, 'command_ack', {...cmd.data, action: 'alarm_test', accepted: true});
-  assert.equal(h.node('alarmeSalvar').disabled, true);
-  h.send(c, 'command_ack', {...cmd.data, accepted: 'false'});
-  assert.equal(h.node('alarmeSalvar').disabled, true);
-  h.send(c, 'command_ack', {...cmd.data, accepted: true}, true);
-  assert.equal(h.node('alarmeSalvar').disabled, true);
-  h.send(c, 'command_ack', {...cmd.data, accepted: true});
+  h.send(c, 'command_ack', {...c.published[0].data, accepted: true});
   assert.equal(h.node('alarmeSalvar').disabled, false);
-  assert.equal(h.node('alarmeVib').value, 0.8);
   assert.equal(h.timers.size, 0);
 });
 
 test('rejeicao, erro de publicacao e timeout liberam o formulario sem perder o rascunho', () => {
   const h = setup(), c = h.connect();
-  h.telemetry(c);
-  h.node('alarmeVib').value = '0.9'; h.node('alarmeVib').fire('input');
-  h.node('alarmeForm').fire('submit');
+  h.telemetry(c); h.alarms(c);
+  h.parte(h.linhas()[0], 'limite').value = '0.9';
+  h.parte(h.linhas()[0], 'limite').fire('input');
+  h.parte(h.linhas()[0], 'ops').children[0].fire('click');
   h.send(c, 'command_ack', {...c.published[0].data, accepted: false, reason: 'falha ao gravar'});
   assert.match(h.node('alarmeFeedback').textContent, /recusou/);
-  assert.equal(h.node('alarmeVib').value, '0.9');
+  assert.equal(h.parte(h.linhas()[0], 'limite').value, '0.9');
   c.publishError = Error('sem rede');
-  h.node('alarmeForm').fire('submit');
+  h.parte(h.linhas()[0], 'ops').children[0].fire('click');
   assert.match(h.node('alarmeFeedback').textContent, /Falha ao enviar/);
   assert.equal(h.node('alarmeSalvar').disabled, false);
   c.publishError = null;
@@ -136,11 +218,12 @@ test('mostra sensores ausentes, alarme ativo e alarme desligado', () => {
 
 test('reconexao exige novos dados e ignora mensagens da conexao encerrada', () => {
   const h = setup(), c = h.connect();
-  h.telemetry(c);
+  h.telemetry(c); h.alarms(c);
   h.node('alarmeTeste').fire('click');
   const next = h.connect();
   assert.equal(c.connected, false);
   assert.equal(h.timers.size, 0);
+  assert.equal(h.linhas().length, 0);
   h.telemetry(c);
   assert.equal(h.node('alarmeTeste').disabled, true);
   h.telemetry(next);
@@ -154,16 +237,11 @@ test('reconexao exige novos dados e ignora mensagens da conexao encerrada', () =
   assert.equal(h.node('alarmeTeste').disabled, true);
 });
 
-test('recusa limites fora da faixa e usa o dispositivo selecionado para testar o alarme', () => {
+test('usa o dispositivo selecionado para testar o alarme', () => {
   const h = setup();
   h.node('prefix').value = 'bancada/teste'; h.node('sensorDevice').value = 's3-lab';
   const c = h.connect();
   h.telemetry(c);
-  for (const value of ['', '0.01', '9', 'Infinity', 'NaN']) {
-    h.node('alarmeVib').value = value;
-    h.node('alarmeForm').fire('submit');
-  }
-  assert.equal(c.published.length, 0);
   h.node('alarmeTeste').fire('click');
   assert.equal(c.published[0].topic, 'bancada/teste/s3-lab/command');
   assert.equal(c.published[0].data.action, 'alarm_test');
@@ -195,6 +273,7 @@ test('dashboard conecta os auxiliares depois de substituir a conexao e desconect
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   assert.match(html, /<script src="\.\/alarm-controls\.js" defer><\/script>/);
 });
+
 test('o botao Bipar pede um bipe curto ao S3, sem mexer nos limites', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c);

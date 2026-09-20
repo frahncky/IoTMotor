@@ -24,6 +24,7 @@
 constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
 #include "wifi_portal.h"
+#include "alarm_list.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -97,6 +98,7 @@ uint8_t ds18b20Pin=0;
 // e dos pinos do LED/buzzer 16/17/18/42).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
+char alarmsTopic[96], quadroTelemetryTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -209,6 +211,22 @@ bool atualizarBeeps(uint32_t now) {
   return true;
 }
 
+// Lista de alarmes retida, para o painel e o app abrirem ja preenchidos.
+void publishAlarms() {
+  if(!mqtt.connected())return;
+  StaticJsonDocument<1536> doc;
+  doc["device_id"]=DEVICE_ID;
+  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+  doc["enabled"]=alarmeHabilitado;
+  doc["sounds"]=sonsDeEventos;
+  alarmes::descrever(doc);
+  xSemaphoreGive(sensoresMutex);
+  String texto;
+  serializeJson(doc,texto);
+  if(texto.length())
+    mqtt.publish(alarmsTopic,(const uint8_t*)texto.c_str(),(unsigned int)texto.length(),true);
+}
+
 void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo);
 
 // Avanca a procura do buzzer; true enquanto ela estiver em andamento.
@@ -253,9 +271,9 @@ bool atualizarProcuraDoBuzzer(uint32_t now) {
 // Azul: sem sensor valido. Verde: tudo normal. Vermelho: limite ultrapassado.
 void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
-  const bool vibracaoCritica=mpuReady&&vibracaoPico>limiteVibracao;
-  const bool temperaturaCritica=tempReady&&temperatureC>limiteTemperatura;
-  estadoCritico=alarmeHabilitado&&(vibracaoCritica||temperaturaCritica);
+  // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
+  const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,temperatureC);
+  estadoCritico=alarmeHabilitado&&algumDisparou;
   if(testeAtivo&&(uint32_t)(now-inicioDoTeste)<1500UL)return;
   testeAtivo=false;  // Subtracao unsigned suporta a volta de millis() a zero.
   if(!mpuReady&&!tempReady)aplicarLed(true,false,false);
@@ -406,7 +424,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.3-alarm";
+  doc["firmware_version"]="s3-sensors-1.4-alarmes";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -418,7 +436,7 @@ void publishCapabilities() {
 
 void publishTelemetry() {
   if(!mqtt.connected())return;
-  StaticJsonDocument<768> doc;
+  StaticJsonDocument<1024> doc;
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   doc["device_id"]=DEVICE_ID;
   doc["seq"]=++sequence;
@@ -430,15 +448,18 @@ void publishTelemetry() {
   doc["alarm_enabled"]=alarmeHabilitado;
   doc["event_sounds"]=sonsDeEventos;
   doc["alarm_active"]=estadoCritico;
-  doc["vibration_limit"]=limiteVibracao;
-  doc["temperature_limit"]=limiteTemperatura;
+  doc["vibration_limit"]=alarmes::limiteDe("vib",limiteVibracao);
+  doc["temperature_limit"]=alarmes::limiteDe("temp",limiteTemperatura);
   if(mpuReady && amostrasAtuais>=10) {
     doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
     doc["vibration_peak"]=picoAtual;
   }
   if(tempReady && isfinite(temperatureC))doc["temperature"]=temperatureC;
+  JsonArray disparados=doc.createNestedArray("alarms_firing");
+  for(uint8_t i=0;i<alarmes::total;i++)
+    if(alarmes::lista[i].disparado)disparados.add(alarmes::lista[i].id);
   xSemaphoreGive(sensoresMutex);
-  char payload[768];size_t n=serializeJson(doc,payload,sizeof(payload));
+  char payload[1024];size_t n=serializeJson(doc,payload,sizeof(payload));
   if(!n||!mqtt.publish(telemetryTopic,(const uint8_t*)payload,(unsigned int)n,false))
     Serial.printf("[S3/MQTT] falha publicando, state=%d bytes=%u\n",mqtt.state(),(unsigned int)n);
   else if(sequence%10==1)Serial.printf("[S3/MQTT] telemetria seq=%lu, amostras=%lu, temp_ok=%d\n",(unsigned long)sequence,doc["sample_count"].as<unsigned long>(),doc["temperature_ok"].as<bool>());
@@ -465,7 +486,16 @@ void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo)
 
 // Comandos aceitos: alarme, lista de redes Wi-Fi, portal e atualizacao.
 void onCommand(char* topic, uint8_t* payload, unsigned int length) {
-  if(!topic || strcmp(topic,commandTopic) || !length || length>700)return;
+  if(!topic || !length)return;
+  if(!strcmp(topic,quadroTelemetryTopic)) {  // Medidas eletricas do outro ESP32.
+    if(length<=900) {
+      xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+      alarmes::receberMedidasDoQuadro(payload,length,millis());
+      xSemaphoreGive(sensoresMutex);
+    }
+    return;
+  }
+  if(strcmp(topic,commandTopic) || length>700)return;
   StaticJsonDocument<512> doc;
   if(deserializeJson(doc,payload,length) || doc["v"].as<int>()!=1 ||
      strcmp(doc["device_id"] | "",DEVICE_ID))return;
@@ -511,16 +541,45 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     return;
   }
   if(!strcmp(acao,"alarm_set")) {  // Liga/desliga e ajusta os limites.
-    if(!doc["enabled"].is<bool>()||!doc["vibration_limit"].is<float>()||
-       !doc["temperature_limit"].is<float>()||
-       !limitesValidos(doc["vibration_limit"].as<float>(),doc["temperature_limit"].as<float>())) {
+    const float novaVibracao=doc["vibration_limit"] | limiteVibracao;
+    const float novaTemperatura=doc["temperature_limit"] | limiteTemperatura;
+    if(!doc["enabled"].is<bool>()||!limitesValidos(novaVibracao,novaTemperatura)) {
       publishAck(seq,acao,false,"limites fora da faixa ou campos invalidos");
       return;
     }
-    const bool ok=salvarLimites(doc["enabled"].as<bool>(),
-      doc["vibration_limit"].as<float>(),doc["temperature_limit"].as<float>(),
+    const bool ok=salvarLimites(doc["enabled"].as<bool>(),novaVibracao,novaTemperatura,
       doc["sounds"] | sonsDeEventos);
+    if(ok) {
+      xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+      alarmes::ajustarLimite("vib",novaVibracao);
+      alarmes::ajustarLimite("temp",novaTemperatura);
+      xSemaphoreGive(sensoresMutex);
+    }
     publishAck(seq,acao,ok,ok?"alarme configurado":"falha ao gravar limites");
+    if(ok)publishAlarms();
+    return;
+  }
+  if(!strcmp(acao,"alarm_list")) {  // O painel pedindo a lista atual.
+    publishAck(seq,acao,true,"lista publicada");
+    publishAlarms();
+    return;
+  }
+  if(!strcmp(acao,"alarm_save")) {  // Cria ou edita um alarme da lista.
+    const char* motivo="";
+    xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+    const bool ok=alarmes::salvar(doc["alarm"],motivo);
+    xSemaphoreGive(sensoresMutex);
+    publishAck(seq,acao,ok,motivo);
+    if(ok)publishAlarms();
+    return;
+  }
+  if(!strcmp(acao,"alarm_remove")) {  // Tira um alarme da lista.
+    const char* motivo="";
+    xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+    const bool ok=alarmes::remover(doc["id"] | "",motivo);
+    xSemaphoreGive(sensoresMutex);
+    publishAck(seq,acao,ok,motivo);
+    if(ok)publishAlarms();
     return;
   }
   if(strcmp(acao,"update"))return;
@@ -543,6 +602,7 @@ void setup() {
   pinMode(LED_AZUL_PIN,OUTPUT);pinMode(LED_VERDE_PIN,OUTPUT);pinMode(LED_VERM_PIN,OUTPUT);
   pinMode(BUZZER_PIN,OUTPUT);noTone(BUZZER_PIN);
   carregarLimites();
+  alarmes::carregar(limiteVibracao,limiteTemperatura);
   aplicarLed(true,false,false);  // Azul ate haver sensor valido.
   mpuReady=initMpu(true);
   lastMpuRetry=millis();
@@ -559,6 +619,9 @@ void setup() {
   snprintf(ackTopic,sizeof(ackTopic),"%s/%s/command_ack",TOPIC_PREFIX,DEVICE_ID);
   mqtt.setServer(MQTT_HOST,MQTT_PORT);
   snprintf(wifiTopic,sizeof(wifiTopic),"%s/%s/wifi",TOPIC_PREFIX,DEVICE_ID);
+  snprintf(alarmsTopic,sizeof(alarmsTopic),"%s/%s/alarms",TOPIC_PREFIX,DEVICE_ID);
+  // Alarmes de tensao e corrente leem a telemetria do quadro de comando.
+  snprintf(quadroTelemetryTopic,sizeof(quadroTelemetryTopic),"%s/esp32-01/telemetry",TOPIC_PREFIX);
   mqtt.setBufferSize(1536);
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
@@ -589,6 +652,7 @@ void loop() {
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
+        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();
         beepDeEvento(2);  // Dois bipes: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());

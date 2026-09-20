@@ -68,4 +68,16 @@ jobs:
           for nome in ('wifi_store.h', 'wifi_portal.h'):
               assert (root / nome).read_text() == (s3 / nome).read_text(), nome + ' diferente entre os firmwares'
           assert 'iotmotor-wifi-v1' in (root / 'wifi_store.h').read_text() and 'iotmotor-wifi-v1' in Path('dashboard-cloudflare/wifi-manager.js').read_text(), 'rotulo da cifragem divergente'
+          # Lista de alarmes: a placa guarda, o painel edita, o S3 ouve o quadro.
+          sensores = (s3 / 'iotmotor_esp32_s3_sensores.ino').read_text()
+          lista = (s3 / 'alarm_list.h').read_text()
+          alarme_js = Path('dashboard-cloudflare/alarm-controls.js').read_text()
+          assert 'mqtt.subscribe(quadroTelemetryTopic,0)' in sensores, 'o S3 precisa ouvir a telemetria do quadro para alarmes eletricos'
+          for acao in ('alarm_list', 'alarm_save', 'alarm_remove'):
+              assert acao in sensores and acao in alarme_js, acao + ' ausente no firmware ou no painel'
+          assert 'alarms_firing' in sensores and 'alarms_firing' in alarme_js
+          assert 'alarmeLista' in page and 'alarmeAddForm' in page
+          for campo in ('voltage', 'current', 'power', 'frequency', 'pf'):
+              assert '"%s"' % campo in firmware, 'o painel oferece ' + campo + ', que o quadro nao publica'
+          assert 'MAX_ALARMES = 8' in lista, 'o painel conta com oito alarmes na placa'
           PY

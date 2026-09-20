@@ -22,16 +22,24 @@ O repositório publica **codigo-fonte** no GitHub, nao grava automaticamente o E
 
 Para Cloudflare Pages com Git, use a branch `main`, build command `exit 0` e output `dashboard-cloudflare`. Se usar Worker, publique os arquivos dessa pasta como assets estaticos do Worker. Um commit no GitHub nao atualiza automaticamente um Worker configurado sem deploy. Verifique se `/remote-controls.js` e `/dual-dashboard.js` sao servidos na versao atual. A disponibilidade do broker publico nao e garantida.
 
-## Alarme do ESP32-S3
+## Alarme dos sensores
 
-A seção **Alarme do ESP32-S3** permite habilitar o alarme local, salvar os
-limites de vibração de pico (0,02 a 8 g) e temperatura (1 a 125 °C), e testar
-o LED RGB e buzzer por 1,5 s. Os padrões são 0,50 g e 60 °C. Os limites
-persistem na placa; o alarme funciona sem o painel e durante perda de rede.
+A seção **Alarme dos sensores** traz a lista de alarmes gravada no S3: cada
+linha mostra a grandeza, o lado (acima/abaixo), o limite editável e um
+interruptor; ✓ grava só aquela linha e ✕ remove. O formulário **Adicionar
+alarme** oferece vibração e temperatura (medidas no S3) e tensão, corrente,
+potência, frequência e fator de potência (medidas pelo quadro de comando, que
+o S3 escuta por MQTT). Cabem 8 alarmes na placa. O botão **Salvar** cuida
+apenas do interruptor geral e dos bipes de evento; **Testar LED e buzzer**
+aciona tudo por 1,5 s.
+
+A lista vive na placa, não no navegador: o alarme funciona sem o painel aberto
+e durante perda de rede. Uma linha aparece destacada como "disparado" enquanto
+a telemetria a listar em `alarms_firing`.
 
 Publique também `alarm-controls.js` junto dos demais arquivos do dashboard.
-O S3 precisa do firmware `s3-sensors-1.3-alarm` ou posterior com os campos de
-alarme. Os controles aguardam telemetria recente e a confirmação do dispositivo
+O S3 precisa do firmware `s3-sensors-1.4-alarmes` ou posterior; com firmware
+antigo o painel avisa que a lista não chegou. Os controles aguardam telemetria recente e a confirmação do dispositivo
 ao salvar. O indicador mostra sensores ausentes e dados antigos explicitamente.
 
 Validação do painel:

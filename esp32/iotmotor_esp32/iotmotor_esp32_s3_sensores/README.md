@@ -33,17 +33,35 @@ por 0,7 s, primeiro como buzzer **passivo** (`tone`, 2 kHz) e depois como
 Ouvindo em qual passo sai som, ajuste `BUZZER_PIN` no sketch e, se o buzzer
 for do tipo ativo, troque `tone()`/`noTone()` por `digitalWrite()`.
 
-O LED fica verde quando há sensor válido e nenhum limite excedido; vermelho
-e buzzer intermitente quando o alarme está habilitado e há valor acima do
-limite; azul quando ambos os sensores estão sem leitura válida. Desabilitar
-o alarme silencia o buzzer e remove a indicação vermelha.
+O LED fica verde quando há sensor válido e nenhum alarme disparado; vermelho
+e buzzer intermitente quando o alarme geral está habilitado e algum alarme da
+lista disparou; azul quando ambos os sensores estão sem leitura válida.
+Desabilitar o alarme silencia o buzzer e remove a indicação vermelha.
 
-Os padrões são **0,50 g de pico de aceleração dinâmica** e **60 °C**.
-No painel, use **Alarme do ESP32-S3** para salvar limites (0,02 a 8 g e
-1 a 125 °C), ligar/desligar o alarme ou testar todas as cores e o buzzer
-durante 1,5 s. O limite de vibração compara o pico, não o RMS dos gráficos.
-Os limites e a habilitação são gravados juntos na memória persistente; a
-confirmação de sucesso só é enviada depois da gravação.
+### Lista de alarmes
+
+Quem decide é a lista gravada na placa (`alarm_list.h`, até **8 alarmes** em
+NVS). Cada item tem `id`, `field` (grandeza), `board`, `above` (acima ou
+abaixo) e `limit`:
+
+| `board` | Grandezas |
+| --- | --- |
+| `sensors` | `vibration_peak`, `vibration`, `temperature` — medidas aqui |
+| `command` | `voltage`, `current`, `power`, `energy`, `frequency`, `pf` |
+
+As grandezas elétricas chegam porque o S3 assina `iotmotor/esp32-01/telemetry`.
+Leitura mais velha que 15 s não dispara nem silencia um alarme.
+
+Na primeira vez, a placa semeia dois alarmes com os padrões antigos: pico de
+vibração acima de **0,50 g** e temperatura acima de **60 °C**. A lista fica
+retida em `iotmotor/esp32-02/alarms`, e a telemetria traz `alarms_firing`
+com os ids disparados agora.
+
+Comandos: `alarm_list` (republica a lista), `alarm_save` (`{"alarm": {...}}`
+cria ou edita pelo `id`) e `alarm_remove` (`{"id": "..."}`). O antigo
+`alarm_set` continua valendo para o interruptor geral e os bipes de evento;
+quando traz `vibration_limit`/`temperature_limit`, move os alarmes `vib` e
+`temp`. A confirmação só é enviada depois da gravação.
 
 Sensores e sinalização usam uma tarefa independente da rede. Continuam
 funcionando durante perda de Wi-Fi/MQTT e abertura do portal, sem depender
@@ -51,12 +69,14 @@ de um navegador aberto. A janela de vibração é renovada a cada segundo,
 inclusive offline. Reinicialização e gravação de firmware interrompem a execução.
 
 Comandos em `iotmotor/esp32-02/command`:
-- `{"v":1,"device_id":"esp32-02","seq":"123","action":"alarm_set","enabled":true,"vibration_limit":0.5,"temperature_limit":60}`
+- `{"v":1,"device_id":"esp32-02","seq":"123","action":"alarm_set","enabled":true,"sounds":true}`
 - `{"v":1,"device_id":"esp32-02","seq":"124","action":"alarm_test"}`
+- `{"v":1,"device_id":"esp32-02","seq":"125","action":"alarm_save","alarm":{"id":"current","field":"current","board":"command","above":true,"limit":12.5,"on":true}}`
+- `{"v":1,"device_id":"esp32-02","seq":"126","action":"alarm_remove","id":"current"}`
 
 Respostas em `command_ack` contêm `seq`, `action`, `accepted` e `reason`.
-A telemetria inclui `alarm_enabled`, `alarm_active`, `vibration_limit`
-e `temperature_limit`. O painel só habilita os controles com telemetria
+A telemetria inclui `alarm_enabled`, `alarm_active`, `alarms_firing`,
+`vibration_limit` e `temperature_limit`. O painel só habilita os controles com telemetria
 compatível recebida há menos de 10 s e ignora telemetria/ACK retidos.
 
 Instale no Arduino IDE o core ESP32 e as bibliotecas `PubSubClient`, `ArduinoJson` **6.x**, `OneWire` e `DallasTemperature`. Selecione a placa ESP32-S3 correta e compile/grave este arquivo na **S3**; mudanças no GitHub ou no Cloudflare não atualizam o firmware. Monitor Serial: **115200 baud**. Não foi feita validação física na sua placa.
