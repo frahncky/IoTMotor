@@ -58,10 +58,10 @@ retida em `iotmotor/esp32-02/alarms`, e a telemetria traz `alarms_firing`
 com os ids disparados agora.
 
 Comandos: `alarm_list` (republica a lista), `alarm_save` (`{"alarm": {...}}`
-cria ou edita pelo `id`) e `alarm_remove` (`{"id": "..."}`). O antigo
-`alarm_set` continua valendo para o interruptor geral e os bipes de evento;
-quando traz `vibration_limit`/`temperature_limit`, move os alarmes `vib` e
-`temp`. A confirmação só é enviada depois da gravação.
+cria ou edita pelo `id`) e `alarm_remove` (`{"id": "..."}`). O `alarm_set`
+cuida apenas do interruptor geral (`enabled`) e dos bipes de evento
+(`sounds`) — os limites são da lista. A confirmação só é enviada depois da
+gravação.
 
 Sensores e sinalização usam uma tarefa independente da rede. Continuam
 funcionando durante perda de Wi-Fi/MQTT e abertura do portal, sem depender
@@ -75,8 +75,8 @@ Comandos em `iotmotor/esp32-02/command`:
 - `{"v":1,"device_id":"esp32-02","seq":"126","action":"alarm_remove","id":"current"}`
 
 Respostas em `command_ack` contêm `seq`, `action`, `accepted` e `reason`.
-A telemetria inclui `alarm_enabled`, `alarm_active`, `alarms_firing`,
-`vibration_limit` e `temperature_limit`. O painel só habilita os controles com telemetria
+A telemetria inclui `alarm_enabled`, `alarm_active` e `alarms_firing`; os
+limites vêm da lista retida em `alarms`, não da telemetria. O painel só habilita os controles com telemetria
 compatível recebida há menos de 10 s e ignora telemetria/ACK retidos.
 
 Instale no Arduino IDE o core ESP32 e as bibliotecas `PubSubClient`, `ArduinoJson` **6.x**, `OneWire` e `DallasTemperature`. Selecione a placa ESP32-S3 correta e compile/grave este arquivo na **S3**; mudanças no GitHub ou no Cloudflare não atualizam o firmware. Monitor Serial: **115200 baud**. Não foi feita validação física na sua placa.

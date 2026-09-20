@@ -129,20 +129,6 @@ inline void semear(float vibracao, float temperatura) {
   gravar();
 }
 
-// Limite gravado de um alarme, ou o padrao quando ele nao existe mais.
-inline float limiteDe(const char* id, float padrao) {
-  const int i = indiceDe(id);
-  return i < 0 ? padrao : lista[i].limite;
-}
-
-// Ajusta o limite de um alarme existente (usado pelo comando antigo alarm_set).
-inline void ajustarLimite(const char* id, float limite) {
-  const int i = indiceDe(id);
-  if (i < 0 || !isfinite(limite)) return;
-  lista[i].limite = limite;
-  gravar();
-}
-
 inline void carregar(float vibracaoPadrao, float temperaturaPadrao) {
   Preferences memoria;
   String texto;

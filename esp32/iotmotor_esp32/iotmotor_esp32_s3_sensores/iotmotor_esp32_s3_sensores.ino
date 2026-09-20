@@ -111,52 +111,35 @@ bool mpuReady=false,tempPending=false,tempReady=false;
 // Alarme local: LED RGB e buzzer.
 bool alarmeHabilitado=true,estadoCritico=false,buzzerLigado=false;
 bool sonsDeEventos=true;  // Bipes curtos de evento, fora da emergencia.
-float limiteVibracao=VIBRACAO_LIMITE_PADRAO,limiteTemperatura=TEMPERATURA_LIMITE_PADRAO;
 uint32_t ultimoBeep=0,inicioDoTeste=0;
 bool testeAtivo=false;
 float picoAtual=0.0f,rmsAtual=0.0f;
 uint32_t amostrasAtuais=0;
 // Sensores e sinalizacao continuam durante reconexao Wi-Fi, portal e MQTT.
 SemaphoreHandle_t sensoresMutex=nullptr;
-struct LimitesGravados { uint32_t ligado; float vibracao; float temperatura; };
-
-bool limitesValidos(float vibracao,float temperatura) {
-  return isfinite(vibracao)&&vibracao>=0.02f&&vibracao<=8.0f&&
-         isfinite(temperatura)&&temperatura>=1.0f&&temperatura<=125.0f;
-}
-
 void aplicarLed(bool azul,bool verde,bool vermelho) {
   digitalWrite(LED_AZUL_PIN, azul==!RGB_ANODO_COMUM?HIGH:LOW);
   digitalWrite(LED_VERDE_PIN, verde==!RGB_ANODO_COMUM?HIGH:LOW);
   digitalWrite(LED_VERM_PIN, vermelho==!RGB_ANODO_COMUM?HIGH:LOW);
 }
 
-void carregarLimites() {
+// Interruptor geral e bipes de evento; os limites ficam na lista de alarmes.
+void carregarConfigDoAlarme() {
   Preferences memoria;
   if(!memoria.begin("iot-alarme",true))return;
-  LimitesGravados dados{};
-  if(memoria.getBytesLength("config")==sizeof(dados)&&
-     memoria.getBytes("config",&dados,sizeof(dados))==sizeof(dados)&&
-     dados.ligado<=1&&limitesValidos(dados.vibracao,dados.temperatura)) {
-    alarmeHabilitado=dados.ligado!=0;
-    limiteVibracao=dados.vibracao;
-    limiteTemperatura=dados.temperatura;
-  }
+  alarmeHabilitado=memoria.getBool("ligado",true);
   sonsDeEventos=memoria.getBool("sons",true);
   memoria.end();
 }
 
-bool salvarLimites(bool ligado,float vibracao,float temperatura,bool sons) {
-  if(!limitesValidos(vibracao,temperatura))return false;
+bool salvarConfigDoAlarme(bool ligado,bool sons) {
   Preferences memoria;
   if(!memoria.begin("iot-alarme",false))return false;
-  const LimitesGravados dados{ligado?1U:0U,vibracao,temperatura};
-  const bool gravado=memoria.putBytes("config",&dados,sizeof(dados))==sizeof(dados);
+  memoria.putBool("ligado",ligado);
   memoria.putBool("sons",sons);
   memoria.end();
-  if(!gravado)return false;
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-  alarmeHabilitado=ligado;limiteVibracao=vibracao;limiteTemperatura=temperatura;sonsDeEventos=sons;
+  alarmeHabilitado=ligado;sonsDeEventos=sons;
   xSemaphoreGive(sensoresMutex);
   return true;
 }
@@ -461,8 +444,6 @@ void publishTelemetry() {
   doc["alarm_enabled"]=alarmeHabilitado;
   doc["event_sounds"]=sonsDeEventos;
   doc["alarm_active"]=estadoCritico;
-  doc["vibration_limit"]=alarmes::limiteDe("vib",limiteVibracao);
-  doc["temperature_limit"]=alarmes::limiteDe("temp",limiteTemperatura);
   if(mpuReady && amostrasAtuais>=10) {
     doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
     doc["vibration_peak"]=picoAtual;
@@ -578,22 +559,14 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     publishAck(seq,acao,true,"LED e buzzer acionados por 1,5 s");
     return;
   }
-  if(!strcmp(acao,"alarm_set")) {  // Liga/desliga e ajusta os limites.
-    const float novaVibracao=doc["vibration_limit"] | limiteVibracao;
-    const float novaTemperatura=doc["temperature_limit"] | limiteTemperatura;
-    if(!doc["enabled"].is<bool>()||!limitesValidos(novaVibracao,novaTemperatura)) {
-      publishAck(seq,acao,false,"limites fora da faixa ou campos invalidos");
+  if(!strcmp(acao,"alarm_set")) {  // Interruptor geral e bipes de evento.
+    if(!doc["enabled"].is<bool>()) {
+      publishAck(seq,acao,false,"campo enabled ausente");
       return;
     }
-    const bool ok=salvarLimites(doc["enabled"].as<bool>(),novaVibracao,novaTemperatura,
-      doc["sounds"] | sonsDeEventos);
-    if(ok) {
-      xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-      alarmes::ajustarLimite("vib",novaVibracao);
-      alarmes::ajustarLimite("temp",novaTemperatura);
-      xSemaphoreGive(sensoresMutex);
-    }
-    publishAck(seq,acao,ok,ok?"alarme configurado":"falha ao gravar limites");
+    const bool ok=salvarConfigDoAlarme(doc["enabled"].as<bool>(),
+                                       doc["sounds"] | sonsDeEventos);
+    publishAck(seq,acao,ok,ok?"alarme configurado":"falha ao gravar");
     if(ok)publishAlarms();
     return;
   }
@@ -640,8 +613,8 @@ void setup() {
   pinMode(LED_AZUL_PIN,OUTPUT);pinMode(LED_VERDE_PIN,OUTPUT);pinMode(LED_VERM_PIN,OUTPUT);
   pinMode(BUZZER_PIN,OUTPUT);noTone(BUZZER_PIN);
   comandoseguro::iniciar(DEVICE_ID);
-  carregarLimites();
-  alarmes::carregar(limiteVibracao,limiteTemperatura);
+  carregarConfigDoAlarme();
+  alarmes::carregar(VIBRACAO_LIMITE_PADRAO,TEMPERATURA_LIMITE_PADRAO);
   aplicarLed(true,false,false);  // Azul ate haver sensor valido.
   mpuReady=initMpu(true);
   lastMpuRetry=millis();
