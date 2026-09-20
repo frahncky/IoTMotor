@@ -191,7 +191,8 @@
       $('alarmeSons').checked = estado.sounds;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
-    for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe']) $(id).disabled = !pronto();
+    for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
+      $(id).disabled = !pronto();
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharLista();
   }
@@ -242,6 +243,10 @@
       above: $('alarmeLado').value !== 'below', limit: valor, on: true
     };
     if (publicar('alarm_save', {alarm: corpo}, corpo.id)) aviso('Criando o alarme na placa…');
+  });
+  // A lista é retida, mas um pedido explícito resolve retenção perdida.
+  $('alarmeRecarregar').addEventListener('click', () => {
+    if (publicar('alarm_list', {})) aviso('Pedindo a lista de alarmes à placa…');
   });
   // Bipe curto: confirma na bancada que a placa esta ouvindo o painel.
   $('alarmeBipe').addEventListener('click', () => {

@@ -33,6 +33,9 @@ o S3 escuta por MQTT). Cabem 8 alarmes na placa. O botão **Salvar** cuida
 apenas do interruptor geral e dos bipes de evento; **Testar LED e buzzer**
 aciona tudo por 1,5 s.
 
+**Recarregar lista da placa** pede a lista de novo (comando `alarm_list`),
+caso a mensagem retida não tenha chegado.
+
 A lista vive na placa, não no navegador: o alarme funciona sem o painel aberto
 e durante perda de rede. Uma linha aparece destacada como "disparado" enquanto
 a telemetria a listar em `alarms_firing`.

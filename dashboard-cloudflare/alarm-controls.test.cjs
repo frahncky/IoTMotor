@@ -149,6 +149,16 @@ test('adiciona alarme de corrente do quadro de comando e recusa limite fora da f
   });
 });
 
+test('o botao de recarregar pede a lista de novo a placa', () => {
+  const h = setup(), c = h.connect();
+  assert.equal(h.node('alarmeRecarregar').disabled, true);
+  h.telemetry(c);
+  h.node('alarmeRecarregar').fire('click');
+  assert.deepEqual(c.published[0].data, {
+    v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq, action: 'alarm_list'
+  });
+});
+
 test('o botao de remover tira o alarme da placa', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c); h.alarms(c);

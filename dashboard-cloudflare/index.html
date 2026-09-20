@@ -28,6 +28,7 @@
 <h3>Alarmes gravados na placa</h3>
 <p class="wifi-status" id="alarmeResumo" aria-live="polite">Conecte ao MQTT para ver os alarmes gravados na placa.</p>
 <ol class="wifi-list" id="alarmeLista" aria-label="Alarmes da placa"></ol>
+<div class="wifi-actions"><button class="btn secondary" type="button" id="alarmeRecarregar" disabled title="Pede a lista de novo, caso ela não tenha chegado">Recarregar lista da placa</button></div>
 <h3>Adicionar alarme</h3>
 <form id="alarmeAddForm" class="wifi-form" autocomplete="off"><div class="field"><label for="alarmeGrandeza">Grandeza</label><select id="alarmeGrandeza"></select></div><div class="field"><label for="alarmeLado">Dispara quando estiver</label><select id="alarmeLado"><option value="above">Acima do limite</option><option value="below">Abaixo do limite</option></select></div><div class="field"><label for="alarmeLimite">Limite</label><input id="alarmeLimite" type="number" step="any" required></div><button class="btn" type="submit" id="alarmeAddBtn" disabled>Adicionar alarme</button></form>
 <p class="feedback" id="alarmeFeedback" aria-live="polite">Conecte ao MQTT para ajustar o alarme.</p></section>
