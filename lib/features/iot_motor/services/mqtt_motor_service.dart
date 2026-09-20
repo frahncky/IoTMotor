@@ -456,6 +456,8 @@ class MqttMotorService {
     // Partidas e respostas: a lista de partidas mora no ESP32 de comandos.
     client.subscribe(config.profilesWildcardTopic, MqttQos.atLeastOnce);
     client.subscribe(config.commandAckWildcardTopic, MqttQos.atLeastOnce);
+    // Lista de alarmes da placa de sensores (retida).
+    client.subscribe(config.alarmsWildcardTopic, MqttQos.atLeastOnce);
     // Desafio das placas: sem ele nao ha como cifrar um comando.
     client.subscribe(config.authWildcardTopic, MqttQos.atLeastOnce);
   }

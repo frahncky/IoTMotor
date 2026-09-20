@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/motor_app_settings.dart';
+import '../models/board_alarm.dart';
 import '../models/device_names.dart';
 import '../models/motor_command_type.dart';
 import '../models/mqtt_connection_config.dart';
@@ -75,6 +76,97 @@ class MotorControlController extends ChangeNotifier {
       _notifyConnectionHealthIfChanged();
     });
     _initializeData(loadSettings);
+  }
+
+  /// Lista de alarmes gravada na placa de sensores, como ela publicou.
+  List<BoardAlarm> boardAlarms = const <BoardAlarm>[];
+
+  /// Quantos alarmes cabem na placa (ela informa junto da lista).
+  int boardAlarmsMax = 8;
+
+  /// Placa que publicou a lista; é para ela que os comandos vão.
+  String? alarmsDeviceId;
+
+  /// Ids disparados agora, segundo a última telemetria da placa.
+  Set<String> firingAlarmIds = const <String>{};
+
+  bool get hasBoardAlarms => alarmsDeviceId != null;
+
+  void _aplicarAlarmesDaPlaca({
+    required String deviceId,
+    required String payload,
+  }) {
+    if (deviceId.isEmpty) return;
+    alarmsDeviceId = deviceId;
+    boardAlarms = BoardAlarm.listFromPayload(payload);
+    boardAlarmsMax = BoardAlarm.maxFromPayload(payload, fallback: boardAlarmsMax);
+    _notify();
+  }
+
+  /// Cria ou edita um alarme na placa. A placa republica a lista ao aceitar.
+  Future<bool> saveBoardAlarm(BoardAlarm alarme) async {
+    final String? dev = alarmsDeviceId;
+    if (dev == null) {
+      _pendingMessage = 'A placa de sensores ainda não publicou a lista de alarmes.';
+      _notify();
+      return false;
+    }
+    final String? seq = _service.sendRawCommand(
+      deviceId: dev,
+      action: 'alarm_save',
+      body: <String, dynamic>{'alarm': alarme.toBoard()},
+    );
+    if (seq == null) {
+      _pendingMessage = _service.seal.impedimento(dev) ??
+          'Conecte-se ao broker antes de enviar comandos.';
+      _notify();
+      return false;
+    }
+    statusMessage = 'Gravando o alarme em ${nomeDaPlaca(dev)}…';
+    _notify();
+    return true;
+  }
+
+  /// Tira um alarme da placa.
+  Future<bool> removeBoardAlarm(String id) async {
+    final String? dev = alarmsDeviceId;
+    if (dev == null) return false;
+    final String? seq = _service.sendRawCommand(
+      deviceId: dev,
+      action: 'alarm_remove',
+      body: <String, dynamic>{'id': id},
+    );
+    if (seq == null) {
+      _pendingMessage = _service.seal.impedimento(dev) ??
+          'Conecte-se ao broker antes de enviar comandos.';
+      _notify();
+      return false;
+    }
+    statusMessage = 'Removendo o alarme de ${nomeDaPlaca(dev)}…';
+    _notify();
+    return true;
+  }
+
+  /// Pede a lista de novo, caso a mensagem retida não tenha chegado.
+  void requestBoardAlarms() {
+    final String? dev = alarmsDeviceId;
+    if (dev == null) return;
+    _service.sendRawCommand(deviceId: dev, action: 'alarm_list');
+  }
+
+  /// Id novo e curto para um alarme, derivado da grandeza (a placa aceita 12).
+  String newAlarmId(String field) {
+    final String base = field.replaceAll(RegExp('[^a-z]'), '');
+    final String raiz = (base.isEmpty ? 'alarme' : base).substring(
+      0,
+      base.length > 8 ? 8 : (base.isEmpty ? 6 : base.length),
+    );
+    final Set<String> usados = boardAlarms.map((BoardAlarm a) => a.id).toSet();
+    if (!usados.contains(raiz)) return raiz;
+    for (int i = 2; i < 99; i++) {
+      if (!usados.contains('$raiz$i')) return '$raiz$i';
+    }
+    return raiz + DateTime.now().millisecondsSinceEpoch.toString().substring(10);
   }
 
   static const FlutterSecureStorage _cofre = FlutterSecureStorage();
@@ -1589,6 +1681,10 @@ class MotorControlController extends ChangeNotifier {
     // vem do próprio tópico (prefixo/dispositivo/profiles).
     final List<String> partes = topic.split('/');
     final String deviceIdDoTopico = partes.length >= 2 ? partes[partes.length - 2] : '';
+    if (topic.endsWith('/alarms')) {
+      _aplicarAlarmesDaPlaca(deviceId: deviceIdDoTopico, payload: payload);
+      return;
+    }
     if (topic.endsWith('/auth')) {
       // Desafio da placa para os comandos cifrados (command_seal.dart).
       _service.registrarAuth(topic, payload);
@@ -2104,6 +2200,18 @@ class MotorControlController extends ChangeNotifier {
       final List<bool> estados = relays.cast<bool>();
       _relaysByDevice[deviceId] = estados;
       _motorOnByDevice[deviceId] = estados.any((ligado) => ligado);
+    }
+    // Quem decide o alarme é a placa: ela diz quais estão disparados agora.
+    final Object? disparados = dados['alarms_firing'];
+    if (disparados is List) {
+      firingAlarmIds = <String>{
+        for (final Object? id in disparados)
+          if (id is String && id.isNotEmpty) id,
+      };
+      boardAlarms = <BoardAlarm>[
+        for (final BoardAlarm alarme in boardAlarms)
+          alarme.copyWith(firing: firingAlarmIds.contains(alarme.id)),
+      ];
     }
   }
 

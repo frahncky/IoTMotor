@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/telemetry_alert.dart';
+import '../widgets/board_alarms_panel.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
 
@@ -21,39 +22,50 @@ class AlertasTab extends StatelessWidget {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1320),
-          child: DelayedReveal(
-            delay: const Duration(milliseconds: 200),
-            child: GlassPanel(
-              tint: AppTheme.danger,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _buildHeader(context),
-                  const SizedBox(height: 12),
-                  _buildSummary(context),
-                  const SizedBox(height: 12),
-                  if (alerts.isEmpty)
-                    _buildEmptyState(context)
-                  else
-                    Column(
-                      children: <Widget>[
-                        for (final TelemetryAlert alert in alerts)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _AlertTile(
-                              alert: alert,
-                              onAcknowledge:
-                                  alert.acknowledged
-                                      ? null
-                                      : () =>
-                                          controller.acknowledgeAlert(alert.id),
-                            ),
-                          ),
-                      ],
-                    ),
-                ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              DelayedReveal(
+                delay: const Duration(milliseconds: 120),
+                child: BoardAlarmsPanel(controller: controller),
               ),
-            ),
+              const SizedBox(height: 16),
+              DelayedReveal(
+                delay: const Duration(milliseconds: 200),
+                child: GlassPanel(
+                  tint: AppTheme.danger,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _buildHeader(context),
+                      const SizedBox(height: 12),
+                      _buildSummary(context),
+                      const SizedBox(height: 12),
+                      if (alerts.isEmpty)
+                        _buildEmptyState(context)
+                      else
+                        Column(
+                          children: <Widget>[
+                            for (final TelemetryAlert alert in alerts)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _AlertTile(
+                                  alert: alert,
+                                  onAcknowledge:
+                                      alert.acknowledged
+                                          ? null
+                                          : () => controller.acknowledgeAlert(
+                                            alert.id,
+                                          ),
+                                ),
+                              ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

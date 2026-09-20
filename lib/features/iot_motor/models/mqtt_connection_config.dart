@@ -34,6 +34,9 @@
   /// respostas dele: é dela que o app e o painel tiram as mesmas partidas.
   String get profilesWildcardTopic => '$topicPrefix/+/profiles';
 
+  /// Lista de alarmes gravada em cada placa.
+  String get alarmsWildcardTopic => '$topicPrefix/+/alarms';
+
   /// Desafio publicado por cada placa para os comandos cifrados.
   String get authWildcardTopic => '$topicPrefix/+/auth';
   String get commandAckWildcardTopic => '$topicPrefix/+/command_ack';
