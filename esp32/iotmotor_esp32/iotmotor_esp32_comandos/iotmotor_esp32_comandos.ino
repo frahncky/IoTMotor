@@ -161,7 +161,7 @@ uint8_t detectarLcd() {
 //   L0  Estrela-triangulo      (ou a ultima partida/estado da conexao)
 //   L1  V:220.1 I:  2.30A
 //   L2  P:  420W FP:0.81
-//   L3  CNT 1,2    60.0Hz
+//   L3  CNT 1-2    60.0Hz
 void atualizarLcd() {
   char buffer[48];
   const bool comWifi = WiFi.status() == WL_CONNECTED;
@@ -188,16 +188,16 @@ void atualizarLcd() {
   else buffer[0] = '\0';
   imprimirLinhaCompleta(2, buffer);
 
-  // Contatores ligados separados por virgula: "1,2" em vez de "12" colado.
+  // Contatores ligados separados por hifen: "1-2" em vez de "12" colado.
   char contatores[2 * NUM_RELES] = "";
   uint8_t escritos = 0;
   for (uint8_t i = 0; i < NUM_RELES; ++i) {
     if (!estadoReles[i]) continue;
-    if (escritos) contatores[escritos++] = ',';
+    if (escritos) contatores[escritos++] = '-';
     contatores[escritos++] = char('1' + i);
   }
   contatores[escritos] = '\0';
-  if (!escritos) strcpy(contatores, "-");
+  if (!escritos) strcpy(contatores, "nenhum");
   // 4 + 7 + 1 + 6 + 2 = 20 colunas.
   if (pzemOk) snprintf(buffer, sizeof(buffer), "CNT %-7.7s %4.1fHz", contatores, ultimaFrequencia);
   else snprintf(buffer, sizeof(buffer), "CNT %-7.7s", contatores);
