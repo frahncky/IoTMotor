@@ -555,7 +555,19 @@ class MotorControlController extends ChangeNotifier {
     return normalized;
   }
 
+  /// Partida que a placa informa estar executando agora (telemetria `profile`).
+  String? runningProfileId;
+
   MotorCommandType? get selectedDeviceConnectionType {
+    // Enquanto há partida em andamento, o app segue a partida da placa, mesmo
+    // que tenha sido acionada pelo painel ou por outro celular.
+    final String? emExecucao = runningProfileId;
+    if (emExecucao != null) {
+      final MotorCommandType? tipo = startTypeById(emExecucao);
+      if (tipo != null) {
+        return tipo;
+      }
+    }
     final String? mode = selectedDeviceMode;
     if (mode == null) {
       return null;
@@ -1522,6 +1534,11 @@ class MotorControlController extends ChangeNotifier {
       _tratarRespostaDeComando(payload);
       return;
     }
+    // Contatores, sessão e partida em andamento: úteis mesmo antes de a
+    // configuração ativa existir, e é daqui que sai o Ligar/Desligar.
+    if (topic.endsWith('/telemetry')) {
+      _syncBenchFromTelemetry(deviceId: deviceIdDoTopico, payload: payload);
+    }
 
     final MqttConnectionConfig? config = _service.activeConfig;
     if (config == null) {
@@ -1562,7 +1579,6 @@ class MotorControlController extends ChangeNotifier {
     _latestByDevice[deviceId] = sample;
     _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
-    _syncBenchFromTelemetry(deviceId: deviceId, payload: payload);
 
     _addSampleToHistory(deviceId: deviceId, sample: sample);
 
@@ -2013,6 +2029,8 @@ class MotorControlController extends ChangeNotifier {
     if (boot is String && RegExp(r'^[0-9a-f]{16}$').hasMatch(boot)) {
       _bootByDevice[deviceId] = boot;
     }
+    final Object? emExecucao = dados['profile'];
+    runningProfileId = emExecucao is String && emExecucao.isNotEmpty ? emExecucao : null;
     final Object? relays = dados['relays'];
     if (relays is List && relays.length == 4 && relays.every((v) => v is bool)) {
       final List<bool> estados = relays.cast<bool>();

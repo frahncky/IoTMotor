@@ -85,4 +85,30 @@ void main() {
     expect(saida[2], <String, dynamic>{'use': true, 'on': 9200, 'off': 0});
     expect(saida[3]['use'], isFalse);
   });
+
+  test('app segue a partida que a placa informa estar em andamento', () {
+    final MotorControlController c = MotorControlController(loadSettings: false);
+    addTearDown(c.dispose);
+    c.handlePayloadForTest('iotmotor/esp32-01/profiles', perfisDaPlaca());
+    c.deviceIdController.text = 'esp32-01';
+
+    String telemetria({String? emExecucao}) => jsonEncode(<String, dynamic>{
+      'device_id': 'esp32-01',
+      'boot': '0123456789abcdef',
+      'relays': <bool>[emExecucao != null, false, false, false],
+      if (emExecucao != null) 'profile': emExecucao,
+    });
+
+    c.handlePayloadForTest('iotmotor/esp32-01/telemetry', telemetria());
+    expect(c.runningProfileId, isNull);
+
+    // Partida acionada em outro lugar (painel ou outro celular).
+    c.handlePayloadForTest('iotmotor/esp32-01/telemetry', telemetria(emExecucao: 'estrela'));
+    expect(c.runningProfileId, 'estrela');
+    expect(c.selectedDeviceConnectionType?.id, 'estrela');
+
+    // Ao parar, o app deixa de apontar uma partida em andamento.
+    c.handlePayloadForTest('iotmotor/esp32-01/telemetry', telemetria());
+    expect(c.runningProfileId, isNull);
+  });
 }

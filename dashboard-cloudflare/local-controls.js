@@ -174,7 +174,7 @@
     ativo.on('connect', () => {
       if (client !== ativo) return;
       conectado = true;
-      ativo.subscribe([topico('profiles'), topico('command_ack')], {qos: 1});
+      ativo.subscribe([topico('profiles'), topico('command_ack'), topico('telemetry')], {qos: 1});
       renderizar();
     });
     ativo.on('message', (nome, payload) => {
@@ -187,6 +187,16 @@
         perfis = dados.profiles.filter(p => p && typeof p.id === 'string' && Array.isArray(p.cnt) && p.cnt.length === 4);
         limiteMs = Number(dados.limit_ms) || limiteMs;
         maximo = Number(dados.max) || maximo;
+      } else if (nome === topico('telemetry')) {
+        // Partida em andamento: o seletor segue a placa, mesmo que o comando
+        // tenha vindo do app ou de outro navegador.
+        const rodando = typeof dados.profile === 'string' ? dados.profile : '';
+        if (rodando && rodando !== selecionado && perfis.some(p => p.id === rodando)) {
+          selecionado = rodando;
+          aviso(`Partida em andamento na placa: ${perfis.find(p => p.id === rodando).name}.`);
+        } else if (!rodando) {
+          return;  // Parada: mantem a escolha do usuario.
+        }
       } else if (pendente && dados.seq === pendente.seq) {
         aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
         pendente = null;
