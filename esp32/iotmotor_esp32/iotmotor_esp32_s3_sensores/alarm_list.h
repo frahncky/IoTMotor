@@ -31,6 +31,51 @@ struct Alarme {
 inline Alarme lista[MAX_ALARMES];
 inline uint8_t total = 0;
 
+// ---- Registro dos ultimos disparos ----
+// Cada episodio guarda quando comecou, com que valor, e quando acabou. Fica na
+// memoria volatil: reiniciou a placa, o registro recomeca. Serve para contar o
+// que aconteceu durante o ensaio, nao como historico permanente.
+constexpr uint8_t MAX_EVENTOS = 10;
+
+struct Evento {
+  char id[MAX_ID_ALARME + 1] = "";
+  char campo[MAX_CAMPO + 1] = "";
+  float valor = 0;      // Leitura no instante em que disparou.
+  uint32_t inicio = 0;  // Segundos UTC, ou 0 se a placa ainda nao tinha hora.
+  uint32_t fim = 0;     // 0 enquanto o alarme continua disparado.
+  uint32_t inicioMs = 0;
+  uint32_t fimMs = 0;
+};
+
+inline Evento eventos[MAX_EVENTOS];
+inline uint8_t totalEventos = 0;
+inline bool eventosMudaram = false;
+
+inline void anotarInicio(const Alarme& a, float valor, uint32_t agora, uint32_t utc) {
+  if (totalEventos == MAX_EVENTOS) {  // Fila cheia: o mais antigo sai.
+    for (uint8_t i = 0; i + 1 < MAX_EVENTOS; ++i) eventos[i] = eventos[i + 1];
+    --totalEventos;
+  }
+  Evento& e = eventos[totalEventos++];
+  e = Evento();
+  strncpy(e.id, a.id, MAX_ID_ALARME);
+  strncpy(e.campo, a.campo, MAX_CAMPO);
+  e.valor = valor;
+  e.inicio = utc;
+  e.inicioMs = agora;
+  eventosMudaram = true;
+}
+
+inline void anotarFim(const Alarme& a, uint32_t agora, uint32_t utc) {
+  for (int8_t i = totalEventos - 1; i >= 0; --i) {
+    if (strcmp(eventos[i].id, a.id) || eventos[i].fimMs) continue;
+    eventos[i].fim = utc;
+    eventos[i].fimMs = agora;
+    eventosMudaram = true;
+    return;
+  }
+}
+
 // Ultimos valores recebidos do quadro de comando, com o instante da leitura.
 inline StaticJsonDocument<512> medidasDoQuadro;
 inline uint32_t medidasDoQuadroEm = 0;
@@ -183,19 +228,40 @@ inline bool valorDe(const Alarme& alarme, uint32_t agora, bool mpuOk, bool tempO
   return false;
 }
 
-// Avalia todos e devolve true se algum disparou.
+// Avalia todos e devolve true se algum disparou. 'utc' vem do relogio da placa
+// (0 enquanto o NTP nao responde) e so serve para carimbar o registro.
 inline bool avaliar(uint32_t agora, bool mpuOk, bool tempOk, float vibracaoRms,
-                    float vibracaoPico, float temperatura) {
+                    float vibracaoPico, float temperatura, uint32_t utc = 0) {
   bool algum = false;
   for (uint8_t i = 0; i < total; ++i) {
     Alarme& a = lista[i];
     float valor = 0;
+    const bool antes = a.disparado;
     a.disparado = a.habilitado &&
                   valorDe(a, agora, mpuOk, tempOk, vibracaoRms, vibracaoPico, temperatura, valor) &&
                   (a.acima ? valor > a.limite : valor < a.limite);
+    if (a.disparado && !antes) anotarInicio(a, valor, agora, utc);
+    else if (!a.disparado && antes) anotarFim(a, agora, utc);
     algum = algum || a.disparado;
   }
   return algum;
+}
+
+inline void descreverEventos(JsonDocument& doc) {
+  JsonArray array = doc.createNestedArray("events");
+  for (uint8_t i = 0; i < totalEventos; ++i) {
+    JsonObject item = array.createNestedObject();
+    item["id"] = eventos[i].id;
+    item["field"] = eventos[i].campo;
+    item["value"] = eventos[i].valor;
+    if (eventos[i].inicio) item["start"] = eventos[i].inicio;
+    if (eventos[i].fim) item["end"] = eventos[i].fim;
+    item["open"] = eventos[i].fimMs == 0;
+    // Duracao em segundos vale mesmo sem hora: millis() nao depende do NTP.
+    const uint32_t ate = eventos[i].fimMs ? eventos[i].fimMs : millis();
+    item["seconds"] = (ate - eventos[i].inicioMs) / 1000;
+  }
+  doc["max"] = MAX_EVENTOS;
 }
 
 inline void descrever(JsonDocument& doc) {

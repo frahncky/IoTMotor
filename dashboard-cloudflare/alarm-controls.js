@@ -29,6 +29,7 @@
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-02';
   let estado = null, recebidoEm = 0, pendente = null, sequencia = 0, editando = false;
   let lista = null, maxAlarmes = 8;
+  let historico = null;  // Últimos disparos, como a placa registrou.
   const rascunhos = new Map();  // id -> {limite, ligado} ainda não gravados.
   const aviso = texto => { $('alarmeFeedback').textContent = texto; };
   const topico = tipo => `${prefixo}/${dispositivo}/${tipo}`;
@@ -99,6 +100,55 @@
     }
     // Sem nada disparado a lista fica vazia: a frase aparece so no resumo.
     resumo.textContent = mensagem;
+  }
+
+  // Quanto tempo o alarme ficou disparado, em palavras curtas.
+  function duracao(segundos) {
+    if (!Number.isFinite(segundos) || segundos < 0) return '';
+    if (segundos < 60) return `${Math.round(segundos)} s`;
+    const minutos = Math.floor(segundos / 60);
+    return minutos < 60 ? `${minutos} min` : `${Math.floor(minutos / 60)} h ${minutos % 60} min`;
+  }
+
+  // A placa carimba em UTC; aqui mostramos no fuso de quem está olhando.
+  function horaDe(segundos) {
+    if (!Number.isFinite(segundos) || segundos < 1700000000) return '';
+    return new Date(segundos * 1000).toLocaleString();
+  }
+
+  function desenharHistorico() {
+    const alvo = $('alarmeHistoricoLista');
+    const resumo = $('alarmeHistoricoResumo');
+    if (!alvo || !resumo) return;
+    alvo.replaceChildren();
+    if (!historico) {
+      resumo.textContent = conectado
+        ? 'Aguardando o registro da placa.'
+        : 'Conecte ao MQTT para ver os últimos disparos.';
+      return;
+    }
+    if (!historico.length) {
+      resumo.textContent = 'Nenhum disparo desde que a placa ligou.';
+      return;
+    }
+    resumo.textContent = `${historico.length} disparo${historico.length === 1 ? '' : 's'} desde que a placa ligou. O registro se perde ao reiniciar.`;
+    // O mais recente primeiro: é o que interessa durante o ensaio.
+    for (const evento of [...historico].reverse()) {
+      const alarme = (lista || []).find(item => item.id === evento.id);
+      const item = document.createElement('li');
+      if (evento.open) item.className = 'atual';
+      const nome = document.createElement('span');
+      nome.className = 'nome';
+      const grandeza = rotulo(evento.field || alarme?.field || evento.id);
+      const quando = horaDe(evento.start);
+      nome.textContent = `${grandeza} em ${Number(evento.value).toFixed(2)}${quando ? ` · ${quando}` : ''}`;
+      item.append(nome);
+      const tempo = document.createElement('span');
+      tempo.className = evento.open ? 'tag on' : 'tag';
+      tempo.textContent = evento.open ? `disparado há ${duracao(evento.seconds)}` : duracao(evento.seconds);
+      item.append(tempo);
+      alvo.append(item);
+    }
   }
 
   function desenharLista() {
@@ -233,6 +283,7 @@
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharAtivos();
     desenharLista();
+    desenharHistorico();
   }
 
   function limparPendente() {
@@ -305,7 +356,7 @@
   function desconectar() {
     const antigo = client;
     client = null; conectado = false; estado = null; recebidoEm = 0; editando = false;
-    lista = null; rascunhos.clear();
+    lista = null; historico = null; rascunhos.clear();
     window.iotmotorSelo?.esquecer(dispositivo);
     limparPendente();
     if (antigo) antigo.end(true);
@@ -338,8 +389,9 @@
     client = ativo;
     ativo.on('connect', () => {
       if (client !== ativo) return;
-      estado = null; recebidoEm = 0; conectado = false; lista = null;
-      ativo.subscribe([topico('telemetry'), topico('command_ack'), topico('status'), topico('alarms'), topico('auth')],
+      estado = null; recebidoEm = 0; conectado = false; lista = null; historico = null;
+      ativo.subscribe([topico('telemetry'), topico('command_ack'), topico('status'), topico('alarms'),
+        topico('auth'), topico('alarm_log')],
         {qos: 1}, (erro, permissoes) => {
           if (client !== ativo || !ativo.connected) return;
           conectado = !erro && !permissoes?.some(p => p.qos === 128);
@@ -362,6 +414,13 @@
       // Desafio da placa, retido: sem ele não há como cifrar um comando.
       if (nome === topico('auth')) {
         window.iotmotorSelo?.registrarAuth(dispositivo, dados);
+        renderizar();
+        return;
+      }
+      // Registro dos disparos, também retido.
+      if (nome === topico('alarm_log')) {
+        if (!Array.isArray(dados.events)) return;
+        historico = dados.events;
         renderizar();
         return;
       }

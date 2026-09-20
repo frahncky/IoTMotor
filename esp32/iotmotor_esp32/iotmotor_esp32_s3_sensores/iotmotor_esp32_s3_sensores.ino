@@ -100,7 +100,7 @@ uint8_t ds18b20Pin=0;
 // e dos pinos do LED/buzzer 16/17/18/42).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
-char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96];
+char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -212,6 +212,21 @@ void publishAlarms() {
     mqtt.publish(alarmsTopic,(const uint8_t*)texto.c_str(),(unsigned int)texto.length(),true);
 }
 
+// Ultimos disparos, retidos: o painel abre ja mostrando o que aconteceu.
+void publishAlarmLog() {
+  if(!mqtt.connected())return;
+  StaticJsonDocument<1536> doc;
+  doc["device_id"]=DEVICE_ID;
+  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+  alarmes::descreverEventos(doc);
+  alarmes::eventosMudaram=false;
+  xSemaphoreGive(sensoresMutex);
+  String texto;
+  serializeJson(doc,texto);
+  if(texto.length())
+    mqtt.publish(alarmLogTopic,(const uint8_t*)texto.c_str(),(unsigned int)texto.length(),true);
+}
+
 // Desafio da vez, retido: o painel precisa dele para cifrar um comando.
 void publishAuth() {
   if(!mqtt.connected())return;
@@ -268,7 +283,8 @@ bool atualizarProcuraDoBuzzer(uint32_t now) {
 void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
   // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
-  const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,temperatureC);
+  const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
+                                            temperatureC,relogio::agoraUtc());
   estadoCritico=alarmeHabilitado&&algumDisparou;
   if(testeAtivo&&(uint32_t)(now-inicioDoTeste)<1500UL)return;
   testeAtivo=false;  // Subtracao unsigned suporta a volta de millis() a zero.
@@ -576,6 +592,7 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(!strcmp(acao,"alarm_list")) {  // O painel pedindo a lista atual.
     publishAck(seq,acao,true,"lista publicada");
     publishAlarms();
+    publishAlarmLog();
     return;
   }
   if(!strcmp(acao,"alarm_save")) {  // Cria ou edita um alarme da lista.
@@ -636,6 +653,7 @@ void setup() {
   snprintf(wifiTopic,sizeof(wifiTopic),"%s/%s/wifi",TOPIC_PREFIX,DEVICE_ID);
   snprintf(alarmsTopic,sizeof(alarmsTopic),"%s/%s/alarms",TOPIC_PREFIX,DEVICE_ID);
   snprintf(authTopic,sizeof(authTopic),"%s/%s/auth",TOPIC_PREFIX,DEVICE_ID);
+  snprintf(alarmLogTopic,sizeof(alarmLogTopic),"%s/%s/alarm_log",TOPIC_PREFIX,DEVICE_ID);
   // Alarmes de tensao e corrente leem a telemetria do quadro de comando.
   snprintf(quadroTelemetryTopic,sizeof(quadroTelemetryTopic),"%s/esp32-01/telemetry",TOPIC_PREFIX);
   mqtt.setBufferSize(1536);
@@ -668,7 +686,7 @@ void loop() {
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
-        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();
+        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();publishAlarmLog();
         beepDeEvento(2);  // Dois bipes: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());
@@ -682,5 +700,6 @@ void loop() {
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
     lastPublish=now;publishTelemetry();
   }
+  if(alarmes::eventosMudaram)publishAlarmLog();
   delay(2);
 }

@@ -57,7 +57,15 @@ vibração acima de **0,50 g** e temperatura acima de **60 °C**. A lista fica
 retida em `iotmotor/esp32-02/alarms`, e a telemetria traz `alarms_firing`
 com os ids disparados agora.
 
-Comandos: `alarm_list` (republica a lista), `alarm_save` (`{"alarm": {...}}`
+### Registro dos disparos
+
+Cada episódio de alarme (começou, com que valor, quando acabou) fica gravado na
+memória volátil da placa — os **10 últimos** — e é publicado retido em
+`iotmotor/esp32-02/alarm_log`, com a hora em UTC quando o NTP já respondeu e a
+duração em segundos, que vale mesmo sem hora. Reiniciar a placa zera o registro:
+ele conta o que aconteceu no ensaio, não serve de histórico permanente.
+
+Comandos: `alarm_list` (republica a lista e o registro), `alarm_save` (`{"alarm": {...}}`
 cria ou edita pelo `id`) e `alarm_remove` (`{"id": "..."}`). O `alarm_set`
 cuida apenas do interruptor geral (`enabled`) e dos bipes de evento
 (`sounds`) — os limites são da lista. A confirmação só é enviada depois da
