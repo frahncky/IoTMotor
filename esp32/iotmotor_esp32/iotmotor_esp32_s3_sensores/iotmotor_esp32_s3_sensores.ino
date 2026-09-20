@@ -26,6 +26,7 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "wifi_portal.h"
 #include "alarm_list.h"
 #include "comando_seguro.h"
+#include "relogio.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -441,6 +442,8 @@ void publishTelemetry() {
   doc["temperature_ok"]=tempReady;
   doc["sample_count"]=amostrasAtuais;
   doc["secure"]=comandoseguro::ligado;
+  // Hora da medicao, em segundos UTC. Ausente enquanto o NTP nao responde.
+  if(const uint32_t carimbo=relogio::agoraUtc())doc["ts"]=carimbo;
   doc["alarm_enabled"]=alarmeHabilitado;
   doc["event_sounds"]=sonsDeEventos;
   doc["alarm_active"]=estadoCritico;
@@ -674,6 +677,7 @@ void loop() {
   }
 
   mqtt.loop();
+  relogio::manter(now);  // Hora real para carimbar as medicoes.
   now=millis();
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
     lastPublish=now;publishTelemetry();

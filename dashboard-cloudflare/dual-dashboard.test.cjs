@@ -15,6 +15,17 @@ test('indicador de conexao combina telemetria recente e status online/offline',(
  assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-15000,now}).kind,'error');
 });
 
+test('a hora da placa (ts) vale mais que a hora de chegada',()=>{
+ // A placa carimba em segundos UTC; so vale depois que o NTP responde.
+ const com=parseTelemetry({device_id:'esp32-01',ts:1789920000,voltage:220});
+ assert.equal(com.measuredAt,1789920000000);
+ assert.equal(new Date(com.measuredAt).toISOString(),'2026-09-20T16:00:00.000Z');
+ assert.equal(parseTelemetry({device_id:'esp32-01',voltage:220}).measuredAt,null);
+ // Relogio nao sincronizado (segundos desde o boot) nao vira data de 1970.
+ assert.equal(parseTelemetry({device_id:'esp32-01',ts:1200}).measuredAt,null);
+ assert.equal(parseTelemetry({device_id:'esp32-01',ts:'agora'}).measuredAt,null);
+});
+
 test('PZEM: calcula potencias derivadas apenas quando ha dados validos',()=>{
  const x=parseTelemetry({device_id:'esp32-01',data_source:'pzem004t',voltage:220,current:5,power:880,pf:0.8,frequency:60,energy:1.25,motor_on:false,bench_armed:false,seq:12});
  assert.equal(x.deviceId,'esp32-01');

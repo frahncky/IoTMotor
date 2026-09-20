@@ -3,6 +3,7 @@ import 'dart:convert';
 class TelemetrySample {
   const TelemetrySample({
     required this.timestamp,
+    this.measuredByBoard = false,
     this.voltage,
     this.current,
     this.power,
@@ -16,6 +17,9 @@ class TelemetrySample {
   });
 
   final DateTime timestamp;
+
+  /// `true` quando o instante veio do relógio da placa, não do aparelho.
+  final bool measuredByBoard;
   final double? voltage;
   final double? current;
   final double? power;
@@ -117,8 +121,20 @@ class TelemetrySample {
       return null;
     }
 
+    // Hora da placa (campo ts, segundos UTC) vale mais que a hora de chegada:
+    // um CSV exportado depois nao fica com o relogio de quem exportou.
+    final double? carimbo = _readDouble(source, const <String>['ts']);
+    final DateTime instante =
+        carimbo != null && carimbo > 1700000000
+            ? DateTime.fromMillisecondsSinceEpoch(
+              (carimbo * 1000).round(),
+              isUtc: true,
+            ).toLocal()
+            : timestamp;
+
     return TelemetrySample(
-      timestamp: timestamp,
+      timestamp: instante,
+      measuredByBoard: carimbo != null && carimbo > 1700000000,
       voltage: voltage,
       current: current,
       power: power,

@@ -48,3 +48,15 @@ publicado sai aceitando comando aberto e o build emite um aviso. Use uma senha
 longa, **sem aspas duplas nem barra invertida**.
 
 Se a senha se perder, a saída é regravar as placas por cabo.
+
+## Hora real das medições
+
+As duas placas sincronizam o relógio por NTP assim que entram na rede
+(`relogio.h`) e carimbam cada telemetria no campo **`ts`**, em segundos UTC.
+Enquanto o NTP não responde o campo simplesmente não aparece: nenhuma placa
+publica hora inventada.
+
+O painel e o app usam esse carimbo no lugar da hora de chegada, e o CSV
+exportado passa a trazer `measured_at` com `clock_source` (`placa` ou
+`navegador`) ao lado — antes, um ensaio exportado depois saía com a hora de
+quem exportou.

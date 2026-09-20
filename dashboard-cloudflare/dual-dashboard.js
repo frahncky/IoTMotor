@@ -28,6 +28,7 @@ function parseTelemetry(json){
  const source=json.data&&typeof json.data==='object'&&!Array.isArray(json.data)?json.data:json;
  const result={deviceId:String(json.device_id||source.device_id||''),demo:json.demo===true||source.demo===true||source.data_source==='simulated',
   dataSource:String(json.data_source||source.data_source||'não informada'),seq:numeric(source.seq),
+  measuredAt:Number.isFinite(source.ts)&&source.ts>1700000000?source.ts*1000:null,
   benchArmed:source.bench_armed===true,motorOn:typeof source.motor_on==='boolean'?source.motor_on:null,
   mode:typeof source.mode==='string'?source.mode:'—',phase:typeof source.start_phase==='string'?source.start_phase:null,vibrationPeak:numeric(source.vibration_peak),
   relays:Array.isArray(source.relays)&&source.relays.length===4&&source.relays.every(v=>typeof v==='boolean')?source.relays:null};
@@ -135,7 +136,9 @@ function ingest(which,raw,packet){
  for(const m of METRICS.filter(m=>m.source===which)){
   if(sample[m.key]!==null){const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
  }
- state.records.push({at:new Date(state[which].at).toISOString(),deviceId:expected,...sample});if(state.records.length>500)state.records.shift();
+ // Hora da medicao quando a placa carimba; senao, a hora em que chegou.
+ state.records.push({at:new Date(sample.measuredAt??state[which].at).toISOString(),
+  clockSource:sample.measuredAt?'placa':'navegador',deviceId:expected,...sample});if(state.records.length>500)state.records.shift();
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target){
   text('commandFeedback',`ESP32 informou saída ${sample.motorOn?'ligada':'desligada'}; não confirma contatores ou motor físico.`);state.pending=null;
  }
@@ -179,8 +182,8 @@ function command(kind,mode){ /* Retired GPIO2 prototype: never publish control o
 function exportCsv(){
  if(!state.records.length)return;
  const keys=METRICS.map(m=>m.key);
- const lines=[['received_at','device_id','demo','motor_on','bench_armed',...keys].join(',')];
- for(const row of state.records)lines.push([row.at,row.deviceId,row.demo,row.motorOn??'',row.benchArmed,...keys.map(k=>row[k]??'')].join(','));
+ const lines=[['measured_at','clock_source','device_id','demo','motor_on','bench_armed',...keys].join(',')];
+ for(const row of state.records)lines.push([row.at,row.clockSource,row.deviceId,row.demo,row.motorOn??'',row.benchArmed,...keys.map(k=>row[k]??'')].join(','));
  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`iotmotor-2-modulos-${new Date().toISOString().slice(0,10)}.csv`;a.click();
  setTimeout(()=>URL.revokeObjectURL(url),1000);

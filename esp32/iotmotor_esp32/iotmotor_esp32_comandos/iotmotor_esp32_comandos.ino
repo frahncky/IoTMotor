@@ -127,6 +127,7 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
 #include "wifi_portal.h"
 #include "comando_seguro.h"
+#include "relogio.h"
 #include "iotmotor_profiles.h"
 #include "iotmotor_mqtt_control.h"
 
@@ -209,6 +210,7 @@ void atualizarLcd() {
 void manterWifi(unsigned long agora) {
   static bool estavaConectado = false;
   if (WiFi.status() == WL_CONNECTED) {
+    relogio::manter(agora);  // Hora real para carimbar as medicoes.
     if (!estavaConectado) {
       estavaConectado = true;
       Serial.print("[WiFi] IP: ");
@@ -283,6 +285,8 @@ void publicarTelemetriaMqtt() {
   doc["boot"] = sessaoControle;
   doc["remote_control_ready"] = controleMqttConfigurado;
   doc["secure"] = comandoseguro::ligado;
+  // Hora da medicao, em segundos UTC. Ausente enquanto o NTP nao responde.
+  if (const uint32_t carimbo = relogio::agoraUtc()) doc["ts"] = carimbo;
   // Campo de compatibilidade: pronto para comandos; NAO representa jumper fisico.
   doc["bench_armed"] = true;
   doc["start_phase"] = nomeEtapa();
