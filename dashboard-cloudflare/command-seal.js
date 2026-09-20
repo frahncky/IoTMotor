@@ -53,6 +53,9 @@
   }
 
   const exigeSelo = placa => desafios.get(placa)?.secure === true;
+
+  // Por padrão nenhuma placa exige senha: o campo só aparece se alguma exigir.
+  const algumaExige = () => [...desafios.values()].some(estado => estado.secure);
   const temSenha = () => Boolean(senha);
 
   // Por que um comando não sairia agora — vazio quando está tudo pronto.
@@ -93,6 +96,6 @@
 
   window.iotmotorSelo = {
     definirSenha, senhaAtual: () => senha, temSenha,
-    registrarAuth, esquecer, exigeSelo, impedimento, empacotarAberto, empacotar
+    registrarAuth, esquecer, exigeSelo, algumaExige, impedimento, empacotarAberto, empacotar
   };
 })();

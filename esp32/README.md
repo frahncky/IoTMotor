@@ -22,11 +22,18 @@ A tabela de partições fica fora da área que o OTA regrava, então **a troca s
 depois de uma gravação por cabo em cada placa**. Enquanto isso não for feito, o OTA
 continua funcionando normalmente — mas só enquanto o binário couber em 1,31 MB.
 
-## Comandos cifrados no broker público
+## Comandos cifrados (desligado por padrão)
 
-O broker `test.mosquitto.org` é aberto: qualquer pessoa pode publicar em
-`iotmotor/esp32-01/command`. Para que isso não vire comando, cada comando viaja
-**cifrado e autenticado** com AES-256-GCM.
+O broker `test.mosquitto.org` é aberto: qualquer pessoa que conheça o tópico
+pode publicar em `iotmotor/esp32-01/command` e acionar um contator. **Hoje a
+bancada funciona assim, por escolha: os comandos viajam abertos.** O que segura
+a bancada são os limites do firmware (5 minutos de ensaio, queda após 15 s sem
+rede) e, principalmente, as proteções elétricas — que não são substituídas por
+software nenhum.
+
+O firmware já traz o mecanismo pronto para quando essa escolha mudar: com uma
+senha gravada, cada comando passa a viajar **cifrado e autenticado** com
+AES-256-GCM.
 
 - A chave de cada placa é `SHA-256("iotmotor-cmd-v1" | senha | device_id)`, então
   um comando selado para o quadro não vale para os sensores.
@@ -43,9 +50,11 @@ placas, no painel e no aplicativo. Sem senha, a placa se comporta como antes e
 aceita comando aberto — e avisa `secure: false`.
 
 Nos firmwares publicados pelo CI, a senha vem do segredo **`IOTMOTOR_CMD_SENHA`**
-do repositório (Settings → Secrets → Actions). Sem esse segredo, o firmware
-publicado sai aceitando comando aberto e o build emite um aviso. Use uma senha
-longa, **sem aspas duplas nem barra invertida**.
+do repositório (Settings → Secrets → Actions). **Esse segredo não existe hoje**,
+então o firmware publicado aceita comando aberto e o build avisa isso. Criar o
+segredo é o único passo para ligar a criptografia: o painel e o aplicativo
+mostram o campo da senha sozinhos assim que uma placa passar a exigi-la.
+Use uma senha longa, **sem aspas duplas nem barra invertida**.
 
 Se a senha se perder, a saída é regravar as placas por cabo.
 

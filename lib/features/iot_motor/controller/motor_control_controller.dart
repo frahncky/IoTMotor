@@ -78,6 +78,9 @@ class MotorControlController extends ChangeNotifier {
     _initializeData(loadSettings);
   }
 
+  /// `true` só quando alguma placa foi gravada exigindo comando cifrado.
+  bool get commandPasswordNeeded => _service.seal.algumaExigeSelo;
+
   /// Lista de alarmes gravada na placa de sensores, como ela publicou.
   List<BoardAlarm> boardAlarms = const <BoardAlarm>[];
 

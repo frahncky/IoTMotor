@@ -232,6 +232,11 @@ function init(){
  state.records=lerRegistros();
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
  $('commandDevice').value=state.config.commandDevice;$('sensorDevice').value=state.config.sensorDevice;
+ // O campo da senha de comando so aparece se alguma placa exigir selo.
+ setInterval(()=>{
+  const precisa=window.iotmotorSelo?.algumaExige?.()===true;
+  for(const id of ['cmdCampo','cmdAviso'])if($(id))$(id).hidden=!precisa;
+ },1000);
  if($('cmdSenha')){
   $('cmdSenha').value=window.iotmotorSelo?.senhaAtual?.()||'';
   $('cmdSenha').addEventListener('input',()=>window.iotmotorSelo?.definirSenha($('cmdSenha').value));

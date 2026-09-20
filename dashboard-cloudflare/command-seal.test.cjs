@@ -105,6 +105,16 @@ test('sem senha ou sem desafio o painel avisa em vez de publicar', async () => {
   await assert.rejects(() => selo.empacotar('esp32-01', COMANDO), /desafio/);
 });
 
+test('sem placa exigindo selo, o painel nem pede senha', () => {
+  const {selo} = setup();
+  assert.equal(selo.algumaExige(), false);
+  selo.registrarAuth('esp32-01', {device_id: 'esp32-01', secure: false});
+  selo.registrarAuth('esp32-02', {device_id: 'esp32-02', secure: false});
+  assert.equal(selo.algumaExige(), false);
+  selo.registrarAuth('esp32-02', {device_id: 'esp32-02', secure: true, challenge: 'c'.repeat(32)});
+  assert.equal(selo.algumaExige(), true);
+});
+
 test('a senha fica neste navegador e some quando apagada', () => {
   const {selo, guardado} = setup();
   selo.definirSenha('senha-certa');

@@ -50,6 +50,10 @@ class CommandSeal {
 
   bool exigeSelo(String placa) => _placas[placa]?.exigeSelo ?? false;
 
+  /// Por padrão nenhuma placa exige senha: a tela só pergunta se alguma exigir.
+  bool get algumaExigeSelo =>
+      _placas.values.any((_EstadoDaPlaca placa) => placa.exigeSelo);
+
   /// Por que um comando não sairia agora — `null` quando está tudo pronto.
   String? impedimento(String placa) {
     if (!exigeSelo(placa)) return null;
