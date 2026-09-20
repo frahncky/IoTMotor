@@ -88,6 +88,8 @@ jobs:
           selo_dart = Path('lib/features/iot_motor/services/command_seal.dart').read_text()
           for texto, onde in ((seguro, 'firmware'), (selo_js, 'painel'), (selo_dart, 'app')):
               assert 'iotmotor-cmd-v1' in texto, 'rotulo do selo divergente no ' + onde
+          # O campo 'sealed' e lido nos dois firmwares e montado nos dois clientes.
+          for texto, onde in ((control, 'quadro'), (sensores, 'sensores'), (selo_js, 'painel'), (selo_dart, 'app')):
               assert 'sealed' in texto, 'campo sealed ausente no ' + onde
           assert 'troque-por-uma-senha-longa' in (root / 'comando_local.exemplo.h').read_text(), 'o modelo versionado nao pode carregar senha real'
           for pasta in (root, s3):
