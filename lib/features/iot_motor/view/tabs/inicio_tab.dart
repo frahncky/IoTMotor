@@ -631,52 +631,48 @@ class _InicioTabState extends State<InicioTab> {
     });
   }
 
+  /// Editor de partidas: cada contator com o instante em que liga e em que
+  /// desliga. A partida é gravada no ESP32, então vale também no painel.
   Future<void> _openStartTypeEditor({
     required BuildContext context,
     MotorCommandType? initial,
   }) async {
     String label = initial?.label ?? '';
-    // O modo so identifica a partida internamente; o que vai para a placa sao
-    // os contatores abaixo. Partida nova: modo gerado pelo nome.
-    final String mode = initial?.mode ?? '';
-    bool sequence = initial?.sequence ?? false;
-    int mask = initial?.mask ?? 1;
-    int main = initial?.main ?? 1;
-    int star = initial?.star ?? 2;
-    int delta = initial?.delta ?? 3;
-    int seconds = initial?.seconds ?? 5;
+    final List<ContactorTiming> tempos = List<ContactorTiming>.generate(4, (int i) {
+      final List<ContactorTiming>? atuais = initial?.timings;
+      if (atuais != null && i < atuais.length) return atuais[i];
+      return ContactorTiming(use: i == 0, onMs: 500, offMs: 0);
+    });
 
     String? problema() {
       if (label.trim().isEmpty) return 'Informe o nome da partida.';
-      if (!sequence) return mask == 0 ? 'Escolha ao menos um contator.' : null;
-      if (<int>{main, star, delta}.length != 3) {
-        return 'Principal, estrela e tri\u00e2ngulo precisam ser contatores diferentes.';
+      if (!tempos.any((ContactorTiming t) => t.use)) return 'Marque pelo menos um contator.';
+      for (int i = 0; i < tempos.length; i++) {
+        final ContactorTiming t = tempos[i];
+        if (!t.use) continue;
+        if (t.offMs != 0 && t.offMs <= t.onMs) {
+          return 'CNT ${i + 1}: desligar depois de ligar (ou 0 para ficar ligado).';
+        }
       }
       return null;
     }
 
-    Widget seletorContator(
-      String rotulo,
-      int valor,
-      ValueChanged<int> aoMudar,
-    ) {
+    Widget campoDeTempo(String rotulo, int valorMs, ValueChanged<int> aoMudar) {
       return SizedBox(
-        width: 124,
-        child: DropdownButtonFormField<int>(
-          initialValue: valor,
-          decoration: InputDecoration(labelText: rotulo),
-          items: <DropdownMenuItem<int>>[
-            for (int c = 1; c <= 4; c++)
-              DropdownMenuItem<int>(value: c, child: Text('CNT $c')),
-          ],
-          onChanged: (int? novo) {
-            if (novo != null) aoMudar(novo);
+        width: 104,
+        child: TextFormField(
+          initialValue: (valorMs / 1000).toString(),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(labelText: rotulo, suffixText: 's'),
+          onChanged: (String texto) {
+            final double? s = double.tryParse(texto.replaceAll(',', '.'));
+            if (s != null && s >= 0 && s <= 300) aoMudar((s * 1000).round());
           },
         ),
       );
     }
 
-    final bool? save = await showDialog<bool>(
+    final bool? salvar = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) {
         return StatefulBuilder(
@@ -685,7 +681,7 @@ class _InicioTabState extends State<InicioTab> {
             return AlertDialog(
               title: Text(initial == null ? 'Nova partida' : 'Editar partida'),
               content: SizedBox(
-                width: 440,
+                width: 460,
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -694,99 +690,65 @@ class _InicioTabState extends State<InicioTab> {
                       TextFormField(
                         initialValue: label,
                         autofocus: initial == null,
-                        maxLength: 40,
+                        maxLength: 24,
                         onChanged: (String value) => atualizar(() => label = value),
                         decoration: const InputDecoration(
                           labelText: 'Nome da partida',
-                          hintText: 'Ex.: Direta com CNT 1 e CNT 4',
+                          hintText: 'Ex.: Estrela-triângulo 8 s',
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      SegmentedButton<bool>(
-                        segments: const <ButtonSegment<bool>>[
-                          ButtonSegment<bool>(value: false, label: Text('Direta')),
-                          ButtonSegment<bool>(
-                            value: true,
-                            label: Text('Estrela-tri\u00e2ngulo'),
-                          ),
-                        ],
-                        selected: <bool>{sequence},
-                        onSelectionChanged:
-                            (Set<bool> escolha) =>
-                                atualizar(() => sequence = escolha.first),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tempos contados do início da partida. Desligar em 0 = '
+                        'o contator fica ligado até você parar.',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      const SizedBox(height: 14),
-                      if (!sequence) ...<Widget>[
-                        Text(
-                          'Contatores ligados juntos',
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: <Widget>[
-                            for (int i = 0; i < 4; i++)
-                              FilterChip(
-                                label: Text('CNT ${i + 1}'),
-                                selected: mask & (1 << i) != 0,
-                                onSelected:
-                                    (bool marcado) => atualizar(
-                                      () =>
-                                          mask =
-                                              marcado
-                                                  ? mask | (1 << i)
-                                                  : mask & ~(1 << i),
-                                    ),
-                              ),
-                          ],
-                        ),
-                      ] else ...<Widget>[
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: <Widget>[
-                            seletorContator(
-                              'Principal',
-                              main,
-                              (int v) => atualizar(() => main = v),
-                            ),
-                            seletorContator(
-                              'Estrela',
-                              star,
-                              (int v) => atualizar(() => star = v),
-                            ),
-                            seletorContator(
-                              'Tri\u00e2ngulo',
-                              delta,
-                              (int v) => atualizar(() => delta = v),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Tempo em estrela: $seconds s',
-                          style: Theme.of(context).textTheme.labelLarge,
-                        ),
-                        Slider(
-                          value: seconds.toDouble(),
-                          min: 2,
-                          max: 30,
-                          divisions: 28,
-                          label: '$seconds s',
-                          onChanged:
-                              (double v) => atualizar(() => seconds = v.round()),
-                        ),
-                      ],
-                      if (erro != null)
+                      const SizedBox(height: 10),
+                      for (int i = 0; i < 4; i++)
                         Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            erro,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: <Widget>[
+                              SizedBox(
+                                width: 112,
+                                child: CheckboxListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  controlAffinity: ListTileControlAffinity.leading,
+                                  title: Text('CNT ${i + 1}'),
+                                  value: tempos[i].use,
+                                  onChanged: (bool? marcado) => atualizar(() {
+                                    tempos[i] = ContactorTiming(
+                                      use: marcado ?? false,
+                                      onMs: tempos[i].onMs,
+                                      offMs: tempos[i].offMs,
+                                    );
+                                  }),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              campoDeTempo('Liga', tempos[i].onMs, (int ms) => atualizar(() {
+                                tempos[i] = ContactorTiming(
+                                  use: tempos[i].use,
+                                  onMs: ms,
+                                  offMs: tempos[i].offMs,
+                                );
+                              })),
+                              const SizedBox(width: 10),
+                              campoDeTempo('Desliga', tempos[i].offMs, (int ms) => atualizar(() {
+                                tempos[i] = ContactorTiming(
+                                  use: tempos[i].use,
+                                  onMs: tempos[i].onMs,
+                                  offMs: ms,
+                                );
+                              })),
+                            ],
                           ),
+                        ),
+                      if (erro != null)
+                        Text(
+                          erro,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error),
                         ),
                     ],
                   ),
@@ -798,11 +760,8 @@ class _InicioTabState extends State<InicioTab> {
                   child: const Text('Cancelar'),
                 ),
                 FilledButton(
-                  onPressed:
-                      erro == null
-                          ? () => Navigator.of(dialogContext).pop(true)
-                          : null,
-                  child: const Text('Salvar'),
+                  onPressed: erro == null ? () => Navigator.of(dialogContext).pop(true) : null,
+                  child: const Text('Salvar na placa'),
                 ),
               ],
             );
@@ -811,39 +770,13 @@ class _InicioTabState extends State<InicioTab> {
       },
     );
 
-    if (save != true) {
-      return;
-    }
-
+    if (salvar != true) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-
-      if (initial == null) {
-        widget.controller.addStartType(
-          label: label,
-          mode: mode,
-          sequence: sequence,
-          mask: mask,
-          main: main,
-          star: star,
-          delta: delta,
-          seconds: seconds,
-        );
-        return;
-      }
-
-      widget.controller.updateStartType(
-        id: initial.id,
+      if (!mounted) return;
+      widget.controller.saveStartTypeOnBoard(
+        id: initial?.id ?? '',
         label: label,
-        mode: mode,
-        sequence: sequence,
-        mask: mask,
-        main: main,
-        star: star,
-        delta: delta,
-        seconds: seconds,
+        timings: tempos,
       );
     });
   }

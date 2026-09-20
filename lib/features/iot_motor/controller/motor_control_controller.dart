@@ -906,6 +906,132 @@ class MotorControlController extends ChangeNotifier {
     }
   }
 
+  /// Partidas vindas da placa; enquanto elas não chegam, valem as locais.
+  bool startTypesFromBoard = false;
+  String? _perfisDeviceId;
+  String? _ultimoComandoDePerfil;
+
+  /// Lê a lista publicada pelo ESP32 e substitui a lista mostrada no app.
+  ///
+  /// O formato é o mesmo do painel: cada contator tem o instante em que liga e
+  /// o instante em que desliga (0 = fica ligado até parar), em milissegundos.
+  void _aplicarPerfisDaPlaca({required String deviceId, required String payload}) {
+    final Object? dados;
+    try {
+      dados = jsonDecode(payload);
+    } catch (_) {
+      return;
+    }
+    if (dados is! Map<String, dynamic>) return;
+    final Object? lista = dados['profiles'];
+    if (lista is! List) return;
+
+    final List<MotorCommandType> partidas = <MotorCommandType>[];
+    for (final Object? bruto in lista) {
+      if (bruto is! Map) continue;
+      final String id = '${bruto['id'] ?? ''}'.trim();
+      final String nome = '${bruto['name'] ?? ''}'.trim();
+      final Object? contatores = bruto['cnt'];
+      if (id.isEmpty || nome.isEmpty || contatores is! List || contatores.length != 4) continue;
+      final List<ContactorTiming> tempos = <ContactorTiming>[];
+      for (final Object? item in contatores) {
+        if (item is! Map) break;
+        tempos.add(ContactorTiming(
+          use: item['use'] == true,
+          onMs: (item['on'] as num?)?.round() ?? 0,
+          offMs: (item['off'] as num?)?.round() ?? 0,
+        ));
+      }
+      if (tempos.length != 4) continue;
+      partidas.add(MotorCommandType.fromBoard(id: id, label: nome, timings: tempos));
+    }
+    if (partidas.isEmpty) return;
+
+    _perfisDeviceId = deviceId;
+    startTypesFromBoard = true;
+    _startTypes
+      ..clear()
+      ..addAll(partidas);
+    _notify();
+  }
+
+  void _tratarRespostaDeComando(String payload) {
+    if (_ultimoComandoDePerfil == null) return;
+    final Object? dados;
+    try {
+      dados = jsonDecode(payload);
+    } catch (_) {
+      return;
+    }
+    if (dados is! Map<String, dynamic>) return;
+    if ('${dados['seq'] ?? ''}' != _ultimoComandoDePerfil) return;
+    _ultimoComandoDePerfil = null;
+    final String detalhe = '${dados['reason'] ?? dados['action'] ?? ''}';
+    _pendingMessage = dados['accepted'] == true
+        ? 'Placa confirmou: $detalhe'
+        : 'Placa recusou: $detalhe';
+    _notify();
+  }
+
+  /// Envia a partida para a placa, que grava e republica para todos.
+  bool _enviarPerfilParaPlaca(String action, Map<String, dynamic> corpo) {
+    final String? dev = _perfisDeviceId ?? _benchDeviceId;
+    if (dev == null) {
+      _pendingMessage = 'Aguardando a lista de partidas do ESP32 de comandos.';
+      _notify();
+      return false;
+    }
+    final String? seq = _service.sendRawCommand(deviceId: dev, action: action, body: corpo);
+    if (seq == null) {
+      _pendingMessage = 'Conecte-se ao broker antes de editar partidas.';
+      _notify();
+      return false;
+    }
+    _ultimoComandoDePerfil = seq;
+    return true;
+  }
+
+  /// Cria ou atualiza uma partida na placa; ela grava e republica para todos.
+  ///
+  /// `id` vazio cria uma partida nova. Os tempos são os mesmos do painel:
+  /// para cada contator, quando liga e quando desliga (0 = até parar).
+  bool saveStartTypeOnBoard({
+    required String id,
+    required String label,
+    required List<ContactorTiming> timings,
+  }) {
+    final String nome = _normalizeLabel(label);
+    if (nome.isEmpty) {
+      _pendingMessage = 'Informe o nome da partida.';
+      _notify();
+      return false;
+    }
+    if (!timings.any((ContactorTiming t) => t.use)) {
+      _pendingMessage = 'Marque pelo menos um contator.';
+      _notify();
+      return false;
+    }
+    for (int i = 0; i < timings.length; i++) {
+      final ContactorTiming t = timings[i];
+      if (!t.use) continue;
+      if (t.onMs < 0 || t.offMs < 0 || (t.offMs != 0 && t.offMs <= t.onMs)) {
+        _pendingMessage = 'CNT ${i + 1}: desligar depois de ligar (ou 0 para ficar ligado).';
+        _notify();
+        return false;
+      }
+    }
+    final String identificador = id.isNotEmpty
+        ? id
+        : 'p${DateTime.now().millisecondsSinceEpoch.toRadixString(36).substring(4)}';
+    return _enviarPerfilParaPlaca('profile_save', <String, dynamic>{
+      'profile': <String, dynamic>{
+        'id': identificador,
+        'name': nome,
+        'cnt': timings.map((ContactorTiming t) => t.toBoard()).toList(growable: false),
+      },
+    });
+  }
+
   Future<void> loadStartTypes() async {
     if (_startTypesLoaded) {
       return;
@@ -1060,6 +1186,10 @@ class MotorControlController extends ChangeNotifier {
       _pendingMessage = 'Mantenha pelo menos uma partida configurada.';
       _notify();
       return false;
+    }
+    // Lista da placa: quem remove é ela, e a nova lista chega por MQTT.
+    if (startTypesFromBoard) {
+      return _enviarPerfilParaPlaca('profile_remove', <String, dynamic>{'id': id});
     }
 
     final int index = _startTypes.indexWhere(
@@ -1374,7 +1504,25 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
+  /// Entrega uma mensagem MQTT ao controlador, como se viesse do broker.
+  @visibleForTesting
+  void handlePayloadForTest(String topic, String payload) =>
+      _handlePayload(topic, payload);
+
   void _handlePayload(String topic, String payload) {
+    // Partidas e respostas não dependem da configuração ativa: o dispositivo
+    // vem do próprio tópico (prefixo/dispositivo/profiles).
+    final List<String> partes = topic.split('/');
+    final String deviceIdDoTopico = partes.length >= 2 ? partes[partes.length - 2] : '';
+    if (topic.endsWith('/profiles')) {
+      _aplicarPerfisDaPlaca(deviceId: deviceIdDoTopico, payload: payload);
+      return;
+    }
+    if (topic.endsWith('/command_ack')) {
+      _tratarRespostaDeComando(payload);
+      return;
+    }
+
     final MqttConnectionConfig? config = _service.activeConfig;
     if (config == null) {
       return;

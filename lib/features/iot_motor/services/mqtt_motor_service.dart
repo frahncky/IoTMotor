@@ -207,6 +207,40 @@ class MqttMotorService {
     return true;
   }
 
+  /// Publica um comando `v:1` com campos livres e devolve o `seq` enviado.
+  ///
+  /// Usado pelas partidas (`profile_save`, `profile_remove`, `profile_list`),
+  /// que são gravadas na placa para valerem também no painel.
+  String? sendRawCommand({
+    required String deviceId,
+    required String action,
+    Map<String, dynamic> body = const <String, dynamic>{},
+  }) {
+    final MqttServerClient? client = _client;
+    final MqttConnectionConfig? config = _activeConfig;
+    if (client == null ||
+        config == null ||
+        client.connectionStatus?.state != MqttConnectionState.connected) {
+      return null;
+    }
+    final String seq = _proximaSequencia();
+    final String payload = jsonEncode(<String, dynamic>{
+      'v': 1,
+      'device_id': deviceId,
+      'seq': seq,
+      'action': action,
+      ...body,
+    });
+    final MqttClientPayloadBuilder builder =
+        MqttClientPayloadBuilder()..addString(payload);
+    client.publishMessage(
+      config.commandTopicForDevice(deviceId),
+      MqttQos.atLeastOnce,
+      builder.payload!,
+    );
+    return seq;
+  }
+
   /// Comandos de manutenção do ESP32: `wifi_portal` e `update`.
   ///
   /// A senha do Wi-Fi nunca é enviada por aqui: `wifi_portal` só pede que a
@@ -380,6 +414,9 @@ class MqttMotorService {
 
     client.subscribe(config.telemetryWildcardTopic, MqttQos.atMostOnce);
     client.subscribe(config.statusWildcardTopic, MqttQos.atMostOnce);
+    // Partidas e respostas: a lista de partidas mora no ESP32 de comandos.
+    client.subscribe(config.profilesWildcardTopic, MqttQos.atLeastOnce);
+    client.subscribe(config.commandAckWildcardTopic, MqttQos.atLeastOnce);
   }
 
   void _handleIncomingMessages(List<MqttReceivedMessage<MqttMessage>> packets) {

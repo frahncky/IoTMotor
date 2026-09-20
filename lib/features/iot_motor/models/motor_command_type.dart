@@ -1,3 +1,30 @@
+/// Tempos de um contator dentro de uma partida, em milissegundos contados do
+/// início. `offMs` em 0 significa que ele fica ligado até parar.
+class ContactorTiming {
+  const ContactorTiming({
+    required this.use,
+    required this.onMs,
+    required this.offMs,
+  });
+
+  final bool use;
+  final int onMs;
+  final int offMs;
+
+  Map<String, dynamic> toBoard() =>
+      <String, dynamic>{'use': use, 'on': onMs, 'off': offMs};
+
+  @override
+  bool operator ==(Object other) =>
+      other is ContactorTiming &&
+      other.use == use &&
+      other.onMs == onMs &&
+      other.offMs == offMs;
+
+  @override
+  int get hashCode => Object.hash(use, onMs, offMs);
+}
+
 class MotorCommandType {
   const MotorCommandType({
     required this.id,
@@ -11,6 +38,7 @@ class MotorCommandType {
     this.star = 2,
     this.delta = 3,
     this.seconds = 5,
+    this.timings,
   });
 
   final String id;
@@ -30,6 +58,9 @@ class MotorCommandType {
   final int delta;
   final int seconds;
 
+  /// Tempos por contator quando a partida vem da placa (fonte da verdade).
+  final List<ContactorTiming>? timings;
+
   bool get isStop => command == 'stop';
 
   /// Perfil válido segundo as mesmas regras do firmware.
@@ -46,6 +77,16 @@ class MotorCommandType {
 
   /// Texto curto dos contatores, para listas e confirmações.
   String get profileSummary {
+    final List<ContactorTiming>? tempos = timings;
+    if (tempos != null) {
+      final List<String> partes = <String>[
+        for (int i = 0; i < tempos.length; i++)
+          if (tempos[i].use)
+            'CNT ${i + 1}: ${_segundos(tempos[i].onMs)}s'
+                '${tempos[i].offMs == 0 ? ' até parar' : ' a ${_segundos(tempos[i].offMs)}s'}',
+      ];
+      return partes.isEmpty ? 'Nenhum contator marcado.' : partes.join(' · ');
+    }
     if (!sequence) {
       final List<String> ligados = <String>[
         for (int i = 0; i < 4; i++)
@@ -82,10 +123,64 @@ class MotorCommandType {
     sequence: true,
   );
 
+  static String _segundos(int ms) {
+    final double s = ms / 1000;
+    return s == s.roundToDouble() ? s.toStringAsFixed(0) : s.toStringAsFixed(1);
+  }
+
   /// Modos antigos de estrela-triângulo ("star_delta", "sequence", "estrela").
   /// Não basta conter "star": "soft_starter" é partida direta.
   static bool modeLooksLikeSequence(String mode) {
     return RegExp(r'star[_\- ]?delta|sequence|estrela').hasMatch(mode.toLowerCase());
+  }
+
+  /// Partida como está gravada no ESP32: cada contator com seus tempos.
+  factory MotorCommandType.fromBoard({
+    required String id,
+    required String label,
+    required List<ContactorTiming> timings,
+  }) {
+    return MotorCommandType(
+      id: id,
+      label: label,
+      command: 'start',
+      mode: id,
+      feedback: 'Comando enviado: partida ${label.toLowerCase()}.',
+      timings: timings,
+    );
+  }
+
+  /// Contatores e tempos no formato que a placa grava e republica.
+  List<Map<String, dynamic>> timingsToBoard() {
+    final List<ContactorTiming> tempos = timings ?? _timingsFromLegacy();
+    return tempos.map((ContactorTiming t) => t.toBoard()).toList(growable: false);
+  }
+
+  /// Converte os campos antigos (máscara ou estrela-triângulo) em tempos.
+  List<ContactorTiming> _timingsFromLegacy() {
+    const int atraso = 500, tempoMorto = 700;
+    return List<ContactorTiming>.generate(4, (int i) {
+      final int contator = i + 1;
+      if (!sequence) {
+        return ContactorTiming(
+          use: mask & (1 << i) != 0,
+          onMs: atraso,
+          offMs: 0,
+        );
+      }
+      if (contator == main) return const ContactorTiming(use: true, onMs: atraso, offMs: 0);
+      if (contator == star) {
+        return ContactorTiming(use: true, onMs: atraso, offMs: atraso + seconds * 1000);
+      }
+      if (contator == delta) {
+        return ContactorTiming(
+          use: true,
+          onMs: atraso + seconds * 1000 + tempoMorto,
+          offMs: 0,
+        );
+      }
+      return const ContactorTiming(use: false, onMs: 0, offMs: 0);
+    });
   }
 
   factory MotorCommandType.start({
