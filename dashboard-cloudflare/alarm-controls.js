@@ -64,6 +64,46 @@
     rascunhos.set(alarme.id, {...atual, ...mudanca});
   }
 
+  // O painel principal é somente leitura: mostra apenas condições disparadas.
+  // Toda edição permanece isolada na aba "Configuração de alarmes".
+  function desenharAtivos() {
+    const alvo = $('alarmeAtivosLista');
+    const resumo = $('alarmeAtivosResumo');
+    if (!alvo || !resumo) return;
+    alvo.replaceChildren();
+
+    let mensagem = 'Conecte ao MQTT para acompanhar os alarmes ativos.';
+    if (conectado && !recente()) mensagem = 'Sem dados recentes dos sensores.';
+    else if (recente() && !estado.enabled) mensagem = 'O monitoramento de alarmes está desligado.';
+
+    const disparados = recente() && estado.enabled ? [...new Set(estado.firing || [])] : [];
+    if (disparados.length) {
+      mensagem = `${disparados.length} ${disparados.length === 1 ? 'alarme ativo' : 'alarmes ativos'} neste momento.`;
+      for (const id of disparados) {
+        const alarme = (lista || []).find(item => item.id === id);
+        const item = document.createElement('li');
+        item.className = 'atual';
+        const nome = document.createElement('span');
+        nome.className = 'nome';
+        nome.textContent = alarme
+          ? `${rotulo(alarme.field)} ${alarme.above === false ? 'abaixo de' : 'acima de'} ${alarme.limit}`
+          : `Alarme ${id}`;
+        const estadoAtual = document.createElement('span');
+        estadoAtual.className = 'tag on';
+        estadoAtual.textContent = 'disparado';
+        item.append(nome, estadoAtual);
+        alvo.append(item);
+      }
+    } else {
+      if (recente() && estado.enabled) mensagem = 'Nenhum alarme ativo.';
+      const vazio = document.createElement('li');
+      vazio.className = 'vazio';
+      vazio.textContent = mensagem;
+      alvo.append(vazio);
+    }
+    resumo.textContent = mensagem;
+  }
+
   function desenharLista() {
     const alvo = $('alarmeLista');
     alvo.replaceChildren();
@@ -194,6 +234,7 @@
     for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
       $(id).disabled = !pronto();
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
+    desenharAtivos();
     desenharLista();
   }
 

@@ -68,7 +68,10 @@ if (typeof document !== 'undefined') (() => {
       proxima.focus();
     });
   });
-  try { const salva = localStorage.getItem('iotmotor_aba'); if (salva === 'wifi') mostrarAba('wifi'); } catch {}
+  try {
+    const salva = localStorage.getItem('iotmotor_aba');
+    if (abas.some(aba => aba.dataset.tab === salva)) mostrarAba(salva);
+  } catch {}
 
   // ---- estado ----
   let client = null, connected = false, prefixo = '', dispositivos = ['esp32-01', 'esp32-02'];

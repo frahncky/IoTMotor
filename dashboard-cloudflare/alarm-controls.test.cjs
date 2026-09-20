@@ -177,6 +177,12 @@ test('a telemetria diz quais alarmes estao disparados agora', () => {
   assert.equal(h.linhas()[0].className, 'atual');
   assert.equal(h.linhas()[1].className, '');
   assert.match(h.node('alarmeEstado').textContent, /ALARME/);
+  const ativos = h.node('alarmeAtivosLista').children;
+  assert.equal(ativos.length, 1);
+  assert.equal(ativos[0].className, 'atual');
+  assert.match(ativos[0].children[0].textContent, /Vibração/);
+  assert.doesNotMatch(ativos[0].children[0].textContent, /Temperatura/);
+  assert.equal(h.node('alarmeAtivosResumo').textContent, '1 alarme ativo neste momento.');
 });
 
 test('o botao Salvar envia apenas o interruptor geral e os bipes de evento', () => {
