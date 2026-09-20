@@ -2,6 +2,11 @@
 // IoTMotor: esp32-01 PZEM + comandos; esp32-02 MPU6050/DS18B20 (somente leitura).
 const $=id=>document.getElementById(id);
 const STORE='iotmotor_dashboard_dual_v1';
+// Historico das amostras neste navegador: sobrevive a fechar a aba, mas nao
+// sai deste computador. Guardado por contagem e por idade, nessa ordem.
+const REGISTROS='iotmotor_registros_v1';
+const MAX_REGISTROS=3000,MAX_IDADE_MS=24*60*60*1000;
+let gravarRegistrosTimer=null;
 const DEFAULT={broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
 const METRICS=[
  {key:'voltage',label:'Tensão',unit:'V',digits:1,group:'eletrica',color:'#65c7e8',source:'command'},
@@ -118,7 +123,7 @@ function render(){
  $('exportBtn').disabled=!state.records.length;updateControl();renderCharts();
 }
 function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
- state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.records=[];state.pending=null;state.subscribed=false;
+ state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.pending=null;state.subscribed=false;
  text('commandFeedback','Nenhum comando enviado.');render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
@@ -138,7 +143,9 @@ function ingest(which,raw,packet){
  }
  // Hora da medicao quando a placa carimba; senao, a hora em que chegou.
  state.records.push({at:new Date(sample.measuredAt??state[which].at).toISOString(),
-  clockSource:sample.measuredAt?'placa':'navegador',deviceId:expected,...sample});if(state.records.length>500)state.records.shift();
+  clockSource:sample.measuredAt?'placa':'navegador',deviceId:expected,...sample});
+ if(state.records.length>MAX_REGISTROS)state.records.shift();
+ guardarRegistros();
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target){
   text('commandFeedback',`ESP32 informou saída ${sample.motorOn?'ligada':'desligada'}; não confirma contatores ou motor físico.`);state.pending=null;
  }
@@ -179,17 +186,50 @@ function connect(automatico){
  client.on('close',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Conexão encerrada','error');render();});
 }
 function command(kind,mode){ /* Retired GPIO2 prototype: never publish control on a public broker. */ }
+function registrosValidos(linhas){
+ if(!Array.isArray(linhas))return [];
+ const limite=Date.now()-MAX_IDADE_MS;
+ return linhas.filter(linha=>linha&&typeof linha.at==='string'&&Date.parse(linha.at)>=limite)
+  .slice(-MAX_REGISTROS);
+}
+function lerRegistros(){
+ try{return registrosValidos(JSON.parse(localStorage.getItem(REGISTROS)||'[]'));}
+ catch{return [];}
+}
+function guardarRegistros(){
+ if(gravarRegistrosTimer)return;
+ gravarRegistrosTimer=setTimeout(()=>{
+  gravarRegistrosTimer=null;
+  try{localStorage.setItem(REGISTROS,JSON.stringify(state.records));}
+  catch{  // Espaco esgotado: fica so com a metade mais nova.
+   state.records=state.records.slice(-Math.floor(MAX_REGISTROS/2));
+   try{localStorage.setItem(REGISTROS,JSON.stringify(state.records));}catch{}
+  }
+ },5000);
+}
+function limparRegistros(){
+ state.records=[];
+ try{localStorage.removeItem(REGISTROS);}catch{}
+ $('exportBtn').disabled=true;
+ diag('Histórico apagado deste navegador.');
+}
 function exportCsv(){
  if(!state.records.length)return;
+ const periodo=Number($('exportPeriodo')?.value||0);
+ const desde=periodo?Date.now()-periodo*60000:0;
+ const linhas=state.records.filter(row=>!desde||Date.parse(row.at)>=desde);
+ if(!linhas.length){diag('Nenhuma leitura no período escolhido.');return;}
  const keys=METRICS.map(m=>m.key);
  const lines=[['measured_at','clock_source','device_id','demo','motor_on','bench_armed',...keys].join(',')];
- for(const row of state.records)lines.push([row.at,row.clockSource,row.deviceId,row.demo,row.motorOn??'',row.benchArmed,...keys.map(k=>row[k]??'')].join(','));
+ for(const row of linhas)lines.push([row.at,row.clockSource,row.deviceId,row.demo,row.motorOn??'',row.benchArmed,...keys.map(k=>row[k]??'')].join(','));
  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`iotmotor-2-modulos-${new Date().toISOString().slice(0,10)}.csv`;a.click();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function init(){
  try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved)state.config=validateConfig(saved);}catch{}
+ // O que ja foi medido continua aqui depois de fechar e abrir o navegador.
+ state.records=lerRegistros();
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
  $('commandDevice').value=state.config.commandDevice;$('sensorDevice').value=state.config.sensorDevice;
  if($('cmdSenha')){
@@ -208,6 +248,9 @@ function init(){
  $('connectionForm').addEventListener('submit',event=>{event.preventDefault();connect();});
  // Original startBtn and stopBtn are wired only by local-controls.js.
  $('exportBtn').addEventListener('click',exportCsv);
+ $('limparHistorico')?.addEventListener('click',()=>{
+  if(state.records.length&&confirm('Apagar o histórico guardado neste navegador?'))limparRegistros();
+ });
  for(const button of document.querySelectorAll('[data-group]'))button.addEventListener('click',()=>{
   state.group=button.dataset.group;for(const b of document.querySelectorAll('[data-group]'))b.setAttribute('aria-pressed',String(button===b));renderCharts();
  });
@@ -219,4 +262,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,registrosValidos,METRICS};

@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -13,6 +13,21 @@ test('indicador de conexao combina telemetria recente e status online/offline',(
  // Offline retido antigo nao esconde telemetria nova.
  assert.equal(deviceConnection({brokerOk:true,status:'offline',statusAt:now-9000,at:now-1000,now}).kind,'live');
  assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-15000,now}).kind,'error');
+});
+
+test('o historico guardado no navegador descarta o velho e o invalido',()=>{
+ const agora=Date.now();
+ const linha=(minutosAtras)=>({at:new Date(agora-minutosAtras*60000).toISOString(),voltage:220});
+ const guardado=[linha(30*60),linha(25*60),linha(10),linha(1),null,{at:'ontem'},{voltage:1}];
+ const mantidos=registrosValidos(guardado);
+ // 30 e 25 horas atras saem; o resto fica, na ordem.
+ assert.equal(mantidos.length,2);
+ assert.equal(mantidos[0].at,linha(10).at);
+ assert.equal(mantidos[1].at,linha(1).at);
+ assert.deepEqual(registrosValidos('nao e lista'),[]);
+ // Fila cheia: fica so o final, que e o mais novo.
+ const muitos=Array.from({length:3200},(_,i)=>linha(i%50/60));
+ assert.equal(registrosValidos(muitos).length,3000);
 });
 
 test('a hora da placa (ts) vale mais que a hora de chegada',()=>{

@@ -22,6 +22,16 @@ O repositório publica **codigo-fonte** no GitHub, nao grava automaticamente o E
 
 Para Cloudflare Pages com Git, use a branch `main`, build command `exit 0` e output `dashboard-cloudflare`. Se usar Worker, publique os arquivos dessa pasta como assets estaticos do Worker. Um commit no GitHub nao atualiza automaticamente um Worker configurado sem deploy. Verifique se `/remote-controls.js` e `/dual-dashboard.js` sao servidos na versao atual. A disponibilidade do broker publico nao e garantida.
 
+## Histórico no navegador
+
+As leituras ficam guardadas **neste navegador** (até 3000 amostras ou 24 horas,
+o que vier primeiro) e continuam lá depois de fechar a aba. O seletor
+**Período** escolhe o que vai para o CSV — tudo, a última hora ou as últimas
+24 h — e **Limpar** apaga o que está guardado.
+
+O histórico é por navegador e por computador: não sobe para o broker nem para a
+Cloudflare. Para levar um ensaio para outro lugar, exporte o CSV.
+
 ## Alarme dos sensores
 
 A seção **Alarme dos sensores** traz a lista de alarmes gravada no S3: cada
