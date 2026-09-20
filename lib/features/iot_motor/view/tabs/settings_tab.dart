@@ -480,7 +480,9 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     );
   }
 
-  /// Confere o APK publicado pelo CI e oferece o download, sem cabo.
+  /// Verifica, baixa e entrega o APK ao instalador do Android, sem navegador.
+  ///
+  /// O sistema sempre pede a confirmação final: nenhum app se instala sozinho.
   Future<void> _verificarAtualizacaoDoApp() async {
     setState(() => _verificandoAppUpdate = true);
     final AppUpdateService servico = AppUpdateService();
@@ -497,7 +499,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         );
         return;
       }
-      final bool? baixar = await showDialog<bool>(
+      final bool? atualizar = await showDialog<bool>(
         context: context,
         builder:
             (BuildContext dialogContext) => AlertDialog(
@@ -506,8 +508,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                 'Publicada: ${info.publishedVersion} (build ${info.publishedBuild}, commit ${info.commit}).\n'
                 'Instalada: ${info.installedVersion}'
                 '${info.installedBuild.isEmpty ? " (sem selo de build)" : " (build ${info.installedBuild})"}.\n\n'
-                'O download abre no navegador. O Android pede permissão para instalar '
-                'apps de fontes desconhecidas na primeira vez.',
+                'O app baixa a versão nova e abre a instalação do Android. '
+                'Na primeira vez, autorize "instalar apps desconhecidos".',
               ),
               actions: <Widget>[
                 TextButton(
@@ -516,16 +518,86 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                 ),
                 FilledButton(
                   onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Baixar APK'),
+                  child: const Text('Atualizar agora'),
                 ),
               ],
             ),
       );
-      if ((baixar ?? false) && info.apkUrl.isNotEmpty) {
-        await launchUrl(
-          Uri.parse(info.apkUrl),
-          mode: LaunchMode.externalApplication,
+      if (!(atualizar ?? false) || info.apkUrl.isEmpty) return;
+      if (!mounted) return;
+
+      final ValueNotifier<double> progresso = ValueNotifier<double>(0);
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (BuildContext dialogContext) => AlertDialog(
+              title: const Text('Baixando a atualização'),
+              content: ValueListenableBuilder<double>(
+                valueListenable: progresso,
+                builder: (BuildContext context, double valor, _) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      LinearProgressIndicator(value: valor > 0 ? valor : null),
+                      const SizedBox(height: 10),
+                      Text(
+                        valor > 0
+                            ? '${(valor * 100).toStringAsFixed(0)}%'
+                            : 'Iniciando…',
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+      );
+
+      try {
+        await servico.baixarEInstalar(
+          info.apkUrl,
+          onProgresso: (double valor) => progresso.value = valor,
         );
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Confirme a instalação na tela do Android.'),
+            ),
+          );
+        }
+      } catch (erro) {
+        if (mounted) Navigator.of(context, rootNavigator: true).pop();
+        if (mounted) {
+          // Sem permissão ou download interrompido: oferece o caminho manual.
+          final bool? navegador = await showDialog<bool>(
+            context: context,
+            builder:
+                (BuildContext dialogContext) => AlertDialog(
+                  title: const Text('Não deu para instalar daqui'),
+                  content: Text('$erro'),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Fechar'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('Baixar pelo navegador'),
+                    ),
+                  ],
+                ),
+          );
+          if (navegador ?? false) {
+            await launchUrl(
+              Uri.parse(info.apkUrl),
+              mode: LaunchMode.externalApplication,
+            );
+          }
+        }
+      } finally {
+        progresso.dispose();
       }
     } catch (erro) {
       if (!mounted) return;

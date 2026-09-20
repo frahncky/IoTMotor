@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// Resultado da verificação de atualização do app.
@@ -44,6 +47,9 @@ class AppUpdateService {
 
   final http.Client _client;
 
+  /// Ponte com o Android (MainActivity.kt) para instalar o APK baixado.
+  static const MethodChannel _canal = MethodChannel('iotmotor/atualizacao');
+
   Future<AppUpdateInfo> check() async {
     final PackageInfo pacote = await PackageInfo.fromPlatform();
     final String instalada = '${pacote.version}+${pacote.buildNumber}';
@@ -73,6 +79,53 @@ class AppUpdateService {
       updateAvailable:
           build.isNotEmpty && (installedBuild.isEmpty || build != installedBuild),
     );
+  }
+
+  /// Baixa o APK publicado e entrega ao instalador do Android.
+  ///
+  /// O sistema sempre mostra a confirmação de instalação: nenhum app pode se
+  /// instalar em silêncio. O que evitamos aqui é o caminho pelo navegador e
+  /// pela pasta de downloads.
+  Future<void> baixarEInstalar(
+    String apkUrl, {
+    void Function(double progresso)? onProgresso,
+  }) async {
+    if (!Platform.isAndroid) {
+      throw Exception('A instalação automática só existe no Android.');
+    }
+    final bool pode = await _canal.invokeMethod<bool>('podeInstalar') ?? false;
+    if (!pode) {
+      await _canal.invokeMethod<void>('abrirPermissao');
+      throw Exception(
+        'Autorize "instalar apps desconhecidos" para o IoTMotor e toque de novo.',
+      );
+    }
+
+    final http.Request pedido = http.Request('GET', Uri.parse(apkUrl))
+      ..followRedirects = true;
+    final http.StreamedResponse resposta = await _client.send(pedido);
+    if (resposta.statusCode != 200) {
+      throw Exception('Download falhou (HTTP ${resposta.statusCode}).');
+    }
+
+    final Directory pasta = await getTemporaryDirectory();
+    final File arquivo = File('${pasta.path}${Platform.pathSeparator}IoTMotor.apk');
+    final IOSink saida = arquivo.openWrite();
+    try {
+      final int total = resposta.contentLength ?? 0;
+      int recebido = 0;
+      await for (final List<int> pedaco in resposta.stream) {
+        saida.add(pedaco);
+        recebido += pedaco.length;
+        if (total > 0) onProgresso?.call(recebido / total);
+      }
+    } finally {
+      await saida.close();
+    }
+
+    await _canal.invokeMethod<void>('instalar', <String, String>{
+      'caminho': arquivo.path,
+    });
   }
 
   void dispose() => _client.close();
