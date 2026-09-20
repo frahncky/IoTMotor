@@ -53,6 +53,9 @@ jobs:
             echo "keyAlias=$ANDROID_KEY_ALIAS"
             echo "keyPassword=$ANDROID_KEY_PASSWORD"
           } > android/key.properties
+      - name: Run app tests
+        # Sem isto o APK sairia compilando mesmo com teste quebrado.
+        run: flutter test
       - name: Build Android APK
         # O selo do build vai dentro do APK e no app-latest.json: e assim que o
         # app sabe se ha versao mais nova, ja que a versao do pubspec nao muda.

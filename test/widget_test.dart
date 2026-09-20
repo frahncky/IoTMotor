@@ -34,9 +34,9 @@ void main() {
     expect(find.text('Ativa'), findsOneWidget);
     expect(find.text('Reativa'), findsOneWidget);
     expect(find.text('Energia'), findsOneWidget);
-    expect(find.text('Frequ\u00eancia'), findsOneWidget);
-    expect(find.text('Vibra\u00e7\u00e3o'), findsOneWidget);
-    expect(find.text('Temperatura'), findsOneWidget);
+    expect(find.text('Freq.'), findsOneWidget);
+    expect(find.text('Vibra.'), findsOneWidget);
+    expect(find.text('Temp.'), findsOneWidget);
     expect(find.byIcon(Icons.settings_rounded), findsNothing);
 
     await tester.tap(find.text('El\u00e9trica'));
@@ -56,7 +56,7 @@ void main() {
     expect(find.text('Reativa'), findsOneWidget);
     expect(find.text('Energia'), findsOneWidget);
     expect(find.text('FP'), findsOneWidget);
-    expect(find.text('Frequ\u00eancia'), findsOneWidget);
+    expect(find.text('Freq.'), findsOneWidget);
 
     await tester.tap(find.text('Ativa'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -64,19 +64,19 @@ void main() {
 
     await tester.tap(find.text('Mec\u00e2nica'));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Vibra\u00e7\u00e3o (g)'), findsOneWidget);
-    expect(find.text('Temperatura (\u00b0C)'), findsOneWidget);
+    expect(find.text('Vibra. (g)'), findsOneWidget);
+    expect(find.text('Temp. (\u00b0C)'), findsOneWidget);
     expect(find.text('Ativa (W)'), findsNothing);
 
-    await tester.tap(find.text('Vibra\u00e7\u00e3o (g)'));
+    await tester.tap(find.text('Vibra. (g)'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Temperatura'), findsOneWidget);
+    expect(find.text('Temp.'), findsOneWidget);
     expect(find.text('Pot\u00eancia'), findsNothing);
 
-    await tester.tap(find.text('Temperatura'));
+    await tester.tap(find.text('Temp.'));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Temperatura (\u00b0C)'), findsAtLeastNWidgets(1));
+    expect(find.text('Temp. (\u00b0C)'), findsAtLeastNWidgets(1));
 
     await tester.tap(find.text('Medi\u00e7\u00f5es'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -86,9 +86,9 @@ void main() {
     expect(find.text('Tens\u00e3o'), findsOneWidget);
     expect(find.text('Corrente'), findsOneWidget);
     expect(find.text('Energia'), findsOneWidget);
-    expect(find.text('Frequ\u00eancia'), findsOneWidget);
-    expect(find.text('Vibra\u00e7\u00e3o'), findsOneWidget);
-    expect(find.text('Temperatura'), findsOneWidget);
+    expect(find.text('Freq.'), findsOneWidget);
+    expect(find.text('Vibra.'), findsOneWidget);
+    expect(find.text('Temp.'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.history_outlined));
     await tester.pump(const Duration(milliseconds: 400));
@@ -153,6 +153,6 @@ void main() {
 
     expect(find.text('Medi\u00e7\u00f5es'), findsOneWidget);
     expect(find.text('Aparente'), findsOneWidget);
-    expect(find.text('Temperatura'), findsOneWidget);
+    expect(find.text('Temp.'), findsOneWidget);
   });
 }
