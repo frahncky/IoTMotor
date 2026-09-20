@@ -68,12 +68,11 @@ function setup() {
     {id: 'vib', field: 'vibration_peak', board: 'sensors', above: true, limit: 0.5, on: true, firing: false},
     {id: 'temp', field: 'temperature', board: 'sensors', above: true, limit: 60, on: true, firing: false}
   ];
-  const log = (client, eventos) => send(client, 'alarm_log', {events: eventos}, true);
   const alarms = (client, lista = PADRAO, max = 8) => send(client, 'alarms', {alarms: lista, max}, true);
   // Cada linha da lista tem: nome, limite, origem, [disparado], ligado, ops.
   const linhas = () => node('alarmeLista').children;
   const parte = (linha, classe) => linha.children.find(c => c.className === classe);
-  return {node, clients, context, connect, send, telemetry, alarms, log, timers, linhas, parte, PADRAO,
+  return {node, clients, context, connect, send, telemetry, alarms, timers, linhas, parte, PADRAO,
     advance(ms) { now += ms; intervals.forEach(fn => fn()); }};
 }
 
@@ -190,27 +189,6 @@ test('a telemetria diz quais alarmes estao disparados agora', () => {
   h.telemetry(c, {alarm_active: false, alarms_firing: []});
   assert.equal(h.node('alarmeAtivosLista').children.length, 0);
   assert.equal(h.node('alarmeAtivosResumo').textContent, 'Nenhum alarme ativo.');
-});
-
-test('o registro de disparos da placa aparece com o mais recente em cima', () => {
-  const h = setup(), c = h.connect();
-  h.telemetry(c); h.alarms(c);
-  assert.match(h.node('alarmeHistoricoResumo').textContent, /Aguardando o registro/);
-  h.log(c, []);
-  assert.equal(h.node('alarmeHistoricoResumo').textContent, 'Nenhum disparo desde que a placa ligou.');
-  h.log(c, [
-    {id: 'vib', field: 'vibration_peak', value: 0.94, start: 1789920000, end: 1789920090, open: false, seconds: 90},
-    {id: 'temp', field: 'temperature', value: 72.5, start: 1789920600, open: true, seconds: 40}
-  ]);
-  const linhas = h.node('alarmeHistoricoLista').children;
-  assert.equal(linhas.length, 2);
-  // O aberto vem primeiro e fica marcado como disparado agora.
-  assert.ok(linhas[0].children[0].textContent.startsWith('Temperatura (°C) em 72.50'));
-  assert.equal(linhas[0].className, 'atual');
-  assert.equal(linhas[0].children[1].textContent, 'disparado há 40 s');
-  assert.ok(linhas[1].children[0].textContent.startsWith('Vibração (pico) (g) em 0.94'));
-  assert.equal(linhas[1].children[1].textContent, '1 min');
-  assert.match(h.node('alarmeHistoricoResumo').textContent, /2 disparos desde que a placa ligou/);
 });
 
 test('o botao Salvar envia apenas o interruptor geral e os bipes de evento', () => {

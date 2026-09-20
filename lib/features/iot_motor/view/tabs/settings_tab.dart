@@ -572,6 +572,19 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         await servico.baixarEInstalar(
           info.apkUrl,
           onProgresso: (double valor) => progresso.value = valor,
+          // Chega depois que a pessoa confirma ou recusa na tela do Android.
+          onResultado: (String estado, String? motivo) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  estado == 'instalado'
+                      ? 'Atualização instalada. Abra o app de novo.'
+                      : 'Instalação não concluída: ${motivo ?? estado}',
+                ),
+              ),
+            );
+          },
         );
         if (mounted) Navigator.of(context, rootNavigator: true).pop();
         if (mounted) {

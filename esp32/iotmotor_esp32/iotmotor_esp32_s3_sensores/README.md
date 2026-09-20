@@ -65,6 +65,13 @@ memória volátil da placa — os **10 últimos** — e é publicado retido em
 duração em segundos, que vale mesmo sem hora. Reiniciar a placa zera o registro:
 ele conta o que aconteceu no ensaio, não serve de histórico permanente.
 
+O painel **não mostra** esse registro (a seção foi retirada por não ficar boa na
+tela). Para ler, assine o tópico direto:
+
+```sh
+mosquitto_sub -h test.mosquitto.org -t iotmotor/esp32-02/alarm_log -v
+```
+
 Comandos: `alarm_list` (republica a lista e o registro), `alarm_save` (`{"alarm": {...}}`
 cria ou edita pelo `id`) e `alarm_remove` (`{"id": "..."}`). O `alarm_set`
 cuida apenas do interruptor geral (`enabled`) e dos bipes de evento

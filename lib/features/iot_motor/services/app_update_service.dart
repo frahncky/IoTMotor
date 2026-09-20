@@ -86,9 +86,13 @@ class AppUpdateService {
   /// O sistema sempre mostra a confirmação de instalação: nenhum app pode se
   /// instalar em silêncio. O que evitamos aqui é o caminho pelo navegador e
   /// pela pasta de downloads.
+  ///
+  /// [onResultado] recebe o que o Android respondeu depois da confirmação:
+  /// `instalado` ou `falha` com o motivo.
   Future<void> baixarEInstalar(
     String apkUrl, {
     void Function(double progresso)? onProgresso,
+    void Function(String estado, String? motivo)? onResultado,
   }) async {
     if (!Platform.isAndroid) {
       throw Exception('A instalação automática só existe no Android.');
@@ -122,6 +126,18 @@ class AppUpdateService {
     } finally {
       await saida.close();
     }
+
+    // O Android avisa o resultado depois que a pessoa confirma (ou recusa).
+    _canal.setMethodCallHandler((MethodCall chamada) async {
+      if (chamada.method != 'resultado') return null;
+      final Map<Object?, Object?> dados =
+          (chamada.arguments as Map<Object?, Object?>?) ?? <Object?, Object?>{};
+      onResultado?.call(
+        (dados['estado'] ?? 'falha').toString(),
+        dados['motivo']?.toString(),
+      );
+      return null;
+    });
 
     await _canal.invokeMethod<void>('instalar', <String, String>{
       'caminho': arquivo.path,
