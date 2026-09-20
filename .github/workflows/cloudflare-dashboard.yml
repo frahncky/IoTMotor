@@ -30,8 +30,9 @@ jobs:
           node --check dashboard-cloudflare/hardware-mirror.js
           node --check dashboard-cloudflare/wifi-manager.js
           node --check dashboard-cloudflare/alarm-controls.js
+          node --check dashboard-cloudflare/command-seal.js
       - name: Run web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs
       - name: Verify MQTT-only firmware and controls
         run: |
           python3 - <<'PY'
@@ -80,4 +81,15 @@ jobs:
           for campo in ('voltage', 'current', 'power', 'frequency', 'pf'):
               assert '"%s"' % campo in firmware, 'o painel oferece ' + campo + ', que o quadro nao publica'
           assert 'MAX_ALARMES = 8' in lista, 'o painel conta com oito alarmes na placa'
+          # Comandos cifrados: firmware, painel e app precisam da mesma conta.
+          seguro = (root / 'comando_seguro.h').read_text()
+          assert seguro == (s3 / 'comando_seguro.h').read_text(), 'comando_seguro.h diferente entre os firmwares'
+          selo_js = Path('dashboard-cloudflare/command-seal.js').read_text()
+          selo_dart = Path('lib/features/iot_motor/services/command_seal.dart').read_text()
+          for texto, onde in ((seguro, 'firmware'), (selo_js, 'painel'), (selo_dart, 'app')):
+              assert 'iotmotor-cmd-v1' in texto, 'rotulo do selo divergente no ' + onde
+              assert 'sealed' in texto, 'campo sealed ausente no ' + onde
+          assert 'troque-por-uma-senha-longa' in (root / 'comando_local.exemplo.h').read_text(), 'o modelo versionado nao pode carregar senha real'
+          for pasta in (root, s3):
+              assert not (pasta / 'comando_local.h').exists(), 'comando_local.h nao pode ir para o Git'
           PY

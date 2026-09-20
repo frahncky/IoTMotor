@@ -30,6 +30,18 @@ bool lerSequencia(const char* s, uint64_t& n) {
   return true;
 }
 
+// Desafio da vez, retido: sem ele o painel nao tem como cifrar um comando.
+void publicarAuth() {
+  StaticJsonDocument<192> doc;
+  doc["v"] = 1;
+  doc["device_id"] = DEVICE_ID;
+  comandoseguro::descrever(doc);
+  char payload[192];
+  const size_t len = serializeJson(doc, payload, sizeof(payload));
+  if (len) mqttClient.publish(topicoAuth, reinterpret_cast<const uint8_t*>(payload),
+                              static_cast<unsigned int>(len), true);
+}
+
 void publicarRespostaControle(const char* seq, bool aceito, const char* acao, const char* motivo) {
   if (!mqttClient.connected()) return;
   StaticJsonDocument<256> resposta;
@@ -98,10 +110,36 @@ bool perfilDeComandoAntigo(JsonVariantConst doc, PerfilDePartida& perfil) {
 }
 
 void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
-  if (!topico || strcmp(topico, topicoComandos) || !tamanho || tamanho > 700) return;
-  StaticJsonDocument<512> doc;
+  if (!topico || strcmp(topico, topicoComandos) || !tamanho || tamanho > 1400) return;
+  StaticJsonDocument<768> doc;
   if (deserializeJson(doc, payload, tamanho) || doc["v"].as<int>() != 1 ||
       strcmp(doc["device_id"] | "", DEVICE_ID)) return;
+
+  // Com senha configurada, so passa comando cifrado e com o desafio da vez.
+  if (comandoseguro::ligado) {
+    static char aberto[comandoseguro::MAX_ABERTO];
+    const char* motivo = "";
+    if (!(doc["sealed"] | "")[0]) {
+      publicarRespostaControle(doc["seq"] | "", false, doc["action"] | "sealed",
+                               "comando sem selo: configure a senha de comando");
+      return;
+    }
+    if (!comandoseguro::abrir(doc["sealed"] | "", DEVICE_ID, aberto, sizeof(aberto), motivo)) {
+      publicarRespostaControle(doc["seq"] | "", false, "sealed", motivo);
+      return;
+    }
+    doc.clear();
+    if (deserializeJson(doc, aberto) || doc["v"].as<int>() != 1 ||
+        strcmp(doc["device_id"] | "", DEVICE_ID)) return;
+    if (!comandoseguro::confereDesafio(doc["ch"] | "")) {
+      publicarRespostaControle(doc["seq"] | "", false, doc["action"] | "sealed",
+                               "desafio vencido: envie de novo");
+      return;
+    }
+    comandoseguro::usar();  // Comando repetido do ar nao vale mais.
+    publicarAuth();
+  }
+
   const char* seq = doc["seq"] | "";
   uint64_t numero = 0;
   if (!lerSequencia(seq, numero)) return;

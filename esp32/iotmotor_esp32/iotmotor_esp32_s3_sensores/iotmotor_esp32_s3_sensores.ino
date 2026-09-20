@@ -25,6 +25,7 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
 #include "wifi_portal.h"
 #include "alarm_list.h"
+#include "comando_seguro.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -98,7 +99,7 @@ uint8_t ds18b20Pin=0;
 // e dos pinos do LED/buzzer 16/17/18/42).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
-char alarmsTopic[96], quadroTelemetryTopic[96];
+char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -225,6 +226,17 @@ void publishAlarms() {
   serializeJson(doc,texto);
   if(texto.length())
     mqtt.publish(alarmsTopic,(const uint8_t*)texto.c_str(),(unsigned int)texto.length(),true);
+}
+
+// Desafio da vez, retido: o painel precisa dele para cifrar um comando.
+void publishAuth() {
+  if(!mqtt.connected())return;
+  StaticJsonDocument<192> doc;
+  doc["v"]=1;
+  doc["device_id"]=DEVICE_ID;
+  comandoseguro::descrever(doc);
+  char payload[192];size_t n=serializeJson(doc,payload,sizeof(payload));
+  if(n)mqtt.publish(authTopic,(const uint8_t*)payload,(unsigned int)n,true);
 }
 
 void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo);
@@ -445,6 +457,7 @@ void publishTelemetry() {
   doc["mpu_ok"]=mpuReady;
   doc["temperature_ok"]=tempReady;
   doc["sample_count"]=amostrasAtuais;
+  doc["secure"]=comandoseguro::ligado;
   doc["alarm_enabled"]=alarmeHabilitado;
   doc["event_sounds"]=sonsDeEventos;
   doc["alarm_active"]=estadoCritico;
@@ -495,10 +508,35 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     }
     return;
   }
-  if(strcmp(topic,commandTopic) || length>700)return;
-  StaticJsonDocument<512> doc;
+  if(strcmp(topic,commandTopic) || length>1400)return;
+  StaticJsonDocument<768> doc;
   if(deserializeJson(doc,payload,length) || doc["v"].as<int>()!=1 ||
      strcmp(doc["device_id"] | "",DEVICE_ID))return;
+
+  // Com senha configurada, so passa comando cifrado e com o desafio da vez.
+  if(comandoseguro::ligado) {
+    static char aberto[comandoseguro::MAX_ABERTO];
+    const char* motivoSelo="";
+    if(!(doc["sealed"] | "")[0]) {
+      publishAck(doc["seq"] | "",doc["action"] | "sealed",false,
+                 "comando sem selo: configure a senha de comando");
+      return;
+    }
+    if(!comandoseguro::abrir(doc["sealed"] | "",DEVICE_ID,aberto,sizeof(aberto),motivoSelo)) {
+      publishAck(doc["seq"] | "","sealed",false,motivoSelo);
+      return;
+    }
+    doc.clear();
+    if(deserializeJson(doc,aberto) || doc["v"].as<int>()!=1 ||
+       strcmp(doc["device_id"] | "",DEVICE_ID))return;
+    if(!comandoseguro::confereDesafio(doc["ch"] | "")) {
+      publishAck(doc["seq"] | "",doc["action"] | "sealed",false,"desafio vencido: envie de novo");
+      return;
+    }
+    comandoseguro::usar();  // Comando repetido do ar nao vale mais.
+    publishAuth();
+  }
+
   const char* acao=doc["action"] | "";
   const char* seq=doc["seq"] | "";
   beepDeEvento(1);  // Confirma na bancada que o comando chegou.
@@ -601,6 +639,7 @@ void setup() {
   Wire.setClock(100000);
   pinMode(LED_AZUL_PIN,OUTPUT);pinMode(LED_VERDE_PIN,OUTPUT);pinMode(LED_VERM_PIN,OUTPUT);
   pinMode(BUZZER_PIN,OUTPUT);noTone(BUZZER_PIN);
+  comandoseguro::iniciar(DEVICE_ID);
   carregarLimites();
   alarmes::carregar(limiteVibracao,limiteTemperatura);
   aplicarLed(true,false,false);  // Azul ate haver sensor valido.
@@ -620,6 +659,7 @@ void setup() {
   mqtt.setServer(MQTT_HOST,MQTT_PORT);
   snprintf(wifiTopic,sizeof(wifiTopic),"%s/%s/wifi",TOPIC_PREFIX,DEVICE_ID);
   snprintf(alarmsTopic,sizeof(alarmsTopic),"%s/%s/alarms",TOPIC_PREFIX,DEVICE_ID);
+  snprintf(authTopic,sizeof(authTopic),"%s/%s/auth",TOPIC_PREFIX,DEVICE_ID);
   // Alarmes de tensao e corrente leem a telemetria do quadro de comando.
   snprintf(quadroTelemetryTopic,sizeof(quadroTelemetryTopic),"%s/esp32-01/telemetry",TOPIC_PREFIX);
   mqtt.setBufferSize(1536);
@@ -652,7 +692,7 @@ void loop() {
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
-        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();
+        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();
         beepDeEvento(2);  // Dois bipes: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());

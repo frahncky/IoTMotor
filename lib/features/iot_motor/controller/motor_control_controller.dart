@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/motor_app_settings.dart';
 import '../models/motor_command_type.dart';
@@ -30,6 +31,14 @@ class MotorControlController extends ChangeNotifier {
     deviceIdController = TextEditingController(text: '');
     usernameController = TextEditingController();
     passwordController = TextEditingController();
+    commandPasswordController = TextEditingController();
+    // A senha de comando cifra cada comando enviado as placas; fica guardada
+    // no cofre do aparelho, nunca no broker nem no arquivo de configuracoes.
+    commandPasswordController.addListener(() {
+      _service.seal.senha = commandPasswordController.text;
+      unawaited(_guardarSenhaDeComando());
+      _notify();
+    });
     topicPrefixController = TextEditingController(text: 'iotmotor');
     voltageMinController = TextEditingController(text: '190');
     voltageMaxController = TextEditingController(text: '240');
@@ -67,10 +76,38 @@ class MotorControlController extends ChangeNotifier {
     _initializeData(loadSettings);
   }
 
+  static const FlutterSecureStorage _cofre = FlutterSecureStorage();
+  static const String _chaveSenhaComando = 'iotmotor_cmd_senha';
+
+  Future<void> _guardarSenhaDeComando() async {
+    try {
+      final String senha = commandPasswordController.text.trim();
+      if (senha.isEmpty) {
+        await _cofre.delete(key: _chaveSenhaComando);
+      } else {
+        await _cofre.write(key: _chaveSenhaComando, value: senha);
+      }
+    } catch (_) {
+      // Aparelho sem cofre disponivel: a senha vale so nesta sessao.
+    }
+  }
+
+  Future<void> _lerSenhaDeComando() async {
+    try {
+      final String? senha = await _cofre.read(key: _chaveSenhaComando);
+      if (senha == null || senha.isEmpty || _disposed) return;
+      commandPasswordController.text = senha;
+      _service.seal.senha = senha;
+    } catch (_) {
+      // Sem cofre: segue sem senha guardada.
+    }
+  }
+
   Future<void> _initializeData(bool loadSettings) async {
     if (loadSettings) {
       await loadPersistedSettings();
     }
+    await _lerSenhaDeComando();
     // Só grava depois de ler o que estava salvo, senão os valores padrão
     // sobrescreveriam o arquivo assim que o app abrisse.
     _settingsRestored = true;
@@ -169,6 +206,9 @@ class MotorControlController extends ChangeNotifier {
   late final TextEditingController deviceIdController;
   late final TextEditingController usernameController;
   late final TextEditingController passwordController;
+
+  /// Senha combinada com as placas para cifrar os comandos.
+  late final TextEditingController commandPasswordController;
   late final TextEditingController topicPrefixController;
   late final TextEditingController voltageMinController;
   late final TextEditingController voltageMaxController;
@@ -704,7 +744,8 @@ class MotorControlController extends ChangeNotifier {
           lastCommandAt = DateTime.now();
           statusMessage = 'Comando enviado a $dev: ${type.label}.';
         } else {
-          _pendingMessage = 'Conecte-se ao broker antes de enviar comandos.';
+          _pendingMessage = _service.seal.impedimento(dev) ??
+              'Conecte-se ao broker antes de enviar comandos.';
         }
         _notify();
         return;
@@ -737,7 +778,8 @@ class MotorControlController extends ChangeNotifier {
     }
 
     if (!enviado) {
-      _pendingMessage = 'Conecte-se ao broker antes de enviar comandos.';
+      _pendingMessage = _service.seal.impedimento(dev) ??
+          'Conecte-se ao broker antes de enviar comandos.';
       _notify();
       return;
     }
@@ -752,7 +794,8 @@ class MotorControlController extends ChangeNotifier {
   Future<void> sendMaintenanceCommand(String action) async {
     final bool enviado = _service.sendMaintenanceCommand(action);
     if (!enviado) {
-      _pendingMessage = 'Conecte-se ao broker antes de enviar comandos.';
+      _pendingMessage = _service.seal.impedimento(_benchDeviceId ?? '') ??
+          'Conecte-se ao broker antes de enviar comandos.';
       _notify();
       return;
     }
@@ -1545,6 +1588,11 @@ class MotorControlController extends ChangeNotifier {
     // vem do próprio tópico (prefixo/dispositivo/profiles).
     final List<String> partes = topic.split('/');
     final String deviceIdDoTopico = partes.length >= 2 ? partes[partes.length - 2] : '';
+    if (topic.endsWith('/auth')) {
+      // Desafio da placa para os comandos cifrados (command_seal.dart).
+      _service.registrarAuth(topic, payload);
+      return;
+    }
     if (topic.endsWith('/profiles')) {
       _aplicarPerfisDaPlaca(deviceId: deviceIdDoTopico, payload: payload);
       return;

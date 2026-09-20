@@ -94,7 +94,7 @@ static const char* DEVICE_ID = "esp32-01";
 MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
-char topicoComandos[80], topicoResposta[80], topicoWifi[80], topicoPerfis[80];
+char topicoComandos[80], topicoResposta[80], topicoWifi[80], topicoPerfis[80], topicoAuth[80];
 constexpr unsigned long MQTT_RETRY_MS = 6000UL;
 constexpr unsigned long MQTT_PUBLISH_MS = 1000UL;
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
@@ -126,6 +126,7 @@ void aplicarEstadoRele(uint8_t indice) {
 constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
 #include "wifi_portal.h"
+#include "comando_seguro.h"
 #include "iotmotor_profiles.h"
 #include "iotmotor_mqtt_control.h"
 
@@ -281,6 +282,7 @@ void publicarTelemetriaMqtt() {
   doc["seq"] = ++sequenciaMqtt;
   doc["boot"] = sessaoControle;
   doc["remote_control_ready"] = controleMqttConfigurado;
+  doc["secure"] = comandoseguro::ligado;
   // Campo de compatibilidade: pronto para comandos; NAO representa jumper fisico.
   doc["bench_armed"] = true;
   doc["start_phase"] = nomeEtapa();
@@ -331,6 +333,7 @@ void manterMqtt(unsigned long agora) {
     if (!mqttClient.subscribe(topicoComandos, 1))
       Serial.println("[MQTT] falha ao assinar comandos");
     publicarCapacidades();
+    publicarAuth();
     publicarRedes();
     publicarPerfis();
     Serial.println("[MQTT] conectado: comandos e telemetria ativos");
@@ -389,6 +392,8 @@ void setup() {
   snprintf(topicoResposta, sizeof(topicoResposta), "iotmotor/%s/command_ack", DEVICE_ID);
   snprintf(topicoWifi, sizeof(topicoWifi), "iotmotor/%s/wifi", DEVICE_ID);
   snprintf(topicoPerfis, sizeof(topicoPerfis), "iotmotor/%s/profiles", DEVICE_ID);
+  snprintf(topicoAuth, sizeof(topicoAuth), "iotmotor/%s/auth", DEVICE_ID);
+  comandoseguro::iniciar(DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);
   mqttClient.setCallback(receberComandoMqtt);

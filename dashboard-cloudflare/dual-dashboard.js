@@ -189,6 +189,16 @@ function init(){
  try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved)state.config=validateConfig(saved);}catch{}
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
  $('commandDevice').value=state.config.commandDevice;$('sensorDevice').value=state.config.sensorDevice;
+ if($('cmdSenha')){
+  $('cmdSenha').value=window.iotmotorSelo?.senhaAtual?.()||'';
+  $('cmdSenha').addEventListener('input',()=>window.iotmotorSelo?.definirSenha($('cmdSenha').value));
+  $('cmdMostrar')?.addEventListener('click',()=>{
+   const campo=$('cmdSenha'),mostrando=campo.type==='text';
+   campo.type=mostrando?'password':'text';
+   $('cmdMostrar').textContent=mostrando?'Mostrar':'Ocultar';
+   $('cmdMostrar').setAttribute('aria-pressed',String(!mostrando));
+  });
+ }
  buildCards();render();
  $('connectBtn').addEventListener('click',()=>state.client?disconnect():connect());
  // A pagina abre desconectada: telemetria e comandos so comecam no botao Conectar.

@@ -33,5 +33,8 @@
   /// Lista de partidas publicada (retida) pelo ESP32 de comandos, e as
   /// respostas dele: é dela que o app e o painel tiram as mesmas partidas.
   String get profilesWildcardTopic => '$topicPrefix/+/profiles';
+
+  /// Desafio publicado por cada placa para os comandos cifrados.
+  String get authWildcardTopic => '$topicPrefix/+/auth';
   String get commandAckWildcardTopic => '$topicPrefix/+/command_ack';
 }

@@ -7,6 +7,7 @@ import 'package:mqtt_client/mqtt_server_client.dart';
 
 import '../models/motor_command_type.dart';
 import '../models/mqtt_connection_config.dart';
+import 'command_seal.dart';
 
 typedef MqttPayloadCallback = void Function(String topic, String payload);
 typedef MqttDisconnectedCallback = void Function({required bool manual});
@@ -150,6 +151,44 @@ class MqttMotorService {
     return true;
   }
 
+  /// Cifra os comandos quando a placa exige senha (ver command_seal.dart).
+  final CommandSeal seal = CommandSeal();
+
+  /// Guarda o desafio publicado por uma placa no topico auth dela.
+  void registrarAuth(String topic, String payload) {
+    final List<String> partes = topic.split('/');
+    if (partes.length < 3 || partes.last != 'auth') return;
+    try {
+      final Object? dados = jsonDecode(payload);
+      if (dados is Map<String, dynamic>) {
+        seal.registrarAuth(partes[partes.length - 2], dados);
+      }
+    } catch (_) {
+      // auth ilegivel: a placa republica a cada conexao.
+    }
+  }
+
+  /// Publica um comando ja montado, selando quando a placa exigir.
+  void _publicarComando(
+    MqttServerClient client,
+    String topic,
+    String deviceId,
+    Map<String, dynamic> comando,
+  ) {
+    void enviar(String texto) {
+      final MqttClientPayloadBuilder builder =
+          MqttClientPayloadBuilder()..addString(texto);
+      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
+    }
+
+    final String? aberto = seal.empacotarAberto(deviceId, comando);
+    if (aberto != null) {
+      enviar(aberto);
+      return;
+    }
+    seal.empacotar(deviceId, comando).then(enviar);
+  }
+
   int _ultimaSequencia = 0;
 
   /// Número de sequência crescente exigido pelo firmware (recusa repetidos).
@@ -186,26 +225,25 @@ class MqttMotorService {
         client.connectionStatus?.state != MqttConnectionState.connected) {
       return false;
     }
-    final String payload = jsonEncode(<String, dynamic>{
-      'v': 1,
-      'device_id': deviceId,
-      'seq': _proximaSequencia(),
-      'action': action,
-      'boot': boot,
-      'mode': mode,
-      'mask': mask,
-      'main': main,
-      'star': star,
-      'delta': delta,
-      'seconds': seconds,
-      if (profile.isNotEmpty) 'profile': profile,
-    });
-    final MqttClientPayloadBuilder builder =
-        MqttClientPayloadBuilder()..addString(payload);
-    client.publishMessage(
+    if (seal.impedimento(deviceId) != null) return false;
+    _publicarComando(
+      client,
       config.commandTopicForDevice(deviceId),
-      MqttQos.atLeastOnce,
-      builder.payload!,
+      deviceId,
+      <String, dynamic>{
+        'v': 1,
+        'device_id': deviceId,
+        'seq': _proximaSequencia(),
+        'action': action,
+        'boot': boot,
+        'mode': mode,
+        'mask': mask,
+        'main': main,
+        'star': star,
+        'delta': delta,
+        'seconds': seconds,
+        if (profile.isNotEmpty) 'profile': profile,
+      },
     );
     return true;
   }
@@ -226,20 +264,19 @@ class MqttMotorService {
         client.connectionStatus?.state != MqttConnectionState.connected) {
       return null;
     }
+    if (seal.impedimento(deviceId) != null) return null;
     final String seq = _proximaSequencia();
-    final String payload = jsonEncode(<String, dynamic>{
-      'v': 1,
-      'device_id': deviceId,
-      'seq': seq,
-      'action': action,
-      ...body,
-    });
-    final MqttClientPayloadBuilder builder =
-        MqttClientPayloadBuilder()..addString(payload);
-    client.publishMessage(
+    _publicarComando(
+      client,
       config.commandTopicForDevice(deviceId),
-      MqttQos.atLeastOnce,
-      builder.payload!,
+      deviceId,
+      <String, dynamic>{
+        'v': 1,
+        'device_id': deviceId,
+        'seq': seq,
+        'action': action,
+        ...body,
+      },
     );
     return seq;
   }
@@ -261,27 +298,26 @@ class MqttMotorService {
       config: config,
       requestedDeviceId: deviceId,
     );
+    if (seal.impedimento(targetDeviceId) != null) return false;
     final DateTime now = DateTime.now();
-    final String payload = jsonEncode(<String, dynamic>{
-      'v': 1,
-      'device_id': targetDeviceId,
-      'seq': '${now.millisecondsSinceEpoch}${now.microsecond.toString().padLeft(3, '0')}',
-      'action': action,
-      'boot': '',
-      'mode': 'none',
-      'mask': 0,
-      'main': 0,
-      'star': 0,
-      'delta': 0,
-      'seconds': 0,
-    });
-
-    final MqttClientPayloadBuilder builder =
-        MqttClientPayloadBuilder()..addString(payload);
-    client.publishMessage(
+    _publicarComando(
+      client,
       config.commandTopicForDevice(targetDeviceId),
-      MqttQos.atLeastOnce,
-      builder.payload!,
+      targetDeviceId,
+      <String, dynamic>{
+        'v': 1,
+        'device_id': targetDeviceId,
+        'seq':
+            '${now.millisecondsSinceEpoch}${now.microsecond.toString().padLeft(3, '0')}',
+        'action': action,
+        'boot': '',
+        'mode': 'none',
+        'mask': 0,
+        'main': 0,
+        'star': 0,
+        'delta': 0,
+        'seconds': 0,
+      },
     );
     return true;
   }
@@ -420,6 +456,8 @@ class MqttMotorService {
     // Partidas e respostas: a lista de partidas mora no ESP32 de comandos.
     client.subscribe(config.profilesWildcardTopic, MqttQos.atLeastOnce);
     client.subscribe(config.commandAckWildcardTopic, MqttQos.atLeastOnce);
+    // Desafio das placas: sem ele nao ha como cifrar um comando.
+    client.subscribe(config.authWildcardTopic, MqttQos.atLeastOnce);
   }
 
   void _handleIncomingMessages(List<MqttReceivedMessage<MqttMessage>> packets) {

@@ -22,6 +22,24 @@ jobs:
       - name: Install firmware libraries
         run: |
           arduino-cli lib install 'PZEM004Tv30@1.2.1' 'LiquidCrystal I2C' 'PubSubClient' 'ArduinoJson@6.21.5' 'OneWire' 'DallasTemperature' 'WiFiManager@2.0.17'
+      - name: Configure command password
+        # A senha nao fica no repositorio: vem do segredo IOTMOTOR_CMD_SENHA e
+        # e escrita em comando_local.h so durante o build. Sem o segredo, o
+        # firmware sai aceitando comando aberto, como antes.
+        env:
+          IOTMOTOR_CMD_SENHA: ${{ secrets.IOTMOTOR_CMD_SENHA }}
+        run: |
+          if [ -n "$IOTMOTOR_CMD_SENHA" ]; then
+            for pasta in esp32/iotmotor_esp32/iotmotor_esp32_comandos esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores; do
+              {
+                echo '#pragma once'
+                echo "#define COMANDO_SENHA \"$IOTMOTOR_CMD_SENHA\""
+              } > "$pasta/comando_local.h"
+            done
+            echo "Firmware vai exigir comandos cifrados."
+          else
+            echo "::warning::Sem o segredo IOTMOTOR_CMD_SENHA: o firmware aceita comandos abertos no broker publico."
+          fi
       - name: Build both firmwares
         run: |
           mkdir -p dist

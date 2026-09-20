@@ -266,6 +266,14 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       controllerField: controller.passwordController,
                       obscureText: true,
                     ),
+                    // Cifra cada comando enviado as placas (AES-256-GCM).
+                    // A mesma senha esta gravada no firmware e no painel.
+                    _textField(
+                      width: fieldWidth,
+                      label: 'Senha de comando',
+                      controllerField: controller.commandPasswordController,
+                      obscureText: true,
+                    ),
                     SizedBox(
                       width: fieldWidth,
                       child: DropdownButtonFormField<String>(

@@ -200,12 +200,25 @@ if (typeof document !== 'undefined') (() => {
   function publicar(acao, extras) {
     if (!client?.connected) { aviso('Sem conexão com o broker.'); return false; }
     const dev = dispositivos[selecionado];
+    const impede = window.iotmotorSelo?.impedimento(dev);
+    if (impede) { aviso(impede); return false; }
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
+    const ativo = client;
     pendente = {seq, dev, acao};
-    client.publish(topico(dev, 'command'), JSON.stringify({
-      v: 1, device_id: dev, seq, action: acao, boot: '', mode: 'none',
-      mask: 0, main: 0, star: 0, delta: 0, seconds: 0, ...extras
-    }), {qos: 1, retain: false});
+    // O comando sai cifrado quando a placa exige senha (command-seal.js).
+    const comando = {v: 1, device_id: dev, seq, action: acao, boot: '', mode: 'none',
+      mask: 0, main: 0, star: 0, delta: 0, seconds: 0, ...extras};
+    const selo = window.iotmotorSelo;
+    const enviar = texto => {
+      if (client === ativo && pendente?.seq === seq)
+        client.publish(topico(dev, 'command'), texto, {qos: 1, retain: false});
+    };
+    const aberto = selo ? selo.empacotarAberto(dev, comando) : JSON.stringify(comando);
+    if (aberto !== null) enviar(aberto);
+    else selo.empacotar(dev, comando).then(enviar).catch(erro => {
+      if (client !== ativo || pendente?.seq !== seq) return;
+      pendente = null; aviso('Não deu para selar o comando: ' + (erro.message || erro)); renderizar();
+    });
     setTimeout(() => {
       if (pendente?.seq === seq) { pendente = null; aviso(`Sem resposta de ${nomeDaPlaca().toLowerCase()}. A placa está online?`); renderizar(); }
     }, 8000);
@@ -314,7 +327,7 @@ if (typeof document !== 'undefined') (() => {
     ativo.on('connect', () => {
       if (client !== ativo) return;
       connected = true;
-      const topicos = dispositivos.flatMap(d => [topico(d, 'wifi'), topico(d, 'command_ack')]);
+      const topicos = dispositivos.flatMap(d => [topico(d, 'wifi'), topico(d, 'command_ack'), topico(d, 'auth')]);
       ativo.subscribe(topicos, {qos: 1});
       renderizar();
     });
@@ -322,8 +335,14 @@ if (typeof document !== 'undefined') (() => {
       if (client !== ativo) return;
       let dados;
       try { dados = JSON.parse(payload.toString('utf8')); } catch { return; }
-      const dev = dispositivos.find(d => nome === topico(d, 'wifi') || nome === topico(d, 'command_ack'));
+      const dev = dispositivos.find(d => nome === topico(d, 'wifi') ||
+        nome === topico(d, 'command_ack') || nome === topico(d, 'auth'));
       if (!dev || dados?.device_id !== dev) return;
+      if (nome === topico(dev, 'auth')) {  // Desafio da placa, retido.
+        window.iotmotorSelo?.registrarAuth(dev, dados);
+        renderizar();
+        return;
+      }
       if (nome === topico(dev, 'wifi')) {
         if (!Array.isArray(dados.networks)) return;
         placas[dev] = {
@@ -354,6 +373,7 @@ if (typeof document !== 'undefined') (() => {
     client = null;
     connected = false;
     pendente = null;
+    window.iotmotorSelo?.esquecer();
     renderizar();
   }
 

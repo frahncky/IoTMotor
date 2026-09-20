@@ -246,6 +246,8 @@
   function publicar(acao, extras, alvo) {
     if (!client?.connected || !recente()) { aviso('Aguarde dados recentes dos sensores.'); return false; }
     if (pendente) return false;
+    const impede = window.iotmotorSelo?.impedimento(dispositivo);
+    if (impede) { aviso(impede); return false; }
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
     const ativo = client;
     pendente = {seq, acao, extras, alvo};
@@ -257,11 +259,17 @@
       if (client !== ativo || pendente?.seq !== seq) return;
       limparPendente(); aviso(`Sem resposta do ${dispositivo}.`); renderizar();
     }, 8000);
-    try {
-      client.publish(topico('command'), JSON.stringify({
-        v: 1, device_id: dispositivo, seq, action: acao, ...extras
-      }), {qos: 1, retain: false}, falhou);
-    } catch (erro) { falhou(erro); }
+    // O comando sai cifrado quando a placa exige senha (command-seal.js).
+    const comando = {v: 1, device_id: dispositivo, seq, action: acao, ...extras};
+    const selo = window.iotmotorSelo;
+    const enviar = texto => {
+      if (client !== ativo || pendente?.seq !== seq) return;
+      try { client.publish(topico('command'), texto, {qos: 1, retain: false}, falhou); }
+      catch (erro) { falhou(erro); }
+    };
+    const aberto = selo ? selo.empacotarAberto(dispositivo, comando) : JSON.stringify(comando);
+    if (aberto !== null) enviar(aberto);
+    else selo.empacotar(dispositivo, comando).then(enviar).catch(erro => falhou(erro));
     renderizar();
     return pendente?.seq === seq;
   }
@@ -301,6 +309,7 @@
     const antigo = client;
     client = null; conectado = false; estado = null; recebidoEm = 0; editando = false;
     lista = null; rascunhos.clear();
+    window.iotmotorSelo?.esquecer(dispositivo);
     limparPendente();
     if (antigo) antigo.end(true);
     aviso('Conecte ao MQTT para ajustar o alarme.');
@@ -333,7 +342,7 @@
     ativo.on('connect', () => {
       if (client !== ativo) return;
       estado = null; recebidoEm = 0; conectado = false; lista = null;
-      ativo.subscribe([topico('telemetry'), topico('command_ack'), topico('status'), topico('alarms')],
+      ativo.subscribe([topico('telemetry'), topico('command_ack'), topico('status'), topico('alarms'), topico('auth')],
         {qos: 1}, (erro, permissoes) => {
           if (client !== ativo || !ativo.connected) return;
           conectado = !erro && !permissoes?.some(p => p.qos === 128);
@@ -353,6 +362,12 @@
       let dados;
       try { dados = JSON.parse(payload.toString('utf8')); } catch { return; }
       if (dados?.device_id !== dispositivo) return;
+      // Desafio da placa, retido: sem ele não há como cifrar um comando.
+      if (nome === topico('auth')) {
+        window.iotmotorSelo?.registrarAuth(dispositivo, dados);
+        renderizar();
+        return;
+      }
       // A lista de alarmes é retida: chega inteira assim que assinamos o tópico.
       if (nome === topico('alarms')) {
         if (!Array.isArray(dados.alarms)) return;

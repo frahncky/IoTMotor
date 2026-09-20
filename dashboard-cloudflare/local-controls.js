@@ -118,10 +118,24 @@
 
   function publicar(acao, extras, mensagem) {
     if (!client?.connected) { aviso('Sem conexão com o broker.'); return false; }
+    const impede = window.iotmotorSelo?.impedimento(dispositivo);
+    if (impede) { aviso(impede); return false; }
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
+    const ativo = client;
     pendente = {seq, acao};
-    client.publish(topico('command'), JSON.stringify({v: 1, device_id: dispositivo, seq, action: acao, ...extras}),
-      {qos: 1, retain: false});
+    // O comando sai cifrado quando a placa exige senha (command-seal.js).
+    const comando = {v: 1, device_id: dispositivo, seq, action: acao, ...extras};
+    const selo = window.iotmotorSelo;
+    const enviar = texto => {
+      if (client === ativo && pendente?.seq === seq)
+        client.publish(topico('command'), texto, {qos: 1, retain: false});
+    };
+    const aberto = selo ? selo.empacotarAberto(dispositivo, comando) : JSON.stringify(comando);
+    if (aberto !== null) enviar(aberto);
+    else selo.empacotar(dispositivo, comando).then(enviar).catch(erro => {
+      if (client !== ativo || pendente?.seq !== seq) return;
+      pendente = null; aviso('Não deu para selar o comando: ' + (erro.message || erro)); renderizar();
+    });
     setTimeout(() => {
       if (pendente?.seq === seq) { pendente = null; aviso('Sem resposta do ESP32-01.'); renderizar(); }
     }, 8000);
@@ -174,7 +188,7 @@
     ativo.on('connect', () => {
       if (client !== ativo) return;
       conectado = true;
-      ativo.subscribe([topico('profiles'), topico('command_ack'), topico('telemetry')], {qos: 1});
+      ativo.subscribe([topico('profiles'), topico('command_ack'), topico('telemetry'), topico('auth')], {qos: 1});
       renderizar();
     });
     ativo.on('message', (nome, payload) => {
@@ -182,6 +196,11 @@
       let dados;
       try { dados = JSON.parse(payload.toString('utf8')); } catch { return; }
       if (dados?.device_id !== dispositivo) return;
+      if (nome === topico('auth')) {  // Desafio da placa, retido.
+        window.iotmotorSelo?.registrarAuth(dispositivo, dados);
+        renderizar();
+        return;
+      }
       if (nome === topico('profiles')) {
         if (!Array.isArray(dados.profiles)) return;
         perfis = dados.profiles.filter(p => p && typeof p.id === 'string' && Array.isArray(p.cnt) && p.cnt.length === 4);
@@ -225,6 +244,7 @@
   function desconectar() {
     if (client) client.end(true);
     client = null; conectado = false; pendente = null;
+    window.iotmotorSelo?.esquecer(dispositivo);
     renderizar();
   }
 

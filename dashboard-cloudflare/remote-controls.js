@@ -45,12 +45,18 @@
     active.on('connect', () => {
       if (client !== active) return;
       connected = true;
-      active.subscribe([topic('telemetry'), topic('command_ack')], {qos: 1});
+      active.subscribe([topic('telemetry'), topic('command_ack'), topic('auth')], {qos: 1});
       feedback('MQTT conectado. Aguardando telemetria do ESP32-01.');
       refresh();
     });
     active.on('message', (name, payload, packet) => {
-      if (client !== active || packet?.retain) return;
+      if (client !== active) return;
+      if (name === topic('auth')) {
+        try { window.iotmotorSelo?.registrarAuth(device, JSON.parse(payload.toString('utf8'))); } catch { /* auth ilegivel */ }
+        refresh();
+        return;
+      }
+      if (packet?.retain) return;
       let data;
       try { data = JSON.parse(payload.toString('utf8')); } catch { return; }
       if (!data || data.device_id !== device) return;
@@ -115,10 +121,23 @@
       comando.profile = window.iotmotorPartidaSelecionada?.() || '';
       if (!comando.profile) {feedback('Escolha uma partida.');return;}
     }
+    const impede = window.iotmotorSelo?.impedimento(device);
+    if (impede) { feedback(impede); return; }
     pending = {seq: comando.seq, action};
     feedback('Enviando ' + (action === 'start' ? 'partida' : 'parada') + ' MQTT…');
-    client.publish(topic('command'), JSON.stringify(comando), {qos: 1, retain: false}, error => {
-      if (error && pending?.seq === comando.seq) { feedback('Falha no envio: ' + error.message); pending = null;refresh(); }
+    // O comando sai cifrado quando a placa exige senha (command-seal.js).
+    const selo = window.iotmotorSelo;
+    const enviar = texto => {
+      if (pending?.seq !== comando.seq) return;
+      client.publish(topic('command'), texto, {qos: 1, retain: false}, error => {
+        if (error && pending?.seq === comando.seq) { feedback('Falha no envio: ' + error.message); pending = null;refresh(); }
+      });
+    };
+    const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
+    if (aberto !== null) enviar(aberto);
+    else selo.empacotar(device, comando).then(enviar).catch(erro => {
+      if (pending?.seq !== comando.seq) return;
+      feedback('Não deu para selar o comando: ' + (erro.message || erro)); pending = null; refresh();
     });
     setTimeout(() => {
       if (pending?.seq === comando.seq) {feedback('Sem confirmação do ESP32. Verifique o Monitor Serial.');pending = null;refresh();}
@@ -130,6 +149,7 @@
   function desconectar() {
     if (client) client.end(true);
     client = null; connected = false; boot = ''; updatedAt = 0; relays = null; pending = null;
+    window.iotmotorSelo?.esquecer(device);
     feedback('Desconectado do broker; comandos indisponíveis.');
     refresh();
   }
@@ -138,11 +158,18 @@
   // Manutencao do firmware. As redes Wi-Fi ficam na aba "Wi-Fi" (wifi-manager.js).
   function manutencao(action, aviso) {
     if (!client?.connected || !confirm(aviso)) return;
+    const impede = window.iotmotorSelo?.impedimento(device);
+    if (impede) { feedback(impede); return; }
     const seq = String(sequence = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequence + 1));
     feedback('Enviando pedido ao ESP32…');
-    client.publish(topic('command'), JSON.stringify({
-      v: 1, device_id: device, boot, seq, action, mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0
-    }), {qos: 1, retain: false});
+    const comando = {v: 1, device_id: device, boot, seq, action,
+      mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0};
+    const selo = window.iotmotorSelo;
+    const enviar = texto => client.publish(topic('command'), texto, {qos: 1, retain: false});
+    const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
+    if (aberto !== null) enviar(aberto);
+    else selo.empacotar(device, comando).then(enviar)
+      .catch(erro => feedback('Não deu para selar o comando: ' + (erro.message || erro)));
   }
   $('updateBtn')?.addEventListener('click', () => manutencao('update',
     'A placa vai baixar o firmware publicado no GitHub e reiniciar.\n\nContinuar?'));
