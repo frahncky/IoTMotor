@@ -148,6 +148,14 @@ const List<AlarmQuantity> kAlarmQuantities = <AlarmQuantity>[
     max: 125,
   ),
   AlarmQuantity(
+    field: 'battery',
+    label: 'Tensão da bateria',
+    unit: 'V',
+    fromCommandBoard: false,
+    min: 2.5,
+    max: 4.3,
+  ),
+  AlarmQuantity(
     field: 'voltage',
     label: 'Tensão',
     unit: 'V',

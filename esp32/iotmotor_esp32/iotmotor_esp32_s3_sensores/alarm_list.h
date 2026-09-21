@@ -208,7 +208,8 @@ inline void receberMedidasDoQuadro(const uint8_t* payload, unsigned int tamanho,
 
 // Valor atual de um campo, se houver leitura valida e recente.
 inline bool valorDe(const Alarme& alarme, uint32_t agora, bool mpuOk, bool tempOk,
-                    float vibracaoRms, float vibracaoPico, float temperatura, float& saida) {
+                    float vibracaoRms, float vibracaoPico, float temperatura,
+                    float bateria, float& saida) {
   if (alarme.doQuadro) {
     if (!medidasDoQuadroEm || agora - medidasDoQuadroEm > VALIDADE_MS) return false;
     if (!medidasDoQuadro[alarme.campo].is<float>()) return false;
@@ -225,20 +226,28 @@ inline bool valorDe(const Alarme& alarme, uint32_t agora, bool mpuOk, bool tempO
     saida = temperatura;
     return true;
   }
+  // Tensao da celula 18650, quando o divisor esta ligado no pino.
+  if (!strcmp(alarme.campo, "battery")) {
+    if (!isfinite(bateria)) return false;
+    saida = bateria;
+    return true;
+  }
   return false;
 }
 
 // Avalia todos e devolve true se algum disparou. 'utc' vem do relogio da placa
 // (0 enquanto o NTP nao responde) e so serve para carimbar o registro.
 inline bool avaliar(uint32_t agora, bool mpuOk, bool tempOk, float vibracaoRms,
-                    float vibracaoPico, float temperatura, uint32_t utc = 0) {
+                    float vibracaoPico, float temperatura, float bateria = NAN,
+                    uint32_t utc = 0) {
   bool algum = false;
   for (uint8_t i = 0; i < total; ++i) {
     Alarme& a = lista[i];
     float valor = 0;
     const bool antes = a.disparado;
     a.disparado = a.habilitado &&
-                  valorDe(a, agora, mpuOk, tempOk, vibracaoRms, vibracaoPico, temperatura, valor) &&
+                  valorDe(a, agora, mpuOk, tempOk, vibracaoRms, vibracaoPico, temperatura,
+                          bateria, valor) &&
                   (a.acima ? valor > a.limite : valor < a.limite);
     if (a.disparado && !antes) anotarInicio(a, valor, agora, utc);
     else if (!a.disparado && antes) anotarFim(a, agora, utc);

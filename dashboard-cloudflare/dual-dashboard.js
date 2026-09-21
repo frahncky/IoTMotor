@@ -18,11 +18,12 @@ const METRICS=[
  {key:'frequency',label:'Frequência',unit:'Hz',digits:2,group:'eletrica',color:'#95c8ff',source:'command'},
  {key:'energy',label:'Energia',unit:'kWh',digits:3,group:'eletrica',color:'#d4cf87',source:'command'},
  {key:'vibration',label:'Vibração RMS',unit:'g',digits:3,group:'mecanica',color:'#e6b2d4',source:'sensor'},
- {key:'temperature',label:'Temperatura',unit:'°C',digits:1,group:'mecanica',color:'#f69d84',source:'sensor'}
+ {key:'temperature',label:'Temperatura',unit:'°C',digits:1,group:'mecanica',color:'#f69d84',source:'sensor'},
+ {key:'battery',label:'Bateria',unit:'V',digits:2,group:'mecanica',color:'#c9b6f0',source:'sensor'}
 ];
 // Nomes mostrados na tela; o identificador tecnico fica na dica do selo.
 const NOMES={command:'Quadro de comando',sensor:'Sensores do motor'};
-const alias={voltage:['voltage','tensao','v'],current:['current','corrente','i'],power:['power','potencia','w'],pf:['pf','power_factor','fator_potencia','fp'],frequency:['frequency','frequencia','hz'],energy:['energy','energy_kwh','energia','kwh'],vibration:['vibration','vibracao','vib'],temperature:['temperature','temperatura','temp']};
+const alias={voltage:['voltage','tensao','v'],current:['current','corrente','i'],power:['power','potencia','w'],pf:['pf','power_factor','fator_potencia','fp'],frequency:['frequency','frequencia','hz'],energy:['energy','energy_kwh','energia','kwh'],vibration:['vibration','vibracao','vib'],temperature:['temperature','temperatura','temp'],battery:['battery','bateria','vbat']};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
  series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};

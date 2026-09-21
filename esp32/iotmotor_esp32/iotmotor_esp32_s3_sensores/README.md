@@ -38,6 +38,35 @@ e buzzer intermitente quando o alarme geral está habilitado e algum alarme da
 lista disparou; azul quando ambos os sensores estão sem leitura válida.
 Desabilitar o alarme silencia o buzzer e remove a indicação vermelha.
 
+## Tensão da bateria
+
+A placa pode ser alimentada por uma fonte UPS de 18650 (ex.: LX-2BUPS, duas
+células **em paralelo**, saída 5 V 3 A, corte em 2,6 V). Essa fonte entrega
+5 V regulados até o corte, então **medir a alimentação da placa não avisa
+nada**: ela lê 5 V até desligar de uma vez. O que conta a história é a tensão
+da própria célula, que precisa chegar ao ADC por um divisor — 4,2 V passam do
+limite do pino.
+
+```
+BAT+ (terminal + do suporte) ---[ 100k ]---+---[ 100k ]--- GND
+                                           |
+                                        GPIO6   (+ 100 nF para GND)
+```
+
+Com dois resistores iguais o pino lê metade: 4,2 V viram 2,10 V e 3,0 V viram
+1,50 V. O divisor consome ~21 µA — a própria fonte gasta ~2 mA parada. O GND
+do divisor é o mesmo da placa (saída 5 V− da fonte).
+
+A tensão vai para a telemetria no campo `battery` e serve de grandeza na lista
+de alarmes: cadastre **"Tensão da bateria abaixo de 3,4 V"** e a placa acende o
+LED vermelho e apita sozinha, como faz com vibração e temperatura. Referências
+de uma célula de lítio: 4,2 V cheia, ~3,7 V em uso, **3,4 V já é aviso**, 3,0 V
+quase no fim e 2,6 V é o corte da fonte.
+
+Sem o divisor ligado o pino fica perto de zero e a placa **não publica** o
+campo — nenhum alarme dispara por engano e nenhuma leitura é inventada.
+O GPIO6 saiu da busca automática do DS18B20 para não ser sondado.
+
 ### Lista de alarmes
 
 Quem decide é a lista gravada na placa (`alarm_list.h`, até **8 alarmes** em
