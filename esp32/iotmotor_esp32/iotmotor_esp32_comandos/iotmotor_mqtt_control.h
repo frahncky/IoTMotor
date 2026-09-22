@@ -198,6 +198,21 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
 
+  // Liga e desliga o acionamento. Desligar vale na hora e fica gravado.
+  if (!strcmp(acao, "actuation")) {
+    if (!doc["on"].is<bool>()) {
+      publicarRespostaControle(seq, false, acao, "campo on ausente");
+      return;
+    }
+    const bool ligar = doc["on"].as<bool>();
+    const bool ok = salvarAcionamento(ligar);
+    publicarRespostaControle(seq, ok, acao,
+                             !ok ? "falha ao gravar"
+                                 : ligar ? "acionamento liberado"
+                                         : "modo instrumentacao: a placa nao aciona contatores");
+    return;
+  }
+
   // Parar sempre: nao depende de telemetria, boot, estado ou partida pendente.
   if (!strcmp(acao, "stop")) {
     pararBancada();
@@ -206,6 +221,10 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   }
   if (strcmp(acao, "start")) {
     publicarRespostaControle(seq, false, acao, "unknown_action");
+    return;
+  }
+  if (!acionamentoLigado) {
+    publicarRespostaControle(seq, false, acao, "modo instrumentacao: acionamento desligado");
     return;
   }
   if (strcmp(doc["boot"] | "", sessaoControle)) {

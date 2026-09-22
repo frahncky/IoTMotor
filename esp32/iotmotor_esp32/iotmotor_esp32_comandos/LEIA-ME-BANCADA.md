@@ -4,6 +4,21 @@ Sketch `iotmotor_esp32_comandos.ino` (versão `v10-mqtt-websocket`) para **ESP32
 
 A alteração no GitHub **não regrava** a placa. Instale o core ESP32 e as bibliotecas `PZEM004Tv30`, `LiquidCrystal I2C`, `PubSubClient` e `ArduinoJson` (6.x ou 7.x); compile e grave no ESP32. Monitor Serial a **115200 baud**.
 
+## Modo instrumentação
+
+Com o **acionamento desligado**, a placa não fecha contator nenhum: só lê o
+PZEM, publica a telemetria e escreve no LCD (linha 1: "Somente medicao"). Serve
+para instrumentar um motor acionado por comando elétrico convencional, sem o
+ESP32 no meio do caminho.
+
+- No painel, botão **Somente medição** (vira **Liberar acionamento** quando já
+  está no modo). Ao entrar no modo, as saídas ligadas caem na hora.
+- Por MQTT: `{"v":1,"device_id":"esp32-01","seq":"1","action":"actuation","on":false}`.
+- O estado fica gravado na placa (NVS) e sobrevive a reinício e a queda de
+  energia; a telemetria publica `actuation: false`.
+- Nesse modo, `start` é recusado com "modo instrumentacao: acionamento
+  desligado". O `stop` continua valendo sempre.
+
 ## Ligações
 
 | Elemento | Ligação ESP32-01 |

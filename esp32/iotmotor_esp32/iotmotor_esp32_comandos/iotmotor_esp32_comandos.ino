@@ -126,6 +126,11 @@ void aplicarEstadoRele(uint8_t indice) {
 constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
 #include "wifi_portal.h"
+// Modo instrumentacao: o LCD e os comandos consultam o estado, entao ele e
+// declarado antes dos cabecalhos que o usam.
+extern bool acionamentoLigado;
+bool salvarAcionamento(bool ligado);
+
 #include "comando_seguro.h"
 #include "relogio.h"
 #include "iotmotor_profiles.h"
@@ -175,6 +180,8 @@ void atualizarLcd() {
     snprintf(buffer, sizeof(buffer), "WiFi: procurando");
   } else if (!comMqtt) {
     snprintf(buffer, sizeof(buffer), "MQTT reconectando");
+  } else if (!acionamentoLigado) {
+    snprintf(buffer, sizeof(buffer), "Somente medicao");
   } else if (perfilEmExecucao.nome[0]) {  // Parado: diz qual foi o ultimo ensaio.
     snprintf(buffer, sizeof(buffer), "Ultima: %-12.12s", perfilEmExecucao.nome);
   } else {
@@ -205,6 +212,31 @@ void atualizarLcd() {
   else snprintf(buffer, sizeof(buffer), "CNT %-7.7s", contatores);
   imprimirLinhaCompleta(3, buffer);
   lcdPrecisaAtualizar = false;
+}
+
+// ---- Modo instrumentacao ----
+// Com o acionamento desligado a placa nao fecha contator nenhum: so mede,
+// publica e mostra no LCD. Serve para ensaiar a medicao com o motor ligado
+// por um comando eletrico convencional, sem o ESP32 no meio.
+bool acionamentoLigado = true;
+
+void carregarAcionamento() {
+  Preferences memoria;
+  if (!memoria.begin("iot-comando", true)) return;
+  acionamentoLigado = memoria.getBool("acionar", true);
+  memoria.end();
+  if (!acionamentoLigado) Serial.println("[MODO] instrumentacao: acionamento desligado");
+}
+
+bool salvarAcionamento(bool ligado) {
+  Preferences memoria;
+  if (!memoria.begin("iot-comando", false)) return false;
+  memoria.putBool("acionar", ligado);
+  memoria.end();
+  acionamentoLigado = ligado;
+  if (!ligado) pararBancada();  // Sai do modo com tudo aberto, nunca ligado.
+  lcdPrecisaAtualizar = true;
+  return true;
 }
 
 void manterWifi(unsigned long agora) {
@@ -285,6 +317,8 @@ void publicarTelemetriaMqtt() {
   doc["boot"] = sessaoControle;
   doc["remote_control_ready"] = controleMqttConfigurado;
   doc["secure"] = comandoseguro::ligado;
+  // false = modo instrumentacao: a placa nao aciona contator nenhum.
+  doc["actuation"] = acionamentoLigado;
   // Hora da medicao, em segundos UTC. Ausente enquanto o NTP nao responde.
   if (const uint32_t carimbo = relogio::agoraUtc()) doc["ts"] = carimbo;
   // Campo de compatibilidade: pronto para comandos; NAO representa jumper fisico.
@@ -397,6 +431,7 @@ void setup() {
   snprintf(topicoWifi, sizeof(topicoWifi), "iotmotor/%s/wifi", DEVICE_ID);
   snprintf(topicoPerfis, sizeof(topicoPerfis), "iotmotor/%s/profiles", DEVICE_ID);
   snprintf(topicoAuth, sizeof(topicoAuth), "iotmotor/%s/auth", DEVICE_ID);
+  carregarAcionamento();
   comandoseguro::iniciar(DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);

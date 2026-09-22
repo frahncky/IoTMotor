@@ -10,8 +10,18 @@
   // Janela de telemetria "recente". Medido no broker publico: intervalos de
   // 8 a 20 s sao comuns, e 10 s desabilitavam os botoes o tempo todo.
   const recent = () => Boolean(boot && Date.now() - updatedAt < 25000 && relays);
+  // Modo instrumentação: a placa avisa na telemetria se aciona ou não.
+  let aciona = true;
   const feedback = message => { $('commandFeedback').textContent = message; };
   function refresh() {
+    const modo = $('modoBtn');
+    if (modo) {
+      modo.disabled = !connected || !recent();
+      modo.textContent = aciona ? 'Somente medição' : 'Liberar acionamento';
+      modo.title = aciona
+        ? 'Modo instrumentação: a placa mede e publica, sem fechar contator nenhum'
+        : 'A placa está em modo instrumentação: nenhum contator é acionado';
+    }
     // A pagina pode pedir a partida com MQTT conectado; nenhum jumper/chave.
     start.disabled = !connected || Boolean(pending && pending.action === 'start');
     stop.disabled = !connected; // Parada prioritária mesmo durante uma partida pendente.
@@ -64,6 +74,7 @@
         if (!/^[0-9a-f]{16}$/i.test(String(data.boot || '')) ||
             !Array.isArray(data.relays) || data.relays.length !== 4 ||
             data.relays.some(v => typeof v !== 'boolean')) return;
+        if (typeof data.actuation === 'boolean') aciona = data.actuation;
         boot = data.boot;
         updatedAt = Date.now();
         relays = data.relays;
@@ -115,6 +126,7 @@
     const comando = {v: 1, device_id: device, boot: action === 'stop' ? '' : boot, action,
       seq: String(sequence = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequence + 1))};
     if (action === 'start') {
+      if (!aciona) {feedback('A placa está em modo instrumentação: nenhum contator é acionado.');return;}
       if (!recent()) {feedback('Aguardando telemetria recente do ESP32-01.');return;}
       if (relays.some(Boolean)) {feedback('Há contatores ligados; desligue antes de iniciar.');return;}
       // A partida vem da lista gravada na placa (local-controls.js).
@@ -156,14 +168,14 @@
   window.iotmotorRemoteControls = {connect, disconnect: desconectar};
 
   // Manutencao do firmware. As redes Wi-Fi ficam na aba "Wi-Fi" (wifi-manager.js).
-  function manutencao(action, aviso) {
-    if (!client?.connected || !confirm(aviso)) return;
+  function manutencao(action, aviso, extras) {
+    if (!client?.connected || (aviso !== null && !confirm(aviso))) return;
     const impede = window.iotmotorSelo?.impedimento(device);
     if (impede) { feedback(impede); return; }
     const seq = String(sequence = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequence + 1));
     feedback('Enviando pedido ao ESP32…');
     const comando = {v: 1, device_id: device, boot, seq, action,
-      mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0};
+      mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0, ...extras};
     const selo = window.iotmotorSelo;
     const enviar = texto => client.publish(topic('command'), texto, {qos: 1, retain: false});
     const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
@@ -173,6 +185,15 @@
   }
   $('updateBtn')?.addEventListener('click', () => manutencao('update',
     'A placa vai baixar o firmware publicado no GitHub e reiniciar.\n\nContinuar?'));
+  // O modo fica gravado na placa: vale para o painel, o app e depois de reiniciar.
+  $('modoBtn')?.addEventListener('click', () => {
+    const desligar = aciona;
+    const aviso = desligar
+      ? 'A placa vai parar de acionar os contatores: só medição.\n\nAs saídas ligadas caem agora. Continuar?'
+      : 'A placa volta a acionar os contatores pelos comandos do painel.\n\nContinuar?';
+    if (!confirm(aviso)) return;
+    manutencao('actuation', null, {on: !desligar});
+  });
   start.addEventListener('click', () => send('start'));
   stop.addEventListener('click', () => send('stop'));
   // Nao conecta sozinho: quem comanda a conexao e o botao Conectar do painel
