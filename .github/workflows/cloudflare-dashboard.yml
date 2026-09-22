@@ -31,8 +31,10 @@ jobs:
           node --check dashboard-cloudflare/wifi-manager.js
           node --check dashboard-cloudflare/alarm-controls.js
           node --check dashboard-cloudflare/command-seal.js
+          node --check functions/mqtt.js
+          node --check functions/_ponte-mqtt.mjs
       - name: Run web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs dashboard-cloudflare/ponte-mqtt.test.mjs
       - name: Verify MQTT-only firmware and controls
         run: |
           python3 - <<'PY'
@@ -94,4 +96,20 @@ jobs:
           assert 'troque-por-uma-senha-longa' in (root / 'comando_local.exemplo.h').read_text(), 'o modelo versionado nao pode carregar senha real'
           for pasta in (root, s3):
               assert not (pasta / 'comando_local.h').exists(), 'comando_local.h nao pode ir para o Git'
+          # Ponte WebSocket na 443: a rede da IFMA bloqueia a 8081 do broker.
+          ponte = Path('functions/mqtt.js').read_text()
+          transporte = Path('functions/_ponte-mqtt.mjs').read_text()
+          painel = Path('dashboard-cloudflare/dual-dashboard.js').read_text()
+          assert "from 'cloudflare:sockets'" in ponte
+          # Destino fixo: uma ponte que aceitasse host/porta do cliente seria um
+          # proxy TCP aberto no dominio do projeto.
+          assert "hostname: 'test.mosquitto.org', port: 1883" in ponte
+          for vindo_do_cliente in ('searchParams', 'request.url', 'url.search'):
+              assert vindo_do_cliente not in ponte, 'o destino da ponte nao pode vir do cliente'
+          # O transporte fica testavel fora do Workers.
+          assert 'cloudflare:' not in transporte, '_ponte-mqtt.mjs precisa rodar no Node para ser testado'
+          assert Path('dashboard-cloudflare/ponte-mqtt.test.mjs').exists()
+          # Sobre HTTPS o painel precisa ir pela ponte, nao pela porta bloqueada.
+          assert 'wss://${l.host}/mqtt' in painel and 'function migrarBroker(' in painel
+          assert painel.count("'wss://test.mosquitto.org:8081'") == 1, 'a porta 8081 so vale como BROKER_DIRETO'
           PY

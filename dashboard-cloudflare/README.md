@@ -9,7 +9,7 @@ A interface web fica em `dashboard-cloudflare/index.html`. O **ESP32-01** le o P
 
 ## Conexao e comandos
 
-- Broker de testes `test.mosquitto.org`, `ws://test.mosquitto.org:8080` (MQTT sobre WebSocket, pois a IFMA_IOT bloqueia 1883/8883) para os ESP32 e `wss://test.mosquitto.org:8081` para o navegador; prefixo `iotmotor`. Wi-Fi configurado no firmware: `IFMA_IOT`.
+- Broker de testes `test.mosquitto.org`, `ws://test.mosquitto.org:8080` (MQTT sobre WebSocket, pois a IFMA_IOT bloqueia 1883/8883) para os ESP32. O navegador entra pela **ponte na 443** do proprio dominio, `wss://<dominio>/mqtt` (ver secao abaixo); fora de HTTPS o painel volta a falar direto com `wss://test.mosquitto.org:8081`. Prefixo `iotmotor`. Wi-Fi configurado no firmware: `IFMA_IOT`.
 - A mesma tela permite selecionar **partida direta** e quais contatores (CNT 1–CNT 4) acionar, ou a **sequencia temporizada de bancada** (principal, estrela e triangulo em tres contatores diferentes). Botoes originais **Ligar** e **Desligar todos** usam `iotmotor/esp32-01/command`; o ESP32 confirma em `iotmotor/esp32-01/command_ack` e informa estados logicos em `iotmotor/esp32-01/telemetry`.
 - **Nao existe chave de comando nem jumper GPIO32–GND.** O campo `boot` publicado pelo ESP32 identifica apenas a sessao e nao fornece autenticacao. A partida requer telemetria recente para obter a sessao atual; a parada MQTT nao depende de telemetria ou sessao.
 - O ESP32-01 comeca com todos os relés desligados, desliga apos 15 s sem MQTT/Wi-Fi e tem limite de ensaio de **5 minutos**. A sequencia estrela-triangulo usa uma pausa de 700 ms entre os estados e nao substitui intertravamentos eletricos.
@@ -20,7 +20,65 @@ A interface web fica em `dashboard-cloudflare/index.html`. O **ESP32-01** le o P
 
 O repositório publica **codigo-fonte** no GitHub, nao grava automaticamente o ESP32 nem faz deploy automatico no Cloudflare. Grave no ESP32-01 o sketch `iotmotor_esp32_comandos.ino` com os dois headers da mesma pasta; grave o firmware da pasta `iotmotor_esp32_s3_sensores` no S3. Abra o Monitor Serial em 115200 para conferir conexao Wi-Fi, MQTT e sensores. No dashboard Cloudflare, use os mesmos broker, prefixo e IDs.
 
-Para Cloudflare Pages com Git, use a branch `main`, build command `exit 0` e output `dashboard-cloudflare`. Se usar Worker, publique os arquivos dessa pasta como assets estaticos do Worker. Um commit no GitHub nao atualiza automaticamente um Worker configurado sem deploy. Verifique se `/remote-controls.js` e `/dual-dashboard.js` sao servidos na versao atual. A disponibilidade do broker publico nao e garantida.
+Para Cloudflare Pages com Git, use a branch `main`, build command `exit 0` e output `dashboard-cloudflare`. A pasta `functions/` fica na **raiz do repositorio**, e nao dentro de `dashboard-cloudflare/`: o Pages procura as Functions na raiz do projeto, nao no diretorio de saida. Se o projeto tiver *Root directory* apontando para `dashboard-cloudflare`, a ponte nao sobe — deixe *Root directory* vazio (a raiz) e so o output em `dashboard-cloudflare`. Se usar Worker, publique os arquivos dessa pasta como assets estaticos do Worker. Um commit no GitHub nao atualiza automaticamente um Worker configurado sem deploy. Verifique se `/remote-controls.js` e `/dual-dashboard.js` sao servidos na versao atual. A disponibilidade do broker publico nao e garantida.
+
+## Ponte WebSocket na 443 (rede que bloqueia a 8081)
+
+**O sintoma:** na IFMA_IOT a pagina abria normalmente e ficava "Desconectado";
+no 4G do celular conectava na hora.
+
+**A causa:** a pagina e servida por HTTPS, e dai o navegador so aceita `wss://`
+(conteudo misto). O unico WSS do `test.mosquitto.org` e a porta **8081**, que a
+rede bloqueia. A rede deixa passar a 8080 — por isso os ESP32, que falam
+`ws://` nessa porta, continuavam publicando normalmente — e deixa passar a 443,
+prova disso e que a propria pagina carregou.
+
+**A saida:** `functions/mqtt.js` e uma Pages Function que atende
+`https://<dominio>/mqtt`, aceita o WebSocket e abre o TCP 1883 ate o broker
+usando `cloudflare:sockets`. Do lado do navegador tudo acontece na **443**, no
+mesmo endereco de onde a pagina veio; quem sai para a porta 1883 e a Cloudflare,
+de dentro da rede dela. E o mesmo caminho que o `ota_update.h` ja usa para
+baixar firmware.
+
+```
+navegador --wss:// 443--> <dominio>/mqtt --TCP 1883--> test.mosquitto.org
+```
+
+O painel preenche `wss://<dominio>/mqtt` sozinho quando e servido por HTTPS.
+Quem ja usou o painel antes tem o endereco antigo guardado no navegador: o
+`migrarBroker` troca a 8081 pela ponte na primeira abertura, e preserva
+prefixo, IDs e qualquer broker proprio que tenha sido digitado a mao.
+
+**O destino e fixo de proposito.** A ponte nao aceita host nem porta vindos do
+cliente: se aceitasse, seria um proxy TCP aberto no dominio de voces, e qualquer
+um poderia alcancar qualquer servidor passando pela Cloudflare. Para trocar de
+broker, edite a constante `DESTINO` em `functions/mqtt.js`. Mesmo raciocinio da
+URL fixa do OTA.
+
+`functions/_ponte-mqtt.mjs` carrega a logica de transporte e **nao vira rota**:
+arquivos com `_` no inicio ficam de fora do roteamento do Pages. Ele nao importa
+nada da Cloudflare, e por isso da para exercita-lo com `node --test`.
+
+**Conferir se subiu:** abra `https://<dominio>/mqtt` no navegador. A ponte
+responde **426** com um texto explicando a rota — se aparecer isso, ela esta no
+ar. Um **404** significa que a Function nao foi publicada (quase sempre o
+*Root directory* do projeto Pages). Se o deploy reclamar de `cloudflare:sockets`,
+atualize a data de compatibilidade em Settings → Functions → *Compatibility
+date*.
+
+**Uma aba usa cinco conexoes.** O painel abre um cliente MQTT por modulo
+(principal, controles remotos, Wi-Fi, alarmes e perfis), entao cada aba aberta
+segura cinco WebSockets na ponte e cinco TCP ate o broker. E o comportamento
+que o painel ja tinha; a ponte so passou a ser o caminho deles.
+
+**Os firmwares nao mudam.** Os dois ESP32 continuam em
+`ws://test.mosquitto.org:8080`, que ja passa nessa rede. A ponte e so para o
+navegador.
+
+Validacao da ponte:
+```sh
+node --test dashboard-cloudflare/ponte-mqtt.test.mjs
+```
 
 ## Quem pode abrir o painel
 
@@ -77,5 +135,5 @@ ao salvar. O indicador mostra sensores ausentes e dados antigos explicitamente.
 
 Validação do painel:
 ```sh
-node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs
+node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs dashboard-cloudflare/ponte-mqtt.test.mjs
 ```

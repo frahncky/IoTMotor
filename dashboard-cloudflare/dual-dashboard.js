@@ -7,7 +7,28 @@ const STORE='iotmotor_dashboard_dual_v1';
 const REGISTROS='iotmotor_registros_v1';
 const MAX_REGISTROS=3000,MAX_IDADE_MS=24*60*60*1000;
 let gravarRegistrosTimer=null;
-const DEFAULT={broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
+// Broker publico, falado direto. So serve fora de HTTPS ou em rede que deixe
+// passar a porta 8081.
+const BROKER_DIRETO='wss://test.mosquitto.org:8081';
+// Servida por HTTPS, a pagina so pode abrir wss:// — e o unico WSS do
+// test.mosquitto.org e a 8081, porta que a IFMA_IOT bloqueia. Era por isso que
+// o painel abria e ficava "Desconectado" la dentro e funcionava no 4G. A ponte
+// em /mqtt (functions/mqtt.js) sai pela 443 do proprio dominio, que
+// comprovadamente passa: a propria pagina chegou por ela.
+function brokerPadrao(loc){
+ const l=loc||(typeof location!=='undefined'?location:null);
+ return l&&l.protocol==='https:'&&l.host?`wss://${l.host}/mqtt`:BROKER_DIRETO;
+}
+// Quem ja usou o painel tem o endereco antigo guardado no navegador e
+// continuaria batendo na porta bloqueada. A troca vale so para o endereco que
+// o proprio painel gravou; qualquer outro broker escolhido a mao fica como
+// esta.
+function migrarBroker(broker,padrao){
+ if(padrao===BROKER_DIRETO)return broker;
+ let url;try{url=new URL(String(broker||''));}catch{return broker;}
+ return url.hostname==='test.mosquitto.org'&&url.port==='8081'?padrao:broker;
+}
+const DEFAULT={broker:brokerPadrao(),prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
 const METRICS=[
  {key:'voltage',label:'Tensão',unit:'V',digits:1,group:'eletrica',color:'#65c7e8',source:'command'},
  {key:'current',label:'Corrente',unit:'A',digits:2,group:'eletrica',color:'#ffc46a',source:'command'},
@@ -53,6 +74,14 @@ function validateConfig(input){
  if(!/^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(prefix))throw Error('Prefixo de tópicos inválido.');
  if(!/^[a-zA-Z0-9_-]+$/.test(commandDevice)||!/^[a-zA-Z0-9_-]+$/.test(sensorDevice)||commandDevice===sensorDevice)throw Error('Informe IDs distintos e válidos para os dois ESP32.');
  return {broker:url.toString(),prefix,commandDevice,sensorDevice};
+}
+// A falha de conexao mais comum aqui foi a rede fechando a porta alta do
+// broker publico, entao a dica aponta a ponte quando ela existe.
+function dicaDeFalha(broker,loc){
+ const padrao=brokerPadrao(loc);
+ return padrao===BROKER_DIRETO||broker===padrao
+  ?`Falha WSS em ${broker}: verifique a rede e o endereço do broker.`
+  :`Falha WSS em ${broker}: esta rede pode bloquear a porta. Tente a ponte ${padrao}.`;
 }
 function text(id,value){$(id).textContent=String(value);}
 function diag(message){text('diagnostic',message);}
@@ -182,7 +211,7 @@ function connect(automatico){
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'telemetry'))ingest(which,payload.toString('utf8'),packet);
  });
  client.on('reconnect',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Reconectando…','wait');render();});
- client.on('offline',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Broker indisponível','error');diag('Falha WSS: verifique rede, broker e porta 8081.');render();});
+ client.on('offline',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Broker indisponível','error');diag(dicaDeFalha(config.broker));render();});
  client.on('error',err=>{if(active())diag(`MQTT: ${String(err.message||err).slice(0,140)}`);});
  client.on('close',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Conexão encerrada','error');render();});
 }
@@ -228,7 +257,7 @@ function exportCsv(){
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function init(){
- try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved)state.config=validateConfig(saved);}catch{}
+ try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved)state.config=validateConfig({...saved,broker:migrarBroker(saved.broker,DEFAULT.broker)});}catch{}
  // O que ja foi medido continua aqui depois de fechar e abrir o navegador.
  state.records=lerRegistros();
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
@@ -268,4 +297,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,registrosValidos,brokerPadrao,migrarBroker,dicaDeFalha,METRICS};

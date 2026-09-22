@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,registrosValidos,brokerPadrao,migrarBroker,dicaDeFalha,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -77,4 +77,40 @@ test('onze metricas e IDs distintos com WSS obrigatorio',()=>{
  assert.equal(validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}).broker,'wss://test.mosquitto.org:8081/');
  assert.throws(()=>validateConfig({broker:'ws://test.mosquitto.org:8080',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}),/wss/);
  assert.throws(()=>validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-01'}),/distintos/);
+});
+
+test('sobre HTTPS o padrao e a ponte do proprio dominio, nao a porta 8081',()=>{
+ // A pagina servida por HTTPS so pode abrir wss://, e o unico WSS do
+ // test.mosquitto.org e a 8081 — a porta que a IFMA_IOT bloqueia.
+ assert.equal(brokerPadrao({protocol:'https:',host:'iotmotor.pages.dev'}),'wss://iotmotor.pages.dev/mqtt');
+ assert.equal(brokerPadrao({protocol:'https:',host:'painel.exemplo.br:8443'}),'wss://painel.exemplo.br:8443/mqtt');
+ // Fora de HTTPS nao ha mistura de conteudo: fala-se direto com o broker.
+ assert.equal(brokerPadrao({protocol:'http:',host:'localhost:8788'}),'wss://test.mosquitto.org:8081');
+ assert.equal(brokerPadrao({protocol:'file:',host:''}),'wss://test.mosquitto.org:8081');
+ assert.equal(brokerPadrao(null),'wss://test.mosquitto.org:8081');
+ // O endereco padrao precisa sobreviver a validacao sem virar outra coisa.
+ assert.equal(validateConfig({broker:brokerPadrao({protocol:'https:',host:'iotmotor.pages.dev'}),prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}).broker,'wss://iotmotor.pages.dev/mqtt');
+});
+
+test('quem ja usou o painel migra da porta bloqueada para a ponte',()=>{
+ const ponte='wss://iotmotor.pages.dev/mqtt';
+ // Com e sem a barra final, que o new URL().toString() acrescenta ao salvar.
+ assert.equal(migrarBroker('wss://test.mosquitto.org:8081',ponte),ponte);
+ assert.equal(migrarBroker('wss://test.mosquitto.org:8081/',ponte),ponte);
+ // Broker proprio escolhido a mao continua onde estava.
+ assert.equal(migrarBroker('wss://broker.meulab.br:8884/mqtt',ponte),'wss://broker.meulab.br:8884/mqtt');
+ assert.equal(migrarBroker('wss://test.mosquitto.org:8884/',ponte),'wss://test.mosquitto.org:8884/');
+ // Sem ponte (pagina fora de HTTPS) nada e trocado.
+ assert.equal(migrarBroker('wss://test.mosquitto.org:8081/','wss://test.mosquitto.org:8081'),'wss://test.mosquitto.org:8081/');
+ // Lixo guardado nao vira excecao nem endereco inventado.
+ assert.equal(migrarBroker('',ponte),'');
+ assert.equal(migrarBroker(undefined,ponte),undefined);
+});
+
+test('a dica de falha so aponta a ponte quando ela existe e nao e a que falhou',()=>{
+ const https={protocol:'https:',host:'iotmotor.pages.dev'};
+ assert.match(dicaDeFalha('wss://test.mosquitto.org:8081/',https),/ponte wss:\/\/iotmotor\.pages\.dev\/mqtt/);
+ // A propria ponte falhando: mandar tentar a ponte seria conselho circular.
+ assert.doesNotMatch(dicaDeFalha('wss://iotmotor.pages.dev/mqtt',https),/ponte/);
+ assert.doesNotMatch(dicaDeFalha('wss://test.mosquitto.org:8081/',{protocol:'http:',host:'localhost:8788'}),/ponte/);
 });
