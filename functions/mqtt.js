@@ -30,16 +30,30 @@ export async function onRequest(context) {
   const daPonte = par[1];
   daPonte.accept();
 
-  let tcp;
-  try {
-    tcp = connect(BROKER);
-  } catch (erro) {
-    daPonte.close(1011, `broker inacessível: ${erro}`);
-    return new Response(null, {
+  const responder = () =>
+    new Response(null, {
       status: 101,
       webSocket: paraONavegador,
       headers: {'Sec-WebSocket-Protocol': 'mqtt'}
     });
+
+  // Fechar dizendo o motivo: sem isso, uma falha aqui vira "não conecta" e
+  // ninguém descobre por quê.
+  let encerrada = false;
+  const encerrar = motivo => {
+    if (encerrada) return;
+    encerrada = true;
+    try { daPonte.close(1011, String(motivo).slice(0, 120)); } catch { /* já fechado */ }
+  };
+
+  let tcp;
+  try {
+    tcp = connect(BROKER);
+    // Esperar a abertura de fato: escrever antes disso falha em silêncio.
+    await tcp.opened;
+  } catch (erro) {
+    encerrar(`broker inacessível: ${erro}`);
+    return responder();
   }
 
   const escritor = tcp.writable.getWriter();
@@ -51,16 +65,15 @@ export async function onRequest(context) {
       typeof dados === 'string'
         ? new TextEncoder().encode(dados)
         : new Uint8Array(dados);
-    fila = fila.then(() => escritor.write(bytes)).catch(() => {});
+    fila = fila
+      .then(() => escritor.write(bytes))
+      .catch(erro => encerrar(`falha ao enviar ao broker: ${erro}`));
   });
-
-  const fechar = motivo => {
-    try { daPonte.close(1011, motivo); } catch { /* já fechado */ }
-    try { escritor.releaseLock(); } catch { /* já solto */ }
-    try { tcp.close(); } catch { /* já fechado */ }
-  };
   for (const evento of ['close', 'error']) {
-    daPonte.addEventListener(evento, () => fechar('navegador saiu'));
+    daPonte.addEventListener(evento, () => {
+      encerrada = true;
+      try { tcp.close(); } catch { /* já fechado */ }
+    });
   }
 
   // Do broker para o navegador, enquanto houver bytes.
@@ -73,17 +86,12 @@ export async function onRequest(context) {
           if (done) break;
           daPonte.send(value);
         }
+        encerrar('broker encerrou a conexão');
       } catch (erro) {
-        fechar(`broker encerrou: ${erro}`);
-        return;
+        encerrar(`broker caiu: ${erro}`);
       }
-      fechar('broker encerrou a conexão');
     })()
   );
 
-  return new Response(null, {
-    status: 101,
-    webSocket: paraONavegador,
-    headers: {'Sec-WebSocket-Protocol': 'mqtt'}
-  });
+  return responder();
 }
