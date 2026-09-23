@@ -16,6 +16,21 @@ import {connect} from 'cloudflare:sockets';
 
 const BROKER = {hostname: 'test.mosquitto.org', port: 1883};
 
+/// Os quadros chegam como ArrayBuffer, como view ou como Blob, dependendo de
+/// quem está do outro lado. Converter errado dava "0 bytes" e a conexão ficava
+/// de pé sem nada passar.
+async function paraBytes(dados) {
+  if (typeof dados === 'string') return new TextEncoder().encode(dados);
+  if (dados instanceof ArrayBuffer) return new Uint8Array(dados);
+  if (ArrayBuffer.isView(dados)) {
+    return new Uint8Array(dados.buffer, dados.byteOffset, dados.byteLength);
+  }
+  if (dados && typeof dados.arrayBuffer === 'function') {
+    return new Uint8Array(await dados.arrayBuffer());
+  }
+  throw new TypeError(`quadro de tipo inesperado: ${Object.prototype.toString.call(dados)}`);
+}
+
 export async function onRequest(context) {
   if (context.request.headers.get('Upgrade') !== 'websocket') {
     return new Response(
@@ -71,14 +86,13 @@ export async function onRequest(context) {
   let fila = Promise.resolve();
   daPonte.addEventListener('message', evento => {
     const dados = evento.data;
-    const bytes =
-      typeof dados === 'string'
-        ? new TextEncoder().encode(dados)
-        : new Uint8Array(dados);
-    narrar(`recebi ${bytes.length} bytes do navegador`);
     fila = fila
-      .then(() => escritor.write(bytes))
-      .then(() => narrar('repassei ao broker'))
+      .then(async () => {
+        const bytes = await paraBytes(dados);
+        narrar(`recebi ${bytes.length} bytes do navegador`);
+        await escritor.write(bytes);
+        narrar('repassei ao broker');
+      })
       .catch(erro => encerrar(`falha ao enviar ao broker: ${erro}`));
   });
   for (const evento of ['close', 'error']) {
