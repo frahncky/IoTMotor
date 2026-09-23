@@ -8,6 +8,7 @@ import 'package:mqtt_client/mqtt_server_client.dart';
 import '../models/motor_command_type.dart';
 import '../models/mqtt_connection_config.dart';
 import 'command_seal.dart';
+import 'mqtt_settings_validators.dart';
 
 typedef MqttPayloadCallback = void Function(String topic, String payload);
 typedef MqttDisconnectedCallback = void Function({required bool manual});
@@ -42,6 +43,11 @@ class MqttMotorService {
   Future<MqttConnectResult> connect(MqttConnectionConfig config) async {
     await disconnect(silent: true);
 
+    // ws:// e wss:// passam por WebSocket. É o caminho que funciona em rede
+    // que bloqueia as portas MQTT: as placas usam ws://...:8080 por isso.
+    final bool porWebSocket = MqttSettingsValidators.brokerUsaWebSocket(
+      config.host,
+    );
     final MqttServerClient client = MqttServerClient.withPort(
       config.host,
       config.clientId,
@@ -51,7 +57,13 @@ class MqttMotorService {
     client.keepAlivePeriod = 30;
     client.autoReconnect = true;
     client.resubscribeOnAutoReconnect = true;
-    client.secure = config.useTls;
+    if (porWebSocket) {
+      client.useWebSocket = true;
+      client.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
+      client.secure = false;  // wss:// já carrega o TLS no próprio endereço.
+    } else {
+      client.secure = config.useTls;
+    }
     client.onConnected = _handleConnected;
     client.onDisconnected = _handleDisconnected;
     client.onAutoReconnect = _handleAutoReconnect;

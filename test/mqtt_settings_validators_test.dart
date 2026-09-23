@@ -15,6 +15,28 @@ void main() {
       expect(error, isNull);
     });
 
+    test('aceita WebSocket, que é o caminho em rede que bloqueia MQTT', () {
+      expect(
+        MqttSettingsValidators.firstConnectionError(
+          broker: 'ws://test.mosquitto.org',
+          port: '8080',
+          clientId: 'iotmotor_app',
+          topicPrefix: 'iotmotor',
+        ),
+        isNull,
+      );
+      expect(MqttSettingsValidators.validateBroker('wss://test.mosquitto.org'), isNull);
+      expect(MqttSettingsValidators.brokerUsaWebSocket('ws://test.mosquitto.org'), isTrue);
+      expect(MqttSettingsValidators.brokerUsaWebSocket('test.mosquitto.org'), isFalse);
+      expect(
+        MqttSettingsValidators.brokerHost('ws://test.mosquitto.org'),
+        'test.mosquitto.org',
+      );
+      // Endereço sem host nenhum continua sendo recusado.
+      expect(MqttSettingsValidators.validateBroker('ws://'), isNotNull);
+      expect(MqttSettingsValidators.validateBroker('ws://host/caminho'), isNotNull);
+    });
+
     test('rejeita broker com protocolo e porta fora da faixa', () {
       expect(
         MqttSettingsValidators.validateBroker('https://broker.hivemq.com'),

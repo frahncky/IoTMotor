@@ -2,6 +2,20 @@
 
 Aplicativo Flutter para controle e monitoramento de motores via MQTT.
 
+## Conexão do aplicativo
+
+O app aceita três formas de endereço no campo **Broker host**:
+
+| Endereço | Porta | Quando usar |
+| --- | --- | --- |
+| `test.mosquitto.org` | 1883 | Rede que deixa passar MQTT |
+| `ws://test.mosquitto.org` | 8080 | **Rede que bloqueia as portas MQTT** (é o caminho das placas) |
+| `wss://test.mosquitto.org` | 8081 | WebSocket com TLS, onde a porta 8081 não é bloqueada |
+
+Na rede do IFMA as portas 1883, 8883 e 8081 são bloqueadas e só a 8080 passa:
+use `ws://test.mosquitto.org` com porta **8080** e TLS desligado. É exatamente
+o que os dois ESP32 usam.
+
 ## Telemetria MQTT
 
 O app aceita payloads JSON com uma ou mais grandezas no topico de telemetria.

@@ -236,6 +236,9 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       label: 'Broker host',
                       controllerField: controller.brokerController,
                       validator: MqttSettingsValidators.validateBroker,
+                      helperText:
+                          'Rede que bloqueia MQTT: ws://test.mosquitto.org '
+                          'na porta 8080',
                     ),
                     _textField(
                       width: fieldWidth,
@@ -1323,6 +1326,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     bool obscureText = false,
     String? Function(String?)? validator,
     String? suffixText,
+    String? helperText,
   }) {
     return SizedBox(
       width: width,
@@ -1337,7 +1341,12 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         },
         validator: validator,
         autovalidateMode: AutovalidateMode.onUserInteraction,
-        decoration: InputDecoration(labelText: label, suffixText: suffixText),
+        decoration: InputDecoration(
+          labelText: label,
+          suffixText: suffixText,
+          helperText: helperText,
+          helperMaxLines: 2,
+        ),
       ),
     );
   }

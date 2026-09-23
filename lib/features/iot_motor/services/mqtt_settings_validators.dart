@@ -1,21 +1,40 @@
 class MqttSettingsValidators {
   static final RegExp _brokerPattern = RegExp(r'^[a-zA-Z0-9.-]+$');
 
+  /// Aceita `host`, `ws://host` e `wss://host`.
+  ///
+  /// O WebSocket existe porque redes que bloqueiam as portas MQTT (1883 e
+  /// 8883) costumam deixar passar a 8080 — é assim que as placas conectam.
   static String? validateBroker(String? value) {
     final String broker = value?.trim() ?? '';
     if (broker.isEmpty) {
       return 'Informe o broker MQTT.';
     }
     if (broker.startsWith('http://') || broker.startsWith('https://')) {
-      return 'Informe apenas host/IP do broker, sem http:// ou https://.';
+      return 'Para WebSocket use ws:// ou wss://, não http:// nem https://.';
     }
-    if (broker.contains('/') || broker.contains(' ')) {
-      return 'Broker inválido. Use apenas host ou IP.';
+    final String host = brokerHost(broker);
+    if (host.isEmpty || host.contains('/') || host.contains(' ')) {
+      return 'Broker inválido. Use host, ws://host ou wss://host.';
     }
-    if (!_brokerPattern.hasMatch(broker)) {
+    if (!_brokerPattern.hasMatch(host)) {
       return 'Broker inválido. Use letras, números, ponto e hífen.';
     }
     return null;
+  }
+
+  /// Host sem o esquema, para mostrar e comparar.
+  static String brokerHost(String broker) {
+    final String limpo = broker.trim();
+    for (final String esquema in <String>['ws://', 'wss://']) {
+      if (limpo.startsWith(esquema)) return limpo.substring(esquema.length);
+    }
+    return limpo;
+  }
+
+  static bool brokerUsaWebSocket(String broker) {
+    final String limpo = broker.trim();
+    return limpo.startsWith('ws://') || limpo.startsWith('wss://');
   }
 
   static String? validateClientId(String? value) {
