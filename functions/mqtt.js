@@ -8,7 +8,11 @@
 //
 // Nada é interpretado no caminho: os quadros MQTT passam intactos nos dois
 // sentidos. O broker continua sendo o mesmo das placas.
-const BROKER = 'https://test.mosquitto.org:8081/';
+// A Cloudflare so faz requisicao de saida em um conjunto de portas, e a 8081
+// do broker nao esta nele -- a 8080 esta, e e a mesma que as placas usam. O
+// trecho navegador -> Cloudflare continua cifrado (wss, porta 443); o trecho
+// Cloudflare -> broker vai em claro, como ja vai o das placas.
+const BROKER = 'http://test.mosquitto.org:8080/';
 
 export async function onRequest(context) {
   const pedido = context.request;
