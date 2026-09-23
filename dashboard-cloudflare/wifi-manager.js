@@ -77,6 +77,9 @@ if (typeof document !== 'undefined') (() => {
   let client = null, connected = false, prefixo = '', dispositivos = ['esp32-01', 'esp32-02'];
   let selecionado = 0, sequencia = 0, pendente = null;
   const placas = {};  // device -> {pubkey, networks:[{ssid,open}], connected, max, em}
+  // A lista de redes é retida: continua no broker depois que a placa cai. Sem
+  // olhar o status, a aba dizia "conectada em ..." de uma placa desligada.
+  const estados = {};  // device -> 'online' | 'offline'
   let ordemEditada = null;  // lista de SSIDs enquanto o usuario reordena
 
   const topico = (dev, tipo) => `${prefixo}/${dev}/${tipo}`;
@@ -104,11 +107,15 @@ if (typeof document !== 'undefined') (() => {
     $('wifiDev1').setAttribute('aria-pressed', String(selecionado === 1));
     const placa = atual();
     const lista = $('wifiList');
+    const noAr = () => estados[dispositivos[selecionado]] !== 'offline';
     lista.replaceChildren();
 
     if (!connected) $('wifiStatus').textContent = 'Conecte ao MQTT (botão no topo) para ver e editar as redes.';
     else if (!placa) $('wifiStatus').textContent = `${nomeDaPlaca()} ainda não publicou a lista de redes. Se estiver online, ` +
       'está com firmware antigo: use "Atualizar firmware desta placa".';
+    else if (!noAr()) $('wifiStatus').textContent =
+      `${nomeDaPlaca()}: desligada ou fora da rede agora. O que aparece abaixo é a ` +
+      `última informação recebida${placa.connected ? ` (estava em "${placa.connected}")` : ''}.`;
     else $('wifiStatus').textContent = placa.connected
       ? `${nomeDaPlaca()}: conectada em "${placa.connected}". ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`
       : `${nomeDaPlaca()}: lista recebida, sem informar a rede atual. ${placa.networks.length} de ${placa.max || 8} redes cadastradas.`;
@@ -123,7 +130,7 @@ if (typeof document !== 'undefined') (() => {
     ordem.forEach((ssid, i) => {
       const rede = placa.networks.find(r => r.ssid === ssid) || {ssid, open: false};
       const item = document.createElement('li');
-      if (placa.connected === ssid) item.className = 'atual';
+      if (placa.connected === ssid && noAr()) item.className = 'atual';
       const nome = document.createElement('span');
       nome.className = 'nome';
       nome.textContent = ssid;
@@ -131,7 +138,7 @@ if (typeof document !== 'undefined') (() => {
       tipo.className = 'tag';
       tipo.textContent = rede.open ? 'aberta' : 'com senha';
       item.append(nome, tipo);
-      if (placa.connected === ssid) {
+      if (placa.connected === ssid && noAr()) {
         const agora = document.createElement('span');
         agora.className = 'tag on';
         agora.textContent = 'conectada agora';
@@ -145,7 +152,7 @@ if (typeof document !== 'undefined') (() => {
         b.textContent = rotulo;
         b.title = titulo;
         b.setAttribute('aria-label', `${titulo}: ${ssid}`);
-        b.disabled = desabilitado || !connected;
+        b.disabled = desabilitado || !connected || !noAr();
         if (classe) b.className = classe;
         b.addEventListener('click', acao);
         return b;
@@ -160,9 +167,9 @@ if (typeof document !== 'undefined') (() => {
 
     const mudou = Boolean(placa && ordemEditada &&
       ordemEditada.join('\n') !== placa.networks.map(r => r.ssid).join('\n'));
-    $('wifiSaveOrder').disabled = !connected || !mudou || Boolean(pendente);
+    $('wifiSaveOrder').disabled = !connected || !mudou || Boolean(pendente) || !noAr();
     $('wifiUndoOrder').disabled = !mudou;
-    $('wifiAddBtn').disabled = !connected || !placa || Boolean(pendente) ||
+    $('wifiAddBtn').disabled = !connected || !placa || Boolean(pendente) || !noAr() ||
       (!$('wifiOpen').checked && !placa.pubkey);
     $('wifiPass').disabled = $('wifiOpen').checked;
 
@@ -177,11 +184,11 @@ if (typeof document !== 'undefined') (() => {
       $('apOpen').checked = ap.open;
     }
     $('apPass').disabled = $('apOpen').checked;
-    const livre = connected && Boolean(placa) && !pendente;
+    const livre = connected && Boolean(placa) && !pendente && noAr();
     $('apSaveBtn').disabled = !livre || (!$('apOpen').checked && !placa.pubkey);
     $('apOpenNow').disabled = !livre;
     // Disponivel mesmo sem lista: e assim que uma placa com firmware antigo a recebe.
-    $('wifiUpdateFw').disabled = !connected || Boolean(pendente);
+    $('wifiUpdateFw').disabled = !connected || Boolean(pendente) || !noAr();
   }
   let apMostrada = '';
 
@@ -317,6 +324,7 @@ if (typeof document !== 'undefined') (() => {
     prefixo = cfg.p;
     dispositivos = cfg.d;
     for (const k of Object.keys(placas)) delete placas[k];
+    for (const k of Object.keys(estados)) delete estados[k];
     ordemEditada = null;
     pendente = null;
     const ativo = window.mqtt.connect(cfg.url, {
@@ -327,12 +335,19 @@ if (typeof document !== 'undefined') (() => {
     ativo.on('connect', () => {
       if (client !== ativo) return;
       connected = true;
-      const topicos = dispositivos.flatMap(d => [topico(d, 'wifi'), topico(d, 'command_ack'), topico(d, 'auth')]);
+      const topicos = dispositivos.flatMap(d =>
+        [topico(d, 'wifi'), topico(d, 'command_ack'), topico(d, 'auth'), topico(d, 'status')]);
       ativo.subscribe(topicos, {qos: 1});
       renderizar();
     });
     ativo.on('message', (nome, payload) => {
       if (client !== ativo) return;
+      const placaDoStatus = dispositivos.find(d => nome === topico(d, 'status'));
+      if (placaDoStatus) {  // "online" / "offline": texto puro, não JSON.
+        estados[placaDoStatus] = payload.toString('utf8').trim();
+        renderizar();
+        return;
+      }
       let dados;
       try { dados = JSON.parse(payload.toString('utf8')); } catch { return; }
       const dev = dispositivos.find(d => nome === topico(d, 'wifi') ||
