@@ -12,8 +12,16 @@
   const recent = () => Boolean(boot && Date.now() - updatedAt < 25000 && relays);
   // Modo instrumentação: a placa avisa na telemetria se aciona ou não.
   let aciona = true;
+  // Segundos que o ensaio segue sem rede (-1 = sem limite), vindos da placa.
+  let queda = null, quedaEditando = false;
   const feedback = message => { $('commandFeedback').textContent = message; };
   function refresh() {
+    const sel = $('quedaSel');
+    if (sel) {
+      sel.disabled = !connected || !recent();
+      // Sem mexer no que a pessoa acabou de escolher e ainda não confirmou.
+      if (queda !== null && !quedaEditando) sel.value = String(queda);
+    }
     const modo = $('modoBtn');
     if (modo) {
       modo.disabled = !connected || !recent();
@@ -75,6 +83,7 @@
             !Array.isArray(data.relays) || data.relays.length !== 4 ||
             data.relays.some(v => typeof v !== 'boolean')) return;
         if (typeof data.actuation === 'boolean') aciona = data.actuation;
+        if (Number.isFinite(data.link_grace_s)) queda = data.link_grace_s;
         boot = data.boot;
         updatedAt = Date.now();
         relays = data.relays;
@@ -185,6 +194,18 @@
   }
   $('updateBtn')?.addEventListener('click', () => manutencao('update',
     'A placa vai baixar o firmware publicado no GitHub e reiniciar.\n\nContinuar?'));
+  // Quanto tempo o ensaio segue sem rede. Fica gravado na placa.
+  $('quedaSel')?.addEventListener('change', () => {
+    const segundos = Number($('quedaSel').value);
+    quedaEditando = true;
+    const aviso = segundos < 0
+      ? 'O ensaio vai continuar mesmo sem rede, até o limite de 5 minutos do ensaio.\n\nNinguém consegue mandar parar pelo painel enquanto a rede estiver fora. Continuar?'
+      : null;
+    if (aviso !== null && !confirm(aviso)) { quedaEditando = false; refresh(); return; }
+    manutencao('link_grace', null, {seconds: segundos});
+    setTimeout(() => { quedaEditando = false; refresh(); }, 6000);
+  });
+
   // O modo fica gravado na placa: vale para o painel, o app e depois de reiniciar.
   $('modoBtn')?.addEventListener('click', () => {
     const desligar = aciona;

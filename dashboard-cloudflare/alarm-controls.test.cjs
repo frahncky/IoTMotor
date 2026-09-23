@@ -126,6 +126,30 @@ test('editar o limite de uma linha e confirmar grava so aquele alarme', () => {
   assert.equal(h.timers.size, 0);
 });
 
+test('o campo do limite pode ser apagado e digitado sem a lista atropelar', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  const campo = () => h.parte(h.linhas()[0], 'limite');
+  // Apagar o campo é um estado legítimo: nada de voltar o valor da placa.
+  campo().value = ''; campo().fire('input');
+  h.telemetry(c);
+  h.advance(1000);
+  assert.equal(campo().value, '');
+  // Gravar assim avisa em vez de mandar lixo para a placa.
+  h.parte(h.linhas()[0], 'ops').children[0].fire('click');
+  assert.equal(c.published.length, 0);
+  assert.match(h.node('alarmeFeedback').textContent, /campo está vazio/);
+  // Digitando aos poucos, o que já foi escrito continua lá.
+  campo().value = '0'; campo().fire('input');
+  h.telemetry(c);
+  campo().value = '0,8'; campo().fire('input');
+  h.telemetry(c);
+  h.advance(1000);
+  assert.equal(campo().value, '0,8');
+  h.parte(h.linhas()[0], 'ops').children[0].fire('click');
+  assert.equal(c.published[0].data.alarm.limit, 0.8, 'vírgula vale como decimal');
+});
+
 test('adiciona alarme de corrente do quadro de comando e recusa limite fora da faixa', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c); h.alarms(c);

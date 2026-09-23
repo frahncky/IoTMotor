@@ -102,8 +102,27 @@
     resumo.textContent = mensagem;
   }
 
+  let listaDesenhada = '';
+
+  // Tudo o que a lista mostra. Igual ao de antes, nao ha o que redesenhar.
+  function assinaturaDaLista() {
+    if (!lista) return 'sem-lista:' + String(conectado);
+    return JSON.stringify([
+      lista.map(a => [a.id, a.field, a.board, a.above, a.limit, a.on]),
+      [...(estado?.firing || [])].sort(),
+      [...rascunhos.entries()].sort(),
+      pronto(), maxAlarmes
+    ]);
+  }
+
   function desenharLista() {
     const alvo = $('alarmeLista');
+    const assinatura = assinaturaDaLista();
+    if (assinatura === listaDesenhada) return;
+    // Digitando: esperar. Trocar o campo agora apagaria o que foi escrito.
+    const foco = document.activeElement;
+    if (foco && alvo.contains?.(foco)) return;
+    listaDesenhada = assinatura;
     alvo.replaceChildren();
     if (!lista) {
       $('alarmeResumo').textContent = conectado
@@ -135,9 +154,10 @@
       limite.className = 'limite';
       limite.type = 'number';
       limite.step = String(g?.passo ?? 'any');
-      limite.value = String(rascunho ? rascunho.limite : alarme.limit);
+      limite.value = rascunho ? rascunho.limite : String(alarme.limit);
       limite.setAttribute('aria-label', `Limite de ${rotulo(alarme.field)}`);
       limite.addEventListener('input', () => guardarRascunho(alarme, {limite: limite.value}));
+      limite.addEventListener('blur', () => renderizar());
       item.append(limite);
 
       const origem = document.createElement('span');
@@ -180,8 +200,10 @@
     }
   }
 
-  function limiteAceito(campo, valor) {
+  function limiteAceito(campo, valor, texto) {
     const g = grandezaDe(campo);
+    if (texto !== undefined && String(texto).trim() === '')
+      return `${rotulo(campo)}: o campo está vazio.`;
     if (!Number.isFinite(valor)) return `Informe um número para ${rotulo(campo)}.`;
     if (g && (valor < g.min || valor > g.max))
       return `${rotulo(campo)}: informe de ${g.min} a ${g.max}.`;
@@ -190,8 +212,9 @@
 
   function gravarAlarme(alarme) {
     const rascunho = rascunhos.get(alarme.id);
-    const valor = Number(rascunho ? rascunho.limite : alarme.limit);
-    const erro = limiteAceito(alarme.field, valor);
+    const texto = rascunho ? rascunho.limite : String(alarme.limit);
+    const valor = Number(String(texto).replace(',', '.'));
+    const erro = limiteAceito(alarme.field, valor, texto);
     if (erro) { aviso(erro); return; }
     const corpo = {
       id: alarme.id, field: alarme.field, board: alarme.board === 'command' ? 'command' : 'sensors',
@@ -290,8 +313,8 @@
     const campo = String($('alarmeGrandeza').value || '');
     const g = grandezaDe(campo);
     if (!g) { aviso('Escolha uma grandeza da lista.'); return; }
-    const valor = Number($('alarmeLimite').value);
-    const erro = limiteAceito(campo, valor);
+    const valor = Number(String($('alarmeLimite').value).replace(',', '.'));
+    const erro = limiteAceito(campo, valor, $('alarmeLimite').value);
     if (erro) { aviso(erro); return; }
     const corpo = {
       id: novoId(campo), field: campo, board: g.placa,
@@ -314,7 +337,7 @@
   function desconectar() {
     const antigo = client;
     client = null; conectado = false; estado = null; recebidoEm = 0; editando = false;
-    lista = null; rascunhos.clear();
+    lista = null; rascunhos.clear(); listaDesenhada = '';
     window.iotmotorSelo?.esquecer(dispositivo);
     limparPendente();
     if (antigo) antigo.end(true);

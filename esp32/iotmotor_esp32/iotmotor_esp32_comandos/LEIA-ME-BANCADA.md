@@ -4,6 +4,24 @@ Sketch `iotmotor_esp32_comandos.ino` (versão `v10-mqtt-websocket`) para **ESP32
 
 A alteração no GitHub **não regrava** a placa. Instale o core ESP32 e as bibliotecas `PZEM004Tv30`, `LiquidCrystal I2C`, `PubSubClient` e `ArduinoJson` (6.x ou 7.x); compile e grave no ESP32. Monitor Serial a **115200 baud**.
 
+## Queda de rede durante o ensaio
+
+Quanto tempo as saídas continuam ligadas depois que o Wi-Fi ou o MQTT cai. O
+padrão são **15 s**, que cobrem as quedas curtas do broker público sem deixar a
+bancada ligada sozinha.
+
+- No painel: **"Se a conexão cair, o ensaio segue por"**, no quadro de comando.
+- Por MQTT: `{"v":1,"device_id":"esp32-01","seq":"1","action":"link_grace","seconds":60}`.
+- `seconds`: **0** derruba as saídas assim que a rede cair; **1 a 3600** segue
+  por esse tempo; **-1** segue sem limite de rede.
+- Fica gravado na placa e aparece na telemetria como `link_grace_s` (-1 = sem
+  limite).
+
+Mesmo com **-1**, o ensaio continua limitado pelos **5 minutos** de
+`LIMITE_BANCADA_MS`: "sem limite" quer dizer que a falta de rede não derruba,
+não que o ensaio corre para sempre. E, enquanto a rede estiver fora, ninguém
+consegue mandar parar pelo painel — a parada tem que ser elétrica.
+
 ## Modo instrumentação
 
 Com o **acionamento desligado**, a placa não fecha contator nenhum: só lê o

@@ -198,6 +198,23 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
 
+  // Quanto tempo o ensaio segue sem rede: -1 sem limite, 0 derruba na hora.
+  if (!strcmp(acao, "link_grace")) {
+    if (!doc["seconds"].is<long>()) {
+      publicarRespostaControle(seq, false, acao, "campo seconds ausente");
+      return;
+    }
+    const long segundos = doc["seconds"].as<long>();
+    const bool ok = salvarToleranciaSemLink(segundos);
+    char motivo[72];
+    if (!ok) snprintf(motivo, sizeof(motivo), "use de 0 a %ld s, ou -1 para sem limite", MAX_TOLERANCIA_S);
+    else if (segundos < 0) snprintf(motivo, sizeof(motivo), "o ensaio segue sem rede ate o limite de ensaio");
+    else if (!segundos) snprintf(motivo, sizeof(motivo), "as saidas caem assim que a rede cair");
+    else snprintf(motivo, sizeof(motivo), "o ensaio segue por %ld s sem rede", segundos);
+    publicarRespostaControle(seq, ok, acao, motivo);
+    return;
+  }
+
   // Liga e desliga o acionamento. Desligar vale na hora e fica gravado.
   if (!strcmp(acao, "actuation")) {
     if (!doc["on"].is<bool>()) {

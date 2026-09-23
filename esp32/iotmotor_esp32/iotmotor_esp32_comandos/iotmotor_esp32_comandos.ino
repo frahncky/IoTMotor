@@ -130,6 +130,9 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 // declarado antes dos cabecalhos que o usam.
 extern bool acionamentoLigado;
 bool salvarAcionamento(bool ligado);
+extern uint32_t toleranciaSemLinkMs;
+constexpr long MAX_TOLERANCIA_S = 3600;  // Teto do que da para configurar.
+bool salvarToleranciaSemLink(long segundos);
 
 #include "comando_seguro.h"
 #include "relogio.h"
@@ -212,6 +215,34 @@ void atualizarLcd() {
   else snprintf(buffer, sizeof(buffer), "CNT %-7.7s", contatores);
   imprimirLinhaCompleta(3, buffer);
   lcdPrecisaAtualizar = false;
+}
+
+// ---- Queda de rede ----
+// Quanto tempo o ensaio continua depois que o Wi-Fi ou o MQTT cai. O padrao
+// sao 15 s, que cobrem as quedas curtas do broker publico sem deixar a bancada
+// ligada sozinha. Zero derruba na hora; SEM_LIMITE deixa seguir ate o fim do
+// ensaio, que continua limitado por LIMITE_BANCADA_MS.
+constexpr uint32_t SEM_LIMITE_SEM_LINK = 0xFFFFFFFFUL;
+uint32_t toleranciaSemLinkMs = TOLERANCIA_SEM_LINK_MS;
+
+void carregarToleranciaSemLink() {
+  Preferences memoria;
+  if (!memoria.begin("iot-comando", true)) return;
+  toleranciaSemLinkMs = memoria.getUInt("semlink", TOLERANCIA_SEM_LINK_MS);
+  memoria.end();
+}
+
+// segundos < 0 = sem limite; 0 = derruba na hora.
+bool salvarToleranciaSemLink(long segundos) {
+  if (segundos > MAX_TOLERANCIA_S) return false;
+  const uint32_t valor = segundos < 0 ? SEM_LIMITE_SEM_LINK
+                                      : (uint32_t)segundos * 1000UL;
+  Preferences memoria;
+  if (!memoria.begin("iot-comando", false)) return false;
+  memoria.putUInt("semlink", valor);
+  memoria.end();
+  toleranciaSemLinkMs = valor;
+  return true;
 }
 
 // ---- Modo instrumentacao ----
@@ -319,6 +350,10 @@ void publicarTelemetriaMqtt() {
   doc["secure"] = comandoseguro::ligado;
   // false = modo instrumentacao: a placa nao aciona contator nenhum.
   doc["actuation"] = acionamentoLigado;
+  // Segundos que o ensaio segue sem rede; -1 = sem limite.
+  doc["link_grace_s"] = toleranciaSemLinkMs == SEM_LIMITE_SEM_LINK
+                            ? -1
+                            : (int)(toleranciaSemLinkMs / 1000UL);
   // Hora da medicao, em segundos UTC. Ausente enquanto o NTP nao responde.
   if (const uint32_t carimbo = relogio::agoraUtc()) doc["ts"] = carimbo;
   // Campo de compatibilidade: pronto para comandos; NAO representa jumper fisico.
@@ -432,6 +467,7 @@ void setup() {
   snprintf(topicoPerfis, sizeof(topicoPerfis), "iotmotor/%s/profiles", DEVICE_ID);
   snprintf(topicoAuth, sizeof(topicoAuth), "iotmotor/%s/auth", DEVICE_ID);
   carregarAcionamento();
+  carregarToleranciaSemLink();
   comandoseguro::iniciar(DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);
@@ -455,10 +491,11 @@ void loop() {
   else if (!inicioSemLink) inicioSemLink = agora;
   const bool saidasAtivas = partidaAtiva || estadoReles[0] || estadoReles[1] ||
                             estadoReles[2] || estadoReles[3];
-  if (!comLink && saidasAtivas && decorrido(agora, inicioSemLink) > (int32_t)TOLERANCIA_SEM_LINK_MS) {
+  if (!comLink && saidasAtivas && toleranciaSemLinkMs != SEM_LIMITE_SEM_LINK &&
+      decorrido(agora, inicioSemLink) > (int32_t)toleranciaSemLinkMs) {
     pararBancada();
     Serial.printf("[BANCADA] saidas desligadas: %lu s sem MQTT/Wi-Fi\n",
-                  TOLERANCIA_SEM_LINK_MS / 1000UL);
+                  toleranciaSemLinkMs / 1000UL);
   }
   manterPartidaBancada(agora);
   if (agora - ultimaLeituraPzem >= INTERVALO_PZEM_MS) {
