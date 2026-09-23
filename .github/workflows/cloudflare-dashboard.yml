@@ -33,7 +33,7 @@ jobs:
           node --check dashboard-cloudflare/wifi-manager.js
           node --check dashboard-cloudflare/alarm-controls.js
           node --check dashboard-cloudflare/command-seal.js
-          node --check functions/mqtt.js
+          node --input-type=module --check < functions/mqtt.js
       - name: Run web tests
         run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs
       - name: Verify MQTT-only firmware and controls

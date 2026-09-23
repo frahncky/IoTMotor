@@ -1,22 +1,23 @@
-// Ponte WebSocket do painel até o broker, servida pela própria Cloudflare.
+// Ponte do painel até o broker, servida pela própria Cloudflare.
 //
-// O painel precisa de wss://, e a rede do IFMA bloqueia a porta 8081 do
-// broker público — em alguns computadores, em alguns dias. Aqui o navegador
-// abre a conexão no mesmo endereço do painel (porta 443, a do HTTPS, que
-// nenhuma rede bloqueia sem derrubar a internet inteira) e a Cloudflare, que
-// está fora do firewall da escola, repassa tudo para o broker.
+// O painel precisa de wss://, e a rede do IFMA bloqueia a porta 8081 do broker
+// público — em alguns computadores, em alguns dias. Aqui o navegador abre a
+// conexão no mesmo endereço do painel (porta 443, a do HTTPS, que nenhuma rede
+// bloqueia sem derrubar a internet inteira) e a Cloudflare, que está fora do
+// firewall da escola, fala com o broker.
 //
-// Nada é interpretado no caminho: os quadros MQTT passam intactos nos dois
-// sentidos. O broker continua sendo o mesmo das placas.
-// A Cloudflare so faz requisicao de saida em um conjunto de portas, e a 8081
-// do broker nao esta nele -- a 8080 esta, e e a mesma que as placas usam. O
-// trecho navegador -> Cloudflare continua cifrado (wss, porta 443); o trecho
-// Cloudflare -> broker vai em claro, como ja vai o das placas.
-const BROKER = 'http://test.mosquitto.org:8080/';
+// Do lado do broker a ponte usa MQTT sobre TCP (1883). Os quadros que trafegam
+// no WebSocket são exatamente os mesmos bytes do MQTT sobre TCP, então o
+// repasse é byte a byte, sem interpretar nada.
+//
+// O trecho navegador -> Cloudflare é cifrado (wss). O trecho Cloudflare ->
+// broker vai em claro, como já vai o das placas.
+import {connect} from 'cloudflare:sockets';
+
+const BROKER = {hostname: 'test.mosquitto.org', port: 1883};
 
 export async function onRequest(context) {
-  const pedido = context.request;
-  if (pedido.headers.get('Upgrade') !== 'websocket') {
+  if (context.request.headers.get('Upgrade') !== 'websocket') {
     return new Response(
       'Este endereço é a ponte MQTT do painel: abra-o como WebSocket ' +
         '(wss://.../mqtt), não pelo navegador.',
@@ -24,54 +25,61 @@ export async function onRequest(context) {
     );
   }
 
-  let resposta;
-  try {
-    resposta = await fetch(BROKER, {
-      headers: {
-        Upgrade: 'websocket',
-        Connection: 'Upgrade',
-        // mqtt.js pede este subprotocolo; o broker recusa a conexão sem ele.
-        'Sec-WebSocket-Protocol': 'mqtt'
-      }
-    });
-  } catch (erro) {
-    return new Response(`Broker fora do ar: ${erro}`, {status: 502});
-  }
-
-  const doBroker = resposta.webSocket;
-  if (!doBroker) {
-    return new Response(
-      `O broker não aceitou a conexão (HTTP ${resposta.status}).`,
-      {status: 502}
-    );
-  }
-
   const par = new WebSocketPair();
   const paraONavegador = par[0];
   const daPonte = par[1];
-
-  doBroker.accept();
   daPonte.accept();
 
-  // Repasse nos dois sentidos, sem olhar o conteúdo.
+  let tcp;
+  try {
+    tcp = connect(BROKER);
+  } catch (erro) {
+    daPonte.close(1011, `broker inacessível: ${erro}`);
+    return new Response(null, {
+      status: 101,
+      webSocket: paraONavegador,
+      headers: {'Sec-WebSocket-Protocol': 'mqtt'}
+    });
+  }
+
+  const escritor = tcp.writable.getWriter();
+  // Uma fila só: o MQTT depende da ordem dos bytes.
+  let fila = Promise.resolve();
   daPonte.addEventListener('message', evento => {
-    try { doBroker.send(evento.data); } catch { /* já fechado */ }
-  });
-  doBroker.addEventListener('message', evento => {
-    try { daPonte.send(evento.data); } catch { /* já fechado */ }
+    const dados = evento.data;
+    const bytes =
+      typeof dados === 'string'
+        ? new TextEncoder().encode(dados)
+        : new Uint8Array(dados);
+    fila = fila.then(() => escritor.write(bytes)).catch(() => {});
   });
 
-  // Fechar de um lado fecha o outro, para não deixar conexão pendurada.
-  const encerrar = (origem, destino) => {
-    for (const evento of ['close', 'error']) {
-      origem.addEventListener(evento, e => {
-        try { destino.close(e.code && e.code >= 1000 ? e.code : 1011, e.reason || ''); }
-        catch { /* já fechado */ }
-      });
-    }
+  const fechar = motivo => {
+    try { daPonte.close(1011, motivo); } catch { /* já fechado */ }
+    try { escritor.releaseLock(); } catch { /* já solto */ }
+    try { tcp.close(); } catch { /* já fechado */ }
   };
-  encerrar(daPonte, doBroker);
-  encerrar(doBroker, daPonte);
+  for (const evento of ['close', 'error']) {
+    daPonte.addEventListener(evento, () => fechar('navegador saiu'));
+  }
+
+  // Do broker para o navegador, enquanto houver bytes.
+  context.waitUntil(
+    (async () => {
+      const leitor = tcp.readable.getReader();
+      try {
+        for (;;) {
+          const {value, done} = await leitor.read();
+          if (done) break;
+          daPonte.send(value);
+        }
+      } catch (erro) {
+        fechar(`broker encerrou: ${erro}`);
+        return;
+      }
+      fechar('broker encerrou a conexão');
+    })()
+  );
 
   return new Response(null, {
     status: 101,
