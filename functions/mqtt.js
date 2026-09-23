@@ -12,6 +12,9 @@
 //
 // O trecho navegador -> Cloudflare é cifrado (wss). O trecho Cloudflare ->
 // broker vai em claro, como já vai o das placas.
+//
+// Abrindo com ?debug=1, a ponte narra em texto o caminho dos bytes — foi
+// assim que apareceu o quadro convertido como zero byte.
 import {connect} from 'cloudflare:sockets';
 
 const BROKER = {hostname: 'test.mosquitto.org', port: 1883};
