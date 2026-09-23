@@ -10,6 +10,7 @@ import '../../models/device_names.dart';
 import '../../models/mqtt_connection_config.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/app_update_service.dart';
+import '../../services/mqtt_path_check.dart';
 import '../../services/mqtt_settings_validators.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
@@ -282,9 +283,10 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                     SizedBox(
                       width: fieldWidth,
                       child: DropdownButtonFormField<String>(
-                        value: controller.deviceIdController.text.isEmpty
-                            ? null
-                            : controller.deviceIdController.text,
+                        value:
+                            controller.deviceIdController.text.isEmpty
+                                ? null
+                                : controller.deviceIdController.text,
                         decoration: const InputDecoration(
                           labelText: 'Motor em Operação',
                           hintText: 'Selecione o ID do dispositivo',
@@ -296,29 +298,38 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                             if (controller.deviceIdController.text.isNotEmpty)
                               controller.deviceIdController.text,
                           };
-                          
-                          final List<String> sortedIds = allIds.toList()..sort();
+
+                          final List<String> sortedIds =
+                              allIds.toList()..sort();
 
                           return sortedIds.map<DropdownMenuItem<String>>((id) {
-                            final isOnline = controller.connectedDeviceIds.contains(id);
-                            final isKnown = controller.knownDeviceIds.contains(id);
-                            
-                          return DropdownMenuItem<String>(
-                            value: id,
-                            child: Row(
-                              children: [
-                                Icon(Icons.circle, 
-                                  size: 10, 
-                                  color: isOnline ? AppTheme.brandMint : Colors.grey),
-                                const SizedBox(width: 8),
-                                Text(
-                                  isKnown
-                                      ? nomeComId(id)
-                                      : '${nomeDaPlaca(id)} (manual)',
-                                ),
-                              ],
-                            ),
-                          );
+                            final isOnline = controller.connectedDeviceIds
+                                .contains(id);
+                            final isKnown = controller.knownDeviceIds.contains(
+                              id,
+                            );
+
+                            return DropdownMenuItem<String>(
+                              value: id,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.circle,
+                                    size: 10,
+                                    color:
+                                        isOnline
+                                            ? AppTheme.brandMint
+                                            : Colors.grey,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    isKnown
+                                        ? nomeComId(id)
+                                        : '${nomeDaPlaca(id)} (manual)',
+                                  ),
+                                ],
+                              ),
+                            );
                           }).toList();
                         }(),
                         onChanged: (val) {
@@ -395,6 +406,15 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                             : (controller.isConnected
                                 ? 'Desconectar'
                                 : 'Conectar'),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _testandoCaminhos ? null : _testarCaminhos,
+                      icon: const Icon(Icons.travel_explore_rounded),
+                      label: Text(
+                        _testandoCaminhos
+                            ? 'Testando…'
+                            : 'Testar caminhos de conexão',
                       ),
                     ),
                     Chip(
@@ -477,7 +497,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
               label: const Text('Atualizar firmware'),
             ),
             OutlinedButton.icon(
-              onPressed: _verificandoAppUpdate ? null : _verificarAtualizacaoDoApp,
+              onPressed:
+                  _verificandoAppUpdate ? null : _verificarAtualizacaoDoApp,
               icon:
                   _verificandoAppUpdate
                       ? const SizedBox.square(
@@ -486,9 +507,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       )
                       : const Icon(Icons.phone_android_rounded),
               label: Text(
-                _verificandoAppUpdate
-                    ? 'Verificando...'
-                    : 'Atualizar este app',
+                _verificandoAppUpdate ? 'Verificando...' : 'Atualizar este app',
               ),
             ),
           ],
@@ -1351,6 +1370,102 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     );
   }
 
+  bool _testandoCaminhos = false;
+
+  /// Tenta os caminhos conhecidos até o broker e mostra qual passa.
+  ///
+  /// Em rede que bloqueia porta, adivinhar é o que custa tempo: aqui o app
+  /// testa WebSocket 8080, WebSocket com TLS 8081, MQTT 1883 e MQTT com TLS
+  /// 8883, e oferece aplicar o primeiro que conectar.
+  Future<void> _testarCaminhos() async {
+    setState(() => _testandoCaminhos = true);
+    List<MqttPathResult> resultados = const <MqttPathResult>[];
+    try {
+      resultados = await verificarCaminhos(
+        broker: controller.brokerController.text,
+      );
+    } finally {
+      if (mounted) setState(() => _testandoCaminhos = false);
+    }
+    if (!mounted) return;
+
+    final MqttPathResult? bom = resultados
+        .where((MqttPathResult r) => r.ok)
+        .cast<MqttPathResult?>()
+        .firstWhere((MqttPathResult? r) => true, orElse: () => null);
+
+    final bool? aplicar = await showDialog<bool>(
+      context: context,
+      builder:
+          (BuildContext dialogo) => AlertDialog(
+            title: const Text('Caminhos até o broker'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                for (final MqttPathResult r in resultados)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Icon(
+                          r.ok
+                              ? Icons.check_circle_rounded
+                              : Icons.cancel_rounded,
+                          size: 18,
+                          color: r.ok ? AppTheme.online : AppTheme.danger,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(r.label),
+                              Text(
+                                r.detail,
+                                style: Theme.of(dialogo).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (resultados.isEmpty)
+                  const Text('Informe o broker primeiro.'),
+                if (resultados.isNotEmpty && bom == null)
+                  const Text(
+                    'Nenhum caminho passou. Tente pelos dados do celular: se '
+                    'funcionar, é a rede daqui que bloqueia.',
+                  ),
+              ],
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogo).pop(false),
+                child: const Text('Fechar'),
+              ),
+              if (bom != null)
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogo).pop(true),
+                  child: const Text('Usar este caminho'),
+                ),
+            ],
+          ),
+    );
+
+    if ((aplicar ?? false) && bom != null && mounted) {
+      controller.brokerController.text = bom.host;
+      controller.portController.text = '${bom.port}';
+      controller.setTls(bom.useTls);
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Configurado: ${bom.host}:${bom.port}')),
+      );
+    }
+  }
+
   Future<void> _handleConnectionToggle() async {
     if (controller.isConnected) {
       await controller.disconnect();
@@ -1426,7 +1541,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
           controller.topicPrefixController.text.trim(),
     );
     final deviceIdController = TextEditingController(
-      text: initial?.config.deviceId ??
+      text:
+          initial?.config.deviceId ??
           (controller.deviceIdController.text.isEmpty
               ? 'default'
               : controller.deviceIdController.text),
