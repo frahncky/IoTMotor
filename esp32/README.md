@@ -5,6 +5,20 @@
 
 Os comandos MQTT no broker público não têm autenticação. Não conecte motores ou contatores sem autenticação, intertravamento e proteções independentes.
 
+## Como a placa entra na rede
+
+Na energização, `wifistore::conectarEmOrdem` faz uma varredura e tenta as redes
+gravadas **na ordem da lista**. A varredura só escolhe a ordem: uma rede que não
+apareceu nela continua sendo tentada, com espera menor. Se nenhuma responder, a
+placa tenta as credenciais que o próprio ESP32 guardou — as que o portal gravou
+— e, funcionando, põe essa rede no topo da lista. Só depois de tudo isso a rede
+própria da placa (portal) é aberta.
+
+Antes de 23/09/2026 a varredura **descartava** as redes que não aparecessem
+nela. Como a varredura logo após o boot costuma vir incompleta, as duas placas
+abriam o portal com a rede certa já gravada, e era preciso reconfigurar a cada
+energização.
+
 ## Esquema de partições
 
 Os dois firmwares são compilados com **`min_spiffs`** (1,9 MB para a aplicação,

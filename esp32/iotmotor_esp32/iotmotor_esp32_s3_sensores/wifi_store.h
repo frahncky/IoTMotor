@@ -254,28 +254,53 @@ inline bool decifrarSenha(const char* ssid, const char* epkB64, const char* ivB6
 }
 
 // Busca as redes visiveis e tenta as cadastradas na ordem da lista.
+inline bool tentarRede(const Rede& rede, uint32_t esperaMs) {
+  Serial.printf("[WiFi] tentando %s\n", rede.ssid);
+  WiFi.disconnect(false, false);
+  if (*rede.senha) WiFi.begin(rede.ssid, rede.senha);
+  else WiFi.begin(rede.ssid);
+  const unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaMs) delay(100);
+  return WiFi.status() == WL_CONNECTED;
+}
+
+// Conecta na ordem da lista.
+//
+// A varredura serve so para escolher a ordem, nunca para descartar uma rede: no
+// boot ela costuma vir incompleta, e uma rede cadastrada que nao apareceu na
+// lista era pulada. Era isso que fazia a placa abrir a rede propria com a rede
+// certa ja gravada. Em ultimo caso tenta as credenciais que o proprio ESP32
+// guardou (foi o portal que gravou) e, se funcionarem, coloca a rede na lista.
 inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
   if (!total) return false;
   WiFi.mode(WIFI_STA);
+  delay(100);  // Radio recem ligado: a varredura sai mais completa.
   const int encontradas = WiFi.scanNetworks(false, true);
-  for (uint8_t i = 0; i < total; ++i) {
-    bool visivel = encontradas <= 0;  // Se a busca falhar, tenta mesmo assim.
-    for (int j = 0; j < encontradas && !visivel; ++j)
-      visivel = WiFi.SSID(j) == redes[i].ssid;
-    if (!visivel) continue;
-    Serial.printf("[WiFi] tentando %s (prioridade %u de %u)\n", redes[i].ssid, i + 1, total);
-    WiFi.disconnect(false, false);
-    if (*redes[i].senha) WiFi.begin(redes[i].ssid, redes[i].senha);
-    else WiFi.begin(redes[i].ssid);
-    const unsigned long inicio = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaPorRedeMs) delay(100);
-    if (WiFi.status() == WL_CONNECTED) {
-      WiFi.scanDelete();
-      return true;
-    }
-  }
+  bool vista[MAX_REDES] = {false};
+  for (uint8_t i = 0; i < total; ++i)
+    for (int j = 0; j < encontradas && !vista[i]; ++j)
+      vista[i] = WiFi.SSID(j) == redes[i].ssid;
   WiFi.scanDelete();
-  return false;
+
+  for (uint8_t i = 0; i < total; ++i)  // Primeiro as que a varredura viu.
+    if (vista[i] && tentarRede(redes[i], esperaPorRedeMs)) return true;
+
+  const uint32_t curta = esperaPorRedeMs > 5000 ? 5000 : esperaPorRedeMs;
+  for (uint8_t i = 0; i < total; ++i)  // Depois as demais, com espera menor.
+    if (!vista[i] && tentarRede(redes[i], curta)) return true;
+
+  Serial.println("[WiFi] tentando as credenciais guardadas pelo proprio ESP32");
+  WiFi.disconnect(false, false);
+  WiFi.begin();
+  const unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < curta) delay(100);
+  if (WiFi.status() != WL_CONNECTED) return false;
+  const String ssid = WiFi.SSID(), senha = WiFi.psk();
+  const int ja = indiceDe(ssid.c_str());
+  // Sem sobrescrever uma senha boa por uma vazia que o portal nao devolveu.
+  if (ja < 0 || (senha.length() && strcmp(redes[ja].senha, senha.c_str())))
+    adicionar(ssid.c_str(), senha.c_str(), 0);
+  return true;
 }
 
 // ---- Rede propria da placa (ponto de acesso usado pelo portal) ----
