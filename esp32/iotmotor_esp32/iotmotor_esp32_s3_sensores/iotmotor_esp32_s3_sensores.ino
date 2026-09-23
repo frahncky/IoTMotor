@@ -27,7 +27,6 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "alarm_list.h"
 #include "comando_seguro.h"
 #include "relogio.h"
-#include "bateria.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -99,7 +98,7 @@ DallasTemperature* ds18b20=nullptr;
 uint8_t ds18b20Pin=0;
 // Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44, strapping
 // e dos pinos do LED/buzzer 16/17/18/42).
-static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
+static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
@@ -328,7 +327,7 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
   // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
   const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
-                                            temperatureC,bateria::tensao,relogio::agoraUtc());
+                                            temperatureC,relogio::agoraUtc());
   estadoCritico=alarmeHabilitado&&algumDisparou;
   if(testeAtivo&&(uint32_t)(now-inicioDoTeste)<1500UL)return;
   testeAtivo=false;  // Subtracao unsigned suporta a volta de millis() a zero.
@@ -470,7 +469,6 @@ void tarefaSensores(void*) {
       rmsAtual=amostrasAtuais>=10?sqrtf(vibrationSquares/amostrasAtuais):0.0f;
       vibrationSquares=0.0f;vibrationPeak=0.0f;sampleCount=0;
     }
-    bateria::medir(now);
     atualizarSinalizacao(now,fmaxf(picoAtual,vibrationPeak));
     xSemaphoreGive(sensoresMutex);
     vTaskDelay(pdMS_TO_TICKS(2));
@@ -485,7 +483,7 @@ void publishCapabilities() {
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
   JsonArray fields=doc.createNestedArray("fields");
-  fields.add("vibration");fields.add("vibration_peak");fields.add("temperature");fields.add("battery");
+  fields.add("vibration");fields.add("vibration_peak");fields.add("temperature");
   char payload[384];size_t n=serializeJson(doc,payload,sizeof(payload));
   if(n)mqtt.publish(capabilitiesTopic,(const uint8_t*)payload,(unsigned int)n,true);
 }
@@ -513,8 +511,6 @@ void publishTelemetry() {
     doc["vibration_peak"]=picoAtual;
   }
   if(tempReady && isfinite(temperatureC))doc["temperature"]=temperatureC;
-  // So aparece com o divisor ligado: sem ele, nenhuma tensao e publicada.
-  if(bateria::valida())doc["battery"]=bateria::tensao;
   JsonArray disparados=doc.createNestedArray("alarms_firing");
   for(uint8_t i=0;i<alarmes::total;i++)
     if(alarmes::lista[i].disparado)disparados.add(alarmes::lista[i].id);
@@ -693,7 +689,6 @@ void setup() {
   pinMode(LED_AZUL_PIN,OUTPUT);pinMode(LED_VERDE_PIN,OUTPUT);pinMode(LED_VERM_PIN,OUTPUT);
   pinMode(BUZZER_PIN,OUTPUT);soar(false);  // Boot em silencio, seja qual for o tipo.
   comandoseguro::iniciar(DEVICE_ID);
-  bateria::iniciar();
   carregarConfigDoAlarme();
   alarmes::carregar(VIBRACAO_LIMITE_PADRAO,TEMPERATURA_LIMITE_PADRAO);
   aplicarLed(true,false,false);  // Azul ate haver sensor valido.

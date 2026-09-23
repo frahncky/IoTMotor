@@ -71,9 +71,9 @@ test('valores ausentes nao se tornam zero e modo de demonstracao fica marcado',(
  assert.equal(x.apparent,null);
 });
 
-test('onze metricas e IDs distintos com WSS obrigatorio',()=>{
- assert.equal(METRICS.length,11);
- assert.equal(METRICS.filter(m=>m.source==='sensor').length,3);
+test('dez metricas e IDs distintos com WSS obrigatorio',()=>{
+ assert.equal(METRICS.length,10);
+ assert.equal(METRICS.filter(m=>m.source==='sensor').length,2);
  assert.equal(validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}).broker,'wss://test.mosquitto.org:8081/');
  assert.throws(()=>validateConfig({broker:'ws://test.mosquitto.org:8080',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}),/wss/);
  assert.throws(()=>validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-01'}),/distintos/);

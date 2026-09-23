@@ -153,7 +153,7 @@ test('o campo do limite pode ser apagado e digitado sem a lista atropelar', () =
 test('adiciona alarme de corrente do quadro de comando e recusa limite fora da faixa', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c); h.alarms(c);
-  assert.equal(h.node('alarmeGrandeza').options.length, 9);
+  assert.equal(h.node('alarmeGrandeza').options.length, 8);
   h.node('alarmeGrandeza').value = 'current';
   h.node('alarmeLimite').value = '500';
   h.node('alarmeAddForm').fire('submit');
