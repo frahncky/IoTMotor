@@ -25,6 +25,10 @@ export async function onRequest(context) {
     );
   }
 
+  // Com ?debug=1 a ponte narra o que faz, em frames de texto. Um cliente MQTT
+  // de verdade nunca usa isso: serve para descobrir onde os bytes param.
+  const contando = new URL(context.request.url).searchParams.get('debug') === '1';
+
   const par = new WebSocketPair();
   const paraONavegador = par[0];
   const daPonte = par[1];
@@ -56,6 +60,12 @@ export async function onRequest(context) {
     return responder();
   }
 
+  const narrar = texto => {
+    if (!contando) return;
+    try { daPonte.send(`[ponte] ${texto}`); } catch { /* já fechado */ }
+  };
+  narrar('socket TCP aberto com o broker');
+
   const escritor = tcp.writable.getWriter();
   // Uma fila só: o MQTT depende da ordem dos bytes.
   let fila = Promise.resolve();
@@ -65,8 +75,10 @@ export async function onRequest(context) {
       typeof dados === 'string'
         ? new TextEncoder().encode(dados)
         : new Uint8Array(dados);
+    narrar(`recebi ${bytes.length} bytes do navegador`);
     fila = fila
       .then(() => escritor.write(bytes))
+      .then(() => narrar('repassei ao broker'))
       .catch(erro => encerrar(`falha ao enviar ao broker: ${erro}`));
   });
   for (const evento of ['close', 'error']) {
@@ -84,6 +96,7 @@ export async function onRequest(context) {
         for (;;) {
           const {value, done} = await leitor.read();
           if (done) break;
+          narrar(`${value.length} bytes do broker`);
           daPonte.send(value);
         }
         encerrar('broker encerrou a conexão');
@@ -93,5 +106,6 @@ export async function onRequest(context) {
     })()
   );
 
+  narrar('ponte pronta');
   return responder();
 }
