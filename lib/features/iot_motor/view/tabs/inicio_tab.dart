@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
@@ -690,7 +692,18 @@ class _InicioTabState extends State<InicioTab> {
                       TextFormField(
                         initialValue: label,
                         autofocus: initial == null,
+                        // A placa guarda 24 bytes, e cada acento ocupa dois.
                         maxLength: 24,
+                        maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                        validator: (String? valor) {
+                          final String nome = (valor ?? '').trim();
+                          if (nome.isEmpty) return 'Informe o nome da partida.';
+                          final int bytes = utf8.encode(nome).length;
+                          return bytes > 24
+                              ? 'Nome comprido para a placa ($bytes de 24; '
+                                  'cada acento conta dois).'
+                              : null;
+                        },
                         onChanged: (String value) => atualizar(() => label = value),
                         decoration: const InputDecoration(
                           labelText: 'Nome da partida',

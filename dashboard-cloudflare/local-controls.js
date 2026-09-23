@@ -96,6 +96,12 @@
   function lerEditor() {
     const nome = $('profileNome').value.trim();
     if (!nome) return {erro: 'Informe o nome da partida.'};
+    // A placa guarda o nome em 24 bytes, e cada acento ocupa dois: sem esta
+    // conta, um nome acentuado perto do limite era recusado sem explicação.
+    const bytes = new TextEncoder().encode(nome).length;
+    if (bytes > 24) {
+      return {erro: `Nome comprido para a placa (${bytes} de 24; cada acento conta dois).`};
+    }
     const cnt = CONTATORES.map(n => ({
       use: $(`usa${n}`).checked,
       on: Math.round(Number($(`liga${n}`).value) * 1000),

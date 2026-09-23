@@ -168,6 +168,48 @@ uint8_t detectarLcd() {
   return achado;
 }
 
+// O LCD nao entende UTF-8: um acento vale dois bytes e sai como dois simbolos
+// estranhos, que ainda empurram o resto da linha para fora das 20 colunas. Os
+// nomes das partidas continuam com acento no painel, no app e na telemetria; a
+// troca acontece so aqui, na ida para o display.
+void semAcento(const char* origem, char* destino, size_t tamanho) {
+  if (!tamanho) return;
+  size_t escritos = 0;
+  for (const unsigned char* p = (const unsigned char*)origem;
+       *p && escritos + 1 < tamanho; ++p) {
+    if (*p < 0x80) {  // ASCII puro passa direto.
+      destino[escritos++] = (char)*p;
+      continue;
+    }
+    if (*p != 0xC3 || !p[1]) {  // Fora do latim acentuado: um lugar, sem lixo.
+      destino[escritos++] = '?';
+      if (*p >= 0xC0 && p[1]) ++p;
+      continue;
+    }
+    const unsigned char segundo = *++p;
+    char letra;
+    if (segundo >= 0x80 && segundo <= 0x85) letra = 'A';
+    else if (segundo == 0x87) letra = 'C';
+    else if (segundo >= 0x88 && segundo <= 0x8B) letra = 'E';
+    else if (segundo >= 0x8C && segundo <= 0x8F) letra = 'I';
+    else if (segundo == 0x91) letra = 'N';
+    else if (segundo >= 0x92 && segundo <= 0x96) letra = 'O';
+    else if (segundo >= 0x99 && segundo <= 0x9C) letra = 'U';
+    else if (segundo == 0x9D) letra = 'Y';
+    else if (segundo >= 0xA0 && segundo <= 0xA5) letra = 'a';
+    else if (segundo == 0xA7) letra = 'c';
+    else if (segundo >= 0xA8 && segundo <= 0xAB) letra = 'e';
+    else if (segundo >= 0xAC && segundo <= 0xAF) letra = 'i';
+    else if (segundo == 0xB1) letra = 'n';
+    else if (segundo >= 0xB2 && segundo <= 0xB6) letra = 'o';
+    else if (segundo >= 0xB9 && segundo <= 0xBC) letra = 'u';
+    else if (segundo == 0xBD || segundo == 0xBF) letra = 'y';
+    else letra = '?';
+    destino[escritos++] = letra;
+  }
+  destino[escritos] = '\0';
+}
+
 // LCD 20x4. Cada linha cabe nas 20 colunas: acima disso o display corta o
 // texto e as informacoes aparecem coladas.
 //   L0  Estrela-triangulo      (ou a ultima partida/estado da conexao)
@@ -179,16 +221,19 @@ void atualizarLcd() {
   const bool comWifi = WiFi.status() == WL_CONNECTED;
   const bool comMqtt = mqttClient.connected();
 
+  char nome[sizeof(perfilEmExecucao.nome)];
+  semAcento(perfilEmExecucao.nome, nome, sizeof(nome));
+
   if (partidaAtiva) {  // Em ensaio, o nome da partida ocupa a linha inteira.
-    snprintf(buffer, sizeof(buffer), "%-20.20s", perfilEmExecucao.nome);
+    snprintf(buffer, sizeof(buffer), "%-20.20s", nome);
   } else if (!comWifi) {
     snprintf(buffer, sizeof(buffer), "WiFi: procurando");
   } else if (!comMqtt) {
     snprintf(buffer, sizeof(buffer), "MQTT reconectando");
   } else if (!acionamentoLigado) {
     snprintf(buffer, sizeof(buffer), "Somente medicao");
-  } else if (perfilEmExecucao.nome[0]) {  // Parado: diz qual foi o ultimo ensaio.
-    snprintf(buffer, sizeof(buffer), "Ultima: %-12.12s", perfilEmExecucao.nome);
+  } else if (nome[0]) {  // Parado: diz qual foi o ultimo ensaio.
+    snprintf(buffer, sizeof(buffer), "Ultima: %-12.12s", nome);
   } else {
     snprintf(buffer, sizeof(buffer), "Pronto para partida");
   }

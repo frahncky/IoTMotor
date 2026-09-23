@@ -4,6 +4,17 @@ Sketch `iotmotor_esp32_comandos.ino` (versão `v10-mqtt-websocket`) para **ESP32
 
 A alteração no GitHub **não regrava** a placa. Instale o core ESP32 e as bibliotecas `PZEM004Tv30`, `LiquidCrystal I2C`, `PubSubClient` e `ArduinoJson` (6.x ou 7.x); compile e grave no ESP32. Monitor Serial a **115200 baud**.
 
+## Acentos no LCD
+
+O display não entende UTF-8: um acento vale dois bytes e sairia como dois
+símbolos estranhos, empurrando o resto da linha para fora das 20 colunas. Por
+isso o nome da partida é transliterado **só na ida para o LCD** —
+"Estrela-triângulo" aparece como `Estrela-triangulo`. No painel, no app e na
+telemetria o nome continua com acento.
+
+O nome cabe em **24 bytes** na placa, e cada acento ocupa dois. O painel e o
+app avisam antes de enviar, dizendo quantos bytes o nome está usando.
+
 ## Duração máxima do ensaio
 
 Quanto tempo as saídas podem ficar ligadas numa mesma partida. O padrão de
