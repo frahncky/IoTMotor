@@ -38,7 +38,7 @@ HTTPS), e a Cloudflare — que está fora do firewall da escola — repassa os
 quadros MQTT para `test.mosquitto.org:8081`. Nada é interpretado no caminho, e
 o broker continua sendo o mesmo das placas.
 
-O código é `functions/mqtt.js`, uma Pages Function. Quem já tinha o broker
+O código é `functions/mqtt.js`, na raiz do repositório (é onde o Cloudflare Pages procura), uma Pages Function. Quem já tinha o broker
 direto salvo no navegador é migrado para a ponte sozinho, uma vez. Para voltar
 ao broker direto, basta digitar `wss://test.mosquitto.org:8081` no campo.
 
