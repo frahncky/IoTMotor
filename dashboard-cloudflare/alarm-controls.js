@@ -26,7 +26,7 @@
     return g ? `${g.nome}${g.unidade ? ` (${g.unidade})` : ''}` : campo;
   };
 
-  const CAMPOS = ['alarmeOn', 'alarmeSons'];
+  const CAMPOS = ['alarmeOn', 'alarmeSons', 'alarmeBuzzer'];
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-02';
   let estado = null, recebidoEm = 0, pendente = null, sequencia = 0, editando = false;
   let lista = null, maxAlarmes = 8;
@@ -227,6 +227,7 @@
     if (estado && !editando && !pendente) {
       $('alarmeOn').checked = estado.enabled;
       $('alarmeSons').checked = estado.sounds;
+      if (estado.buzzer) $('alarmeBuzzer').value = estado.buzzer;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
     for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
@@ -276,6 +277,13 @@
     evento.preventDefault();
     if (publicar('alarm_set', {enabled: $('alarmeOn').checked, sounds: $('alarmeSons').checked}))
       aviso('Gravando a configuração na placa…');
+  });
+  // Buzzer ativo acionado em nível baixo apita o tempo todo se a placa o tratar
+  // como passivo: por isso o tipo é escolhido aqui e gravado na placa.
+  $('alarmeBuzzer').addEventListener('change', () => {
+    const [tipo, nivel] = String($('alarmeBuzzer').value).split('-');
+    if (publicar('buzzer_set', {type: tipo, level: nivel}))
+      aviso('Gravando o tipo do buzzer na placa…');
   });
   $('alarmeAddForm').addEventListener('submit', evento => {
     evento.preventDefault();
@@ -382,12 +390,16 @@
         estado = {
           enabled: dados.alarm_enabled, active: dados.alarm_active,
           sounds: dados.event_sounds === true,
+          // passivo | ativo-alto | ativo-baixo, como a placa informa.
+          buzzer: {'passivo': 'passive-high', 'ativo-alto': 'active-high',
+            'ativo-baixo': 'active-low'}[dados.buzzer] || '',
           sensors: dados.mpu_ok || dados.temperature_ok,
           firing: Array.isArray(dados.alarms_firing) ? dados.alarms_firing : []
         };
         recebidoEm = Date.now();
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
                  dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
+        if (dados.accepted && pendente.acao === 'buzzer_set') editando = false;
         if (dados.accepted && pendente.acao === 'alarm_set') {
           estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds};
           editando = false;

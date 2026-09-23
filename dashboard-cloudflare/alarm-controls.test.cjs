@@ -296,6 +296,19 @@ test('dashboard conecta os auxiliares depois de substituir a conexao e desconect
   assert.match(html, /<script src="\.\/alarm-controls\.js" defer><\/script>/);
 });
 
+test('o tipo do buzzer vai para a placa e volta da telemetria', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c, {buzzer: 'ativo-baixo'});
+  assert.equal(h.node('alarmeBuzzer').value, 'active-low');
+  h.node('alarmeBuzzer').value = 'passive-high';
+  h.node('alarmeBuzzer').fire('change');
+  assert.deepEqual(c.published[0].data, {v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq,
+    action: 'buzzer_set', type: 'passive', level: 'high'});
+  h.send(c, 'command_ack', {...c.published[0].data, accepted: true, reason: 'passivo'});
+  h.telemetry(c, {buzzer: 'passivo'});
+  assert.equal(h.node('alarmeBuzzer').value, 'passive-high');
+});
+
 test('o botao Bipar pede um bipe curto ao S3, sem mexer nos limites', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c);
