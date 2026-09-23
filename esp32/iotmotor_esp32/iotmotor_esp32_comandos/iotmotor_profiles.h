@@ -12,6 +12,11 @@
 // desconectado de motores e contatores no broker publico.
 // Desligamento automatico de seguranca: 5 minutos por ensaio.
 constexpr unsigned long LIMITE_BANCADA_MS = 300000UL;
+// Limite em uso, gravado na placa. SEM_LIMITE_ENSAIO = o ensaio nao cai por
+// tempo: ai o que o encerra e o fim do proprio perfil, o Desligar, a queda de
+// rede (quando configurada) e, sempre, a parada eletrica.
+constexpr uint32_t SEM_LIMITE_ENSAIO = 0xFFFFFFFFUL;
+uint32_t limiteDoEnsaioMs = LIMITE_BANCADA_MS;
 constexpr unsigned long TEMPO_MORTO_MS = 700UL;
 // Espera antes de acionar qualquer saida, para o comando ser confirmado antes.
 constexpr unsigned long ATRASO_INICIAL_MS = 500UL;
@@ -115,7 +120,8 @@ void manterPartidaBancada(unsigned long agora) {
   for (uint8_t i = 0; i < NUM_RELES; ++i) ligada = ligada || estadoReles[i];
   if (!ligada) return;
   // Limite de sessao; a perda de rede e tratada no loop com tolerancia.
-  if (decorrido(agora, momentoPartida) > (int32_t)LIMITE_BANCADA_MS) {
+  if (limiteDoEnsaioMs != SEM_LIMITE_ENSAIO &&
+      decorrido(agora, momentoPartida) > (int32_t)limiteDoEnsaioMs) {
     pararBancada();
     Serial.println("[BANCADA] saidas desligadas pelo tempo limite do ensaio");
     return;
@@ -170,6 +176,9 @@ void descreverPerfis(JsonDocument& doc) {
   }
   doc["max"] = MAX_PERFIS;
   doc["limit_ms"] = LIMITE_BANCADA_MS;
+  doc["run_limit_s"] = limiteDoEnsaioMs == SEM_LIMITE_ENSAIO
+                           ? -1
+                           : (int)(limiteDoEnsaioMs / 1000UL);
   if (partidaAtiva) doc["running"] = perfilEmExecucao.id;
 }
 

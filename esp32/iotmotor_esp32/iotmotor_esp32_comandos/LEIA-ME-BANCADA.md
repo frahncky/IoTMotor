@@ -4,6 +4,22 @@ Sketch `iotmotor_esp32_comandos.ino` (versão `v10-mqtt-websocket`) para **ESP32
 
 A alteração no GitHub **não regrava** a placa. Instale o core ESP32 e as bibliotecas `PZEM004Tv30`, `LiquidCrystal I2C`, `PubSubClient` e `ArduinoJson` (6.x ou 7.x); compile e grave no ESP32. Monitor Serial a **115200 baud**.
 
+## Duração máxima do ensaio
+
+Quanto tempo as saídas podem ficar ligadas numa mesma partida. O padrão de
+fábrica são **5 minutos** (`LIMITE_BANCADA_MS`); o valor em uso fica gravado na
+placa.
+
+- No painel: **"Duração máxima do ensaio"**, no quadro de comando.
+- Por MQTT: `{"v":1,"device_id":"esp32-01","seq":"1","action":"run_limit","seconds":900}`.
+- `seconds`: de **10 a 7200**; **-1** tira o limite de tempo.
+- Aparece na telemetria como `run_limit_s` (-1 = sem limite).
+
+Com **-1**, nenhum tempo do firmware desliga a bancada: o que a encerra é o fim
+da própria partida, o botão **Desligar todos**, a queda de rede (quando
+configurada para derrubar) e, sempre, a parada elétrica. Os tempos de cada
+contator dentro de uma partida continuam limitados a 5 minutos.
+
 ## Queda de rede durante o ensaio
 
 Quanto tempo as saídas continuam ligadas depois que o Wi-Fi ou o MQTT cai. O

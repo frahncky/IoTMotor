@@ -131,7 +131,9 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 extern bool acionamentoLigado;
 bool salvarAcionamento(bool ligado);
 extern uint32_t toleranciaSemLinkMs;
+bool salvarLimiteDoEnsaio(long segundos);
 constexpr long MAX_TOLERANCIA_S = 3600;  // Teto do que da para configurar.
+constexpr long MAX_ENSAIO_S = 7200;      // Teto do ensaio configuravel.
 bool salvarToleranciaSemLink(long segundos);
 
 #include "comando_seguro.h"
@@ -224,6 +226,25 @@ void atualizarLcd() {
 // ensaio, que continua limitado por LIMITE_BANCADA_MS.
 constexpr uint32_t SEM_LIMITE_SEM_LINK = 0xFFFFFFFFUL;
 uint32_t toleranciaSemLinkMs = TOLERANCIA_SEM_LINK_MS;
+
+void carregarLimiteDoEnsaio() {
+  Preferences memoria;
+  if (!memoria.begin("iot-comando", true)) return;
+  limiteDoEnsaioMs = memoria.getUInt("ensaio", LIMITE_BANCADA_MS);
+  memoria.end();
+}
+
+// segundos < 0 = sem limite de tempo; minimo de 10 s.
+bool salvarLimiteDoEnsaio(long segundos) {
+  if (segundos > MAX_ENSAIO_S || (segundos >= 0 && segundos < 10)) return false;
+  const uint32_t valor = segundos < 0 ? SEM_LIMITE_ENSAIO : (uint32_t)segundos * 1000UL;
+  Preferences memoria;
+  if (!memoria.begin("iot-comando", false)) return false;
+  memoria.putUInt("ensaio", valor);
+  memoria.end();
+  limiteDoEnsaioMs = valor;
+  return true;
+}
 
 void carregarToleranciaSemLink() {
   Preferences memoria;
@@ -354,6 +375,10 @@ void publicarTelemetriaMqtt() {
   doc["link_grace_s"] = toleranciaSemLinkMs == SEM_LIMITE_SEM_LINK
                             ? -1
                             : (int)(toleranciaSemLinkMs / 1000UL);
+  // Quanto tempo um ensaio pode durar; -1 = sem limite de tempo.
+  doc["run_limit_s"] = limiteDoEnsaioMs == SEM_LIMITE_ENSAIO
+                           ? -1
+                           : (int)(limiteDoEnsaioMs / 1000UL);
   // Hora da medicao, em segundos UTC. Ausente enquanto o NTP nao responde.
   if (const uint32_t carimbo = relogio::agoraUtc()) doc["ts"] = carimbo;
   // Campo de compatibilidade: pronto para comandos; NAO representa jumper fisico.
@@ -468,6 +493,7 @@ void setup() {
   snprintf(topicoAuth, sizeof(topicoAuth), "iotmotor/%s/auth", DEVICE_ID);
   carregarAcionamento();
   carregarToleranciaSemLink();
+  carregarLimiteDoEnsaio();
   comandoseguro::iniciar(DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);

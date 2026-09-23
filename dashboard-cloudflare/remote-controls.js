@@ -14,8 +14,15 @@
   let aciona = true;
   // Segundos que o ensaio segue sem rede (-1 = sem limite), vindos da placa.
   let queda = null, quedaEditando = false;
+  // Duração máxima de um ensaio (-1 = sem limite), também vinda da placa.
+  let ensaio = null, ensaioEditando = false;
   const feedback = message => { $('commandFeedback').textContent = message; };
   function refresh() {
+    const dur = $('ensaioSel');
+    if (dur) {
+      dur.disabled = !connected || !recent();
+      if (ensaio !== null && !ensaioEditando) dur.value = String(ensaio);
+    }
     const sel = $('quedaSel');
     if (sel) {
       sel.disabled = !connected || !recent();
@@ -84,6 +91,7 @@
             data.relays.some(v => typeof v !== 'boolean')) return;
         if (typeof data.actuation === 'boolean') aciona = data.actuation;
         if (Number.isFinite(data.link_grace_s)) queda = data.link_grace_s;
+        if (Number.isFinite(data.run_limit_s)) ensaio = data.run_limit_s;
         boot = data.boot;
         updatedAt = Date.now();
         relays = data.relays;
@@ -194,6 +202,18 @@
   }
   $('updateBtn')?.addEventListener('click', () => manutencao('update',
     'A placa vai baixar o firmware publicado no GitHub e reiniciar.\n\nContinuar?'));
+  // Duração máxima de um ensaio. Fica gravada na placa.
+  $('ensaioSel')?.addEventListener('change', () => {
+    const segundos = Number($('ensaioSel').value);
+    ensaioEditando = true;
+    const aviso = segundos < 0
+      ? 'O ensaio deixa de cair por tempo.\n\nNenhum tempo no firmware vai desligar a bancada: só o fim da partida, o botão Desligar ou a parada elétrica. Continuar?'
+      : null;
+    if (aviso !== null && !confirm(aviso)) { ensaioEditando = false; refresh(); return; }
+    manutencao('run_limit', null, {seconds: segundos});
+    setTimeout(() => { ensaioEditando = false; refresh(); }, 6000);
+  });
+
   // Quanto tempo o ensaio segue sem rede. Fica gravado na placa.
   $('quedaSel')?.addEventListener('change', () => {
     const segundos = Number($('quedaSel').value);

@@ -198,6 +198,22 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
 
+  // Quanto tempo um ensaio pode durar: -1 sem limite, ou de 10 s a 2 h.
+  if (!strcmp(acao, "run_limit")) {
+    if (!doc["seconds"].is<long>()) {
+      publicarRespostaControle(seq, false, acao, "campo seconds ausente");
+      return;
+    }
+    const long segundos = doc["seconds"].as<long>();
+    const bool ok = salvarLimiteDoEnsaio(segundos);
+    char motivo[80];
+    if (!ok) snprintf(motivo, sizeof(motivo), "use de 10 a %ld s, ou -1 para sem limite", MAX_ENSAIO_S);
+    else if (segundos < 0) snprintf(motivo, sizeof(motivo), "o ensaio nao cai mais por tempo");
+    else snprintf(motivo, sizeof(motivo), "o ensaio cai apos %ld s", segundos);
+    publicarRespostaControle(seq, ok, acao, motivo);
+    return;
+  }
+
   // Quanto tempo o ensaio segue sem rede: -1 sem limite, 0 derruba na hora.
   if (!strcmp(acao, "link_grace")) {
     if (!doc["seconds"].is<long>()) {
