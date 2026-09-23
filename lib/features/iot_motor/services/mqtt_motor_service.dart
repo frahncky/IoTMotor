@@ -68,8 +68,14 @@ class MqttMotorService {
     final bool porWebSocket = MqttSettingsValidators.brokerUsaWebSocket(
       config.host,
     );
-    final MqttServerClient client = MqttServerClient.withPort(
+    // wss:// carrega TLS no próprio endereço, como o secure do TCP.
+    final bool comTls = config.useTls || config.host.startsWith('wss://');
+    final String servidor = await MqttSettingsValidators.enderecoPreferindoIPv4(
       config.host,
+      comTls: comTls,
+    );
+    final MqttServerClient client = MqttServerClient.withPort(
+      servidor,
       config.clientId,
       config.port,
     );

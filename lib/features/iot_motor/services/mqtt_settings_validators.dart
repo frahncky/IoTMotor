@@ -1,3 +1,5 @@
+import 'dart:io';
+
 class MqttSettingsValidators {
   static final RegExp _brokerPattern = RegExp(r'^[a-zA-Z0-9.-]+$');
 
@@ -30,6 +32,33 @@ class MqttSettingsValidators {
       if (limpo.startsWith(esquema)) return limpo.substring(esquema.length);
     }
     return limpo;
+  }
+
+  /// Endereço a usar na conexão, preferindo IPv4 quando não há TLS.
+  ///
+  /// Rede sem rota IPv6 devolve "Network is unreachable (errno 101)" assim que
+  /// o app tenta o endereço AAAA do broker — foi o que apareceu na bancada.
+  /// Sem TLS, conectar direto no IPv4 resolve; com TLS o nome precisa ficar,
+  /// senão o certificado não bate.
+  static Future<String> enderecoPreferindoIPv4(
+    String broker, {
+    required bool comTls,
+  }) async {
+    final String nome = brokerHost(broker);
+    if (comTls || nome.isEmpty || InternetAddress.tryParse(nome) != null) {
+      return broker;
+    }
+    try {
+      final List<InternetAddress> encontrados = await InternetAddress.lookup(
+        nome,
+        type: InternetAddressType.IPv4,
+      ).timeout(const Duration(seconds: 6));
+      if (encontrados.isEmpty) return broker;
+      final String ip = encontrados.first.address;
+      return brokerUsaWebSocket(broker) ? 'ws://$ip' : ip;
+    } catch (_) {
+      return broker;  // Sem resolver, segue com o nome: o erro dirá o porquê.
+    }
   }
 
   static bool brokerUsaWebSocket(String broker) {

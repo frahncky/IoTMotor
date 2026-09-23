@@ -89,8 +89,14 @@ Future<MqttPathResult> verificarCaminho(
 
 /// Devolve vazio quando conectou, ou a causa resumida da falha.
 Future<String> _tentar(MqttPathCandidate candidato, Duration timeout) async {
-  final MqttServerClient cliente = MqttServerClient.withPort(
+  final bool comTls =
+      candidato.useTls || candidato.host.startsWith('wss://');
+  final String servidor = await MqttSettingsValidators.enderecoPreferindoIPv4(
     candidato.host,
+    comTls: comTls,
+  );
+  final MqttServerClient cliente = MqttServerClient.withPort(
+    servidor,
     'iotmotor_teste_${DateTime.now().microsecondsSinceEpoch % 1000000}',
     candidato.port,
   );
@@ -98,7 +104,7 @@ Future<String> _tentar(MqttPathCandidate candidato, Duration timeout) async {
   cliente.keepAlivePeriod = 20;
   cliente.autoReconnect = false;
   cliente.connectTimeoutPeriod = timeout.inMilliseconds;
-  if (MqttSettingsValidators.brokerUsaWebSocket(candidato.host)) {
+  if (MqttSettingsValidators.brokerUsaWebSocket(servidor)) {
     cliente.useWebSocket = true;
     cliente.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
     cliente.secure = false;
@@ -129,6 +135,9 @@ String resumirFalhaDeConexao(Object erro) {
   final String texto = erro.toString();
   if (texto.contains('timed out') || texto.contains('TimeoutException')) {
     return 'sem resposta: a rede está bloqueando esta porta';
+  }
+  if (texto.contains('Network is unreachable') || texto.contains('errno = 101')) {
+    return 'sem rota até o broker: rede sem internet ou só IPv6';
   }
   if (texto.contains('refused')) {
     return 'recusada: o broker não atende nesta porta';
