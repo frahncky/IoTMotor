@@ -22,6 +22,26 @@ O repositório publica **codigo-fonte** no GitHub, nao grava automaticamente o E
 
 Para Cloudflare Pages com Git, use a branch `main`, build command `exit 0` e output `dashboard-cloudflare`. Se usar Worker, publique os arquivos dessa pasta como assets estaticos do Worker. Um commit no GitHub nao atualiza automaticamente um Worker configurado sem deploy. Verifique se `/remote-controls.js` e `/dual-dashboard.js` sao servidos na versao atual. A disponibilidade do broker publico nao e garantida.
 
+## Ponte MQTT na porta 443
+
+O painel precisa de `wss://` (uma página HTTPS não abre `ws://`), e a rede do
+IFMA bloqueia a porta **8081** do broker público — em alguns computadores, em
+alguns dias. Por isso o endereço padrão passou a ser a **ponte** servida pela
+própria Cloudflare:
+
+```
+wss://iotmotor.pages.dev/mqtt
+```
+
+O navegador abre a conexão no mesmo endereço do painel, na porta **443** (a do
+HTTPS), e a Cloudflare — que está fora do firewall da escola — repassa os
+quadros MQTT para `test.mosquitto.org:8081`. Nada é interpretado no caminho, e
+o broker continua sendo o mesmo das placas.
+
+O código é `functions/mqtt.js`, uma Pages Function. Quem já tinha o broker
+direto salvo no navegador é migrado para a ponte sozinho, uma vez. Para voltar
+ao broker direto, basta digitar `wss://test.mosquitto.org:8081` no campo.
+
 ## Quem pode abrir o painel
 
 O endereço é público: quem tiver o link abre a página. O que protege a bancada

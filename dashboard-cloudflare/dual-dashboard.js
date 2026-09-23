@@ -7,7 +7,15 @@ const STORE='iotmotor_dashboard_dual_v1';
 const REGISTROS='iotmotor_registros_v1';
 const MAX_REGISTROS=3000,MAX_IDADE_MS=24*60*60*1000;
 let gravarRegistrosTimer=null;
-const DEFAULT={broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
+// Endereço padrão: a ponte servida pela própria Cloudflare (functions/mqtt.js),
+// na porta 443. Redes que bloqueiam as portas do broker não bloqueiam essa,
+// senão derrubariam a internet inteira. Aberta fora da Cloudflare, cai no
+// broker público direto.
+const PONTE=typeof location!=='undefined'&&location.protocol==='https:'
+ ?`wss://${location.host}/mqtt`:'wss://test.mosquitto.org:8081';
+const DEFAULT={broker:PONTE,prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
+// Quem já usava o broker direto passa para a ponte uma vez, sem perder nada.
+const BROKER_ANTIGO=['wss://test.mosquitto.org:8081','wss://test.mosquitto.org:8081/'];
 const METRICS=[
  {key:'voltage',label:'Tensão',unit:'V',digits:1,group:'eletrica',color:'#65c7e8',source:'command'},
  {key:'current',label:'Corrente',unit:'A',digits:2,group:'eletrica',color:'#ffc46a',source:'command'},
@@ -227,7 +235,13 @@ function exportCsv(){
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function init(){
- try{const saved=JSON.parse(localStorage.getItem(STORE)||'null');if(saved)state.config=validateConfig(saved);}catch{}
+ try{
+  const saved=JSON.parse(localStorage.getItem(STORE)||'null');
+  if(saved){
+   if(BROKER_ANTIGO.includes(String(saved.broker||'')))saved.broker=DEFAULT.broker;
+   state.config=validateConfig(saved);
+  }
+ }catch{}
  // O que ja foi medido continua aqui depois de fechar e abrir o navegador.
  state.records=lerRegistros();
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
