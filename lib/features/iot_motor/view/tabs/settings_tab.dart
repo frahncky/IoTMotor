@@ -11,6 +11,7 @@ import '../../models/mqtt_connection_config.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/app_update_service.dart';
 import '../../services/mqtt_path_check.dart';
+import '../widgets/connection_path_dialog.dart';
 import '../../services/mqtt_settings_validators.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
@@ -409,13 +410,9 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       ),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _testandoCaminhos ? null : _testarCaminhos,
+                      onPressed: _testarCaminhos,
                       icon: const Icon(Icons.travel_explore_rounded),
-                      label: Text(
-                        _testandoCaminhos
-                            ? 'Testando…'
-                            : 'Testar caminhos de conexão',
-                      ),
+                      label: const Text('Testar caminhos de conexão'),
                     ),
                     Chip(
                       avatar: Icon(
@@ -1370,100 +1367,18 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     );
   }
 
-  bool _testandoCaminhos = false;
-
-  /// Tenta os caminhos conhecidos até o broker e mostra qual passa.
-  ///
-  /// Em rede que bloqueia porta, adivinhar é o que custa tempo: aqui o app
-  /// testa WebSocket 8080, WebSocket com TLS 8081, MQTT 1883 e MQTT com TLS
-  /// 8883, e oferece aplicar o primeiro que conectar.
+  /// Abre o teste dos caminhos e aplica o que a pessoa escolher.
   Future<void> _testarCaminhos() async {
-    setState(() => _testandoCaminhos = true);
-    List<MqttPathResult> resultados = const <MqttPathResult>[];
-    try {
-      resultados = await verificarCaminhos(
-        broker: controller.brokerController.text,
-      );
-    } finally {
-      if (mounted) setState(() => _testandoCaminhos = false);
-    }
-    if (!mounted) return;
-
-    final MqttPathResult? bom = resultados
-        .where((MqttPathResult r) => r.ok)
-        .cast<MqttPathResult?>()
-        .firstWhere((MqttPathResult? r) => true, orElse: () => null);
-
-    final bool? aplicar = await showDialog<bool>(
-      context: context,
-      builder:
-          (BuildContext dialogo) => AlertDialog(
-            title: const Text('Caminhos até o broker'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                for (final MqttPathResult r in resultados)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Icon(
-                          r.ok
-                              ? Icons.check_circle_rounded
-                              : Icons.cancel_rounded,
-                          size: 18,
-                          color: r.ok ? AppTheme.online : AppTheme.danger,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(r.label),
-                              Text(
-                                r.detail,
-                                style: Theme.of(dialogo).textTheme.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (resultados.isEmpty)
-                  const Text('Informe o broker primeiro.'),
-                if (resultados.isNotEmpty && bom == null)
-                  const Text(
-                    'Nenhum caminho passou. Tente pelos dados do celular: se '
-                    'funcionar, é a rede daqui que bloqueia.',
-                  ),
-              ],
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(dialogo).pop(false),
-                child: const Text('Fechar'),
-              ),
-              if (bom != null)
-                FilledButton(
-                  onPressed: () => Navigator.of(dialogo).pop(true),
-                  child: const Text('Usar este caminho'),
-                ),
-            ],
-          ),
+    final MqttPathCandidate? escolhido = await ConnectionPathDialog.mostrar(
+      context,
+      controller.brokerController.text,
     );
-
-    if ((aplicar ?? false) && bom != null && mounted) {
-      controller.brokerController.text = bom.host;
-      controller.portController.text = '${bom.port}';
-      controller.setTls(bom.useTls);
-      setState(() {});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Configurado: ${bom.host}:${bom.port}')),
-      );
-    }
+    if (escolhido == null || !mounted) return;
+    controller.brokerController.text = escolhido.host;
+    controller.portController.text = '${escolhido.port}';
+    controller.setTls(escolhido.useTls);
+    setState(() {});
+    _showSnackBar('Configurado: ${escolhido.host}:${escolhido.port}');
   }
 
   Future<void> _handleConnectionToggle() async {
@@ -1478,6 +1393,29 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     }
 
     await controller.connect();
+    if (!mounted || controller.isConnected) return;
+
+    // Sem isto, o motivo da falha ficava numa linha de status fora da tela e
+    // o app parecia apenas "não conectar".
+    final bool? testar = await showDialog<bool>(
+      context: context,
+      builder:
+          (BuildContext dialogo) => AlertDialog(
+            title: const Text('Não conectou'),
+            content: Text(controller.statusMessage),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogo).pop(false),
+                child: const Text('Fechar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogo).pop(true),
+                child: const Text('Testar caminhos'),
+              ),
+            ],
+          ),
+    );
+    if ((testar ?? false) && mounted) await _testarCaminhos();
   }
 
   Future<void> _testLocalCommunication(WidgetRef ref) async {
