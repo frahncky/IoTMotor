@@ -40,6 +40,26 @@ class MqttMotorService {
       _client?.connectionStatus?.state == MqttConnectionState.connected;
   MqttConnectionConfig? get activeConfig => _activeConfig;
 
+  /// Uma linha a mais quando o endereço e a porta não combinam.
+  ///
+  /// Quase toda falha aqui é a rede bloqueando a porta MQTT, e o caminho que
+  /// funciona é o mesmo das placas: WebSocket na 8080.
+  String _dicaDeEndereco(MqttConnectionConfig config) {
+    final bool porWebSocket = MqttSettingsValidators.brokerUsaWebSocket(
+      config.host,
+    );
+    final String host = MqttSettingsValidators.brokerHost(config.host);
+    if (!porWebSocket && (config.port == 1883 || config.port == 8883)) {
+      return '\n\nSe a rede bloqueia MQTT, use ws://$host na porta 8080 — '
+          'é por onde as placas conectam.';
+    }
+    if (porWebSocket && config.port != 8080 && config.port != 8081 &&
+        config.port != 443) {
+      return '\n\nPara ws:// a porta costuma ser 8080; para wss://, 8081.';
+    }
+    return '';
+  }
+
   Future<MqttConnectResult> connect(MqttConnectionConfig config) async {
     await disconnect(silent: true);
 
@@ -85,7 +105,7 @@ class MqttMotorService {
       client.disconnect();
       return MqttConnectResult(
         success: false,
-        message: 'Erro ao conectar: $error',
+        message: 'Erro ao conectar: $error${_dicaDeEndereco(config)}',
       );
     }
 
@@ -94,7 +114,7 @@ class MqttMotorService {
       client.disconnect();
       return MqttConnectResult(
         success: false,
-        message: 'Conexão recusada: $code',
+        message: 'Conexão recusada: $code${_dicaDeEndereco(config)}',
       );
     }
 
