@@ -128,7 +128,9 @@ bool buzzerNivelAlto=true;   // Nivel que FAZ SOM num buzzer ativo.
 
 void soar(bool ligado,uint16_t frequencia=BEEP_HZ) {
   if(buzzerAtivo) {
-    soar(false);
+    // Solta o pino de um tone() anterior. Chamar soar(false) aqui reentra
+    // neste mesmo ramo e recursa sem fim: a pilha estoura e a placa reinicia.
+    noTone(BUZZER_PIN);
     pinMode(BUZZER_PIN,OUTPUT);
     digitalWrite(BUZZER_PIN,ligado==buzzerNivelAlto?HIGH:LOW);
     return;
