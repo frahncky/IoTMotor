@@ -320,6 +320,16 @@ test('dashboard conecta os auxiliares depois de substituir a conexao e desconect
   assert.match(html, /<script src="\.\/alarm-controls\.js" defer><\/script>/);
 });
 
+test('a polaridade do LED vai para a placa e volta da telemetria', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c, {led: 'baixo'});
+  assert.equal(h.node('alarmeLed').value, 'low');
+  h.node('alarmeLed').value = 'high';
+  h.node('alarmeLed').fire('change');
+  assert.deepEqual(c.published[0].data, {v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq,
+    action: 'led_set', level: 'high'});
+});
+
 test('o tipo do buzzer vai para a placa e volta da telemetria', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c, {buzzer: 'ativo-baixo'});
