@@ -19,22 +19,6 @@ A pinagem abaixo foi extraída da proposta de dois módulos do projeto, **não f
 A pinagem do LED e do buzzer foi recuperada do firmware original do módulo 2.
 Esses quatro pinos ficam excluídos da busca automática do DS18B20.
 
-### Polaridade do LED
-
-Módulo de **cátodo comum** acende em nível alto; de **ânodo comum**, em nível
-baixo. Com a polaridade trocada, o LED fica apagado justamente quando deveria
-acender — e parece que não funciona.
-
-Escolha no painel (aba de alarmes, **LED acende em nível**) ou por MQTT:
-
-```json
-{"v":1,"device_id":"esp32-02","seq":"1","action":"led_set","level":"low"}
-```
-
-Ao gravar, a placa acende as três cores por 1,5 s com a regra nova, para você
-conferir na hora. Fica gravado na placa e aparece na telemetria como `led`
-(`alto` ou `baixo`).
-
 ### Tipo do buzzer
 
 Buzzer **passivo** precisa de `tone()`; **ativo** tem oscilador próprio e só quer

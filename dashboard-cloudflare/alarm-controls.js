@@ -25,7 +25,7 @@
     return g ? `${g.nome}${g.unidade ? ` (${g.unidade})` : ''}` : campo;
   };
 
-  const CAMPOS = ['alarmeOn', 'alarmeSons', 'alarmeBuzzer', 'alarmeLed'];
+  const CAMPOS = ['alarmeOn', 'alarmeSons', 'alarmeBuzzer'];
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-02';
   let estado = null, recebidoEm = 0, pendente = null, sequencia = 0, editando = false;
   let lista = null, maxAlarmes = 8;
@@ -250,7 +250,6 @@
       $('alarmeOn').checked = estado.enabled;
       $('alarmeSons').checked = estado.sounds;
       if (estado.buzzer) $('alarmeBuzzer').value = estado.buzzer;
-      if (estado.led) $('alarmeLed').value = estado.led;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
     for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
@@ -300,13 +299,6 @@
     evento.preventDefault();
     if (publicar('alarm_set', {enabled: $('alarmeOn').checked, sounds: $('alarmeSons').checked}))
       aviso('Gravando a configuração na placa…');
-  });
-  // LED de ânodo comum acende em nível baixo: com a polaridade trocada ele
-  // fica apagado justamente quando deveria acender. Ao gravar, a placa acende
-  // tudo por 1,5 s com a regra nova, para conferir na hora.
-  $('alarmeLed').addEventListener('change', () => {
-    if (publicar('led_set', {level: String($('alarmeLed').value)}))
-      aviso('Gravando a polaridade do LED e acendendo para conferir…');
   });
   // Buzzer ativo acionado em nível baixo apita o tempo todo se a placa o tratar
   // como passivo: por isso o tipo é escolhido aqui e gravado na placa.
@@ -420,8 +412,6 @@
         estado = {
           enabled: dados.alarm_enabled, active: dados.alarm_active,
           sounds: dados.event_sounds === true,
-          // A placa informa "alto" ou "baixo"; o comando usa high/low.
-          led: {'alto': 'high', 'baixo': 'low'}[dados.led] || '',
           // passivo | ativo-alto | ativo-baixo, como a placa informa.
           buzzer: {'passivo': 'passive-high', 'ativo-alto': 'active-high',
             'ativo-baixo': 'active-low'}[dados.buzzer] || '',
@@ -431,8 +421,7 @@
         recebidoEm = Date.now();
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
                  dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
-        if (dados.accepted && (pendente.acao === 'buzzer_set' || pendente.acao === 'led_set'))
-          editando = false;
+        if (dados.accepted && pendente.acao === 'buzzer_set') editando = false;
         if (dados.accepted && pendente.acao === 'alarm_set') {
           estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds};
           editando = false;

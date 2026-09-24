@@ -76,7 +76,7 @@ static const uint8_t BUZZER_PIN = 42;      // Tipo e polaridade: ver "soar".
 static const uint8_t LED_AZUL_PIN = 16;
 static const uint8_t LED_VERDE_PIN = 17;
 static const uint8_t LED_VERM_PIN = 18;
-static const bool RGB_ANODO_COMUM = false;  // Padrao de fabrica: catodo comum.
+static const bool RGB_ANODO_COMUM = false;  // Catodo comum: nivel alto acende.
 static const uint32_t BEEP_MS = 400UL;      // Intervalo do alarme intermitente.
 static const uint16_t BEEP_HZ = 2000;
 // Limites padrao do alarme; ajustaveis pelo painel e gravados na placa.
@@ -145,16 +145,10 @@ const char* buzzerDescrito() {
   return !buzzerAtivo ? "passivo" : buzzerNivelAlto ? "ativo-alto" : "ativo-baixo";
 }
 
-// Catodo comum acende em nivel alto; anodo comum, em nivel baixo. Com a
-// polaridade trocada o LED fica apagado justamente quando deveria acender, e
-// nao ha como saber qual modulo esta na bancada sem experimentar -- por isso
-// isto fica gravado na placa e pode ser trocado pelo painel.
-bool ledAcendeEmAlto = !RGB_ANODO_COMUM;
-
 void aplicarLed(bool azul,bool verde,bool vermelho) {
-  digitalWrite(LED_AZUL_PIN, azul==ledAcendeEmAlto?HIGH:LOW);
-  digitalWrite(LED_VERDE_PIN, verde==ledAcendeEmAlto?HIGH:LOW);
-  digitalWrite(LED_VERM_PIN, vermelho==ledAcendeEmAlto?HIGH:LOW);
+  digitalWrite(LED_AZUL_PIN, azul==!RGB_ANODO_COMUM?HIGH:LOW);
+  digitalWrite(LED_VERDE_PIN, verde==!RGB_ANODO_COMUM?HIGH:LOW);
+  digitalWrite(LED_VERM_PIN, vermelho==!RGB_ANODO_COMUM?HIGH:LOW);
 }
 
 // Interruptor geral e bipes de evento; os limites ficam na lista de alarmes.
@@ -165,21 +159,8 @@ void carregarConfigDoAlarme() {
   sonsDeEventos=memoria.getBool("sons",true);
   buzzerAtivo=memoria.getBool("bzativo",false);
   buzzerNivelAlto=memoria.getBool("bzalto",true);
-  ledAcendeEmAlto=memoria.getBool("ledalto",!RGB_ANODO_COMUM);
   memoria.end();
-  Serial.printf("[BUZZER] %s | [LED] acende em nivel %s\n",buzzerDescrito(),
-                ledAcendeEmAlto?"alto":"baixo");
-}
-
-bool salvarPolaridadeDoLed(bool acendeEmAlto) {
-  Preferences memoria;
-  if(!memoria.begin("iot-alarme",false))return false;
-  memoria.putBool("ledalto",acendeEmAlto);
-  memoria.end();
-  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-  ledAcendeEmAlto=acendeEmAlto;
-  xSemaphoreGive(sensoresMutex);
-  return true;
+  Serial.printf("[BUZZER] %s\n",buzzerDescrito());
 }
 
 bool salvarTipoDoBuzzer(bool ativo,bool nivelAlto) {
@@ -524,7 +505,6 @@ void publishTelemetry() {
   doc["alarm_enabled"]=alarmeHabilitado;
   doc["event_sounds"]=sonsDeEventos;
   doc["buzzer"]=buzzerDescrito();
-  doc["led"]=ledAcendeEmAlto?"alto":"baixo";
   doc["alarm_active"]=estadoCritico;
   if(mpuReady && amostrasAtuais>=10) {
     doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
@@ -632,24 +612,6 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     const uint8_t vezes=constrain((int)(doc["count"] | 1),1,5);
     pedirBeep(vezes,frequencia,duracao);
     publishAck(seq,acao,true,"bipe acionado");
-    return;
-  }
-  if(!strcmp(acao,"led_set")) {  // acende em nivel alto ou baixo.
-    const char* nivel=doc["level"] | "";
-    if(strcmp(nivel,"high") && strcmp(nivel,"low")) {
-      publishAck(seq,acao,false,"level deve ser high ou low");
-      return;
-    }
-    const bool alto=!strcmp(nivel,"high");
-    const bool ok=salvarPolaridadeDoLed(alto);
-    if(ok) {  // Acende tudo por 1,5 s ja com a regra nova, para conferir.
-      xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-      testarSinalizacao(millis());
-      xSemaphoreGive(sensoresMutex);
-    }
-    publishAck(seq,acao,ok,ok?(alto?"LED acende em nivel alto":"LED acende em nivel baixo")
-                            :"falha ao gravar");
-    if(ok)publishTelemetry();
     return;
   }
   if(!strcmp(acao,"buzzer_set")) {  // passivo, ativo-alto ou ativo-baixo.
