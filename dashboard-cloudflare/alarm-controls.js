@@ -29,6 +29,7 @@
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-02';
   let estado = null, recebidoEm = 0, pendente = null, sequencia = 0, editando = false;
   let lista = null, maxAlarmes = 8;
+  let buzzerConfiguradoHz = 2000;
   const rascunhos = new Map();  // id -> {limite, ligado} ainda não gravados.
   const aviso = texto => { $('alarmeFeedback').textContent = texto; };
   const topico = tipo => `${prefixo}/${dispositivo}/${tipo}`;
@@ -249,8 +250,8 @@
     if (estado && !editando && !pendente) {
       $('alarmeOn').checked = estado.enabled;
       $('alarmeSons').checked = estado.sounds;
-      if (Number.isFinite(estado.buzzerHz)) $('buzzerFreq').value = String(estado.buzzerHz);
-      $('buzzerFreqValor').textContent = `${$('buzzerFreq').value} Hz`;
+      $('buzzerFreq').value = String(buzzerConfiguradoHz);
+      $('buzzerFreqValor').textContent = `${buzzerConfiguradoHz} Hz`;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
     for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
@@ -401,8 +402,11 @@
         lista = dados.alarms.filter(alarmeValido);
         maxAlarmes = Number.isFinite(dados.max) && dados.max > 0 ? dados.max : 8;
         if (Number.isFinite(dados.buzzer_hz)) {
-          $('buzzerFreq').value = String(dados.buzzer_hz);
-          $('buzzerFreqValor').textContent = `${dados.buzzer_hz} Hz`;
+          buzzerConfiguradoHz = dados.buzzer_hz;
+          if (!editando && !pendente) {
+            $('buzzerFreq').value = String(buzzerConfiguradoHz);
+            $('buzzerFreqValor').textContent = `${buzzerConfiguradoHz} Hz`;
+          }
         }
         for (const id of [...rascunhos.keys()]) if (!lista.some(a => a.id === id)) rascunhos.delete(id);
         renderizar();
@@ -415,7 +419,6 @@
         estado = {
           enabled: dados.alarm_enabled, active: dados.alarm_active,
           sounds: dados.event_sounds === true,
-          buzzerHz: Number.isFinite(dados.buzzer_hz) ? dados.buzzer_hz : 2000,
           sensors: dados.mpu_ok || dados.temperature_ok,
           firing: Array.isArray(dados.alarms_firing) ? dados.alarms_firing : []
         };
@@ -423,7 +426,10 @@
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
                  dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
         if (dados.accepted && pendente.acao === 'alarm_set') {
-          estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds, buzzerHz: pendente.extras.buzzer_hz};
+          estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds};
+          buzzerConfiguradoHz = pendente.extras.buzzer_hz;
+          $('buzzerFreq').value = String(buzzerConfiguradoHz);
+          $('buzzerFreqValor').textContent = `${buzzerConfiguradoHz} Hz`;
           editando = false;
         }
         // Gravou: o rascunho some e a lista retida traz o valor confirmado.
