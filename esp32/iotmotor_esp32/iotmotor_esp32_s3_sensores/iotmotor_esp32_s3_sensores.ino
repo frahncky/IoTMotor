@@ -85,7 +85,7 @@ static const uint16_t BEEP_HZ_MAX = 5000;
 static const float VIBRACAO_LIMITE_PADRAO = 0.50f;
 static const float TEMPERATURA_LIMITE_PADRAO = 60.0f;
 static const uint8_t MPU_ADDR = 0x68;
-static const uint32_t WIFI_RETRY_MS = 12000UL;
+static const uint32_t WIFI_RETRY_MS = 6000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
 static const uint32_t SAMPLE_MS = 20UL;  // aproximadamente 50 amostras/s
 static const uint32_t PUBLISH_MS = 1000UL;
@@ -774,8 +774,12 @@ void setup() {
   wifistore::prepararChaves();
   wifistore::carregarRedePropria(PORTAL_NOME);
   Serial.printf("[S3/Wi-Fi] %u rede(s) na lista da placa\n",wifistore::total);
-  // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
-  if(!conectarWifiS3(5000))abrirPortalDeRede(PORTAL_SEGUNDOS);
+  // No boot, nunca bloqueia a placa no portal automatico. Uma rede pode
+  // demorar alguns segundos para ficar disponivel depois de uma queda geral.
+  // Se a primeira tentativa falhar, o loop continua tentando as redes salvas.
+  // O portal permanece disponivel somente quando solicitado pelo painel.
+  if(!conectarWifiS3(5000))
+    Serial.println("[S3/Wi-Fi] nenhuma rede entrou no boot; continuara tentando");
   Serial.printf("[S3/boot] %s broker=%s:%u\n",DEVICE_ID,MQTT_HOST,MQTT_PORT);
 }
 
