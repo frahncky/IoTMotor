@@ -442,9 +442,18 @@
         };
         recebidoEm = Date.now();
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
-                 dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
+                 typeof dados.accepted === 'boolean') {
+        const acaoRecebida = String(dados.action || '');
         const ehProbe = pendente.acao === 'led_probe' || pendente.acao === 'buzzer_probe' || pendente.acao === 'hardware_test';
-        if (ehProbe) {
+
+        // Mostra também respostas "sealed" ou qualquer outra ação devolvida pela placa
+        // para o mesmo seq. Isso evita esconder recusas de autenticação/selagem.
+        if (acaoRecebida !== pendente.acao) {
+          const detalhe = `${dados.accepted ? 'OK' : 'ERRO'} · resposta ${acaoRecebida || '(sem action)'} · ${dados.reason || 'sem motivo'}`;
+          if (ehProbe) registrarProbe(detalhe);
+          aviso(detalhe);
+          if (!dados.accepted) limparPendente();
+        } else if (ehProbe) {
           registrarProbe(`${dados.accepted ? 'OK' : 'ERRO'} · ${dados.reason || dados.action}`);
           aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
           if (!dados.accepted || String(dados.reason || '').includes('procura encerrada') || String(dados.reason || '').includes('teste fisico encerrado')) limparPendente();
