@@ -16,7 +16,23 @@
   let queda = null, quedaEditando = false;
   // Duração máxima de um ensaio (-1 = sem limite), também vinda da placa.
   let ensaio = null, ensaioEditando = false;
-  const feedback = message => { $('commandFeedback').textContent = message; };
+  const feedback = message => {
+    $('commandFeedback').textContent = message;
+    if ($('ensaioFeedback')) $('ensaioFeedback').textContent = message;
+  };
+  function refreshCustom(selectId, wrapId, inputId, applyId, valor, editando) {
+    const select = $(selectId), wrap = $(wrapId), input = $(inputId), apply = $(applyId);
+    if (!select) return;
+    const bloqueado = !connected || !recent();
+    if (valor !== null && !editando &&
+        ![...select.options].some(option => option.value === String(valor))) {
+      select.value = 'custom';
+      if (input) input.value = String(valor);
+    }
+    if (wrap) wrap.hidden = select.value !== 'custom';
+    if (input) input.disabled = bloqueado;
+    if (apply) apply.disabled = bloqueado;
+  }
   function refresh() {
     const dur = $('ensaioSel');
     if (dur) {
@@ -29,6 +45,10 @@
       // Sem mexer no que a pessoa acabou de escolher e ainda não confirmou.
       if (queda !== null && !quedaEditando) sel.value = String(queda);
     }
+    refreshCustom('ensaioSel', 'ensaioCustomWrap', 'ensaioCustom', 'ensaioCustomApply',
+      ensaio, ensaioEditando);
+    refreshCustom('quedaSel', 'quedaCustomWrap', 'quedaCustom', 'quedaCustomApply',
+      queda, quedaEditando);
     const modo = $('modoBtn');
     if (modo) {
       modo.disabled = !connected || !recent();
@@ -203,6 +223,41 @@
   $('updateBtn')?.addEventListener('click', () => manutencao('update',
     'A placa vai baixar o firmware publicado no GitHub e reiniciar.\n\nContinuar?'));
   // Duração máxima de um ensaio. Fica gravada na placa.
+  function configurarOutroValor(selectId, wrapId, inputId, editar) {
+    $(selectId)?.addEventListener('change', event => {
+      if ($(selectId).value !== 'custom') {
+        $(wrapId).hidden = true;
+        return;
+      }
+      event.stopImmediatePropagation();
+      editar(true);
+      $(wrapId).hidden = false;
+      $(inputId)?.focus();
+      refresh();
+    });
+  }
+  function aplicarOutroValor(action, inputId, minimo, maximo, editar) {
+    const texto = String($(inputId)?.value || '').trim();
+    const segundos = Number(texto);
+    if (!texto || !Number.isInteger(segundos) || segundos < minimo || segundos > maximo) {
+      feedback('Informe um valor inteiro de ' + minimo + ' a ' + maximo + ' segundos.');
+      return;
+    }
+    editar(true);
+    manutencao(action, null, {seconds: segundos});
+    setTimeout(() => { editar(false); refresh(); }, 6000);
+    refresh();
+  }
+  configurarOutroValor('ensaioSel', 'ensaioCustomWrap', 'ensaioCustom',
+    valor => { ensaioEditando = valor; });
+  configurarOutroValor('quedaSel', 'quedaCustomWrap', 'quedaCustom',
+    valor => { quedaEditando = valor; });
+  $('ensaioCustomApply')?.addEventListener('click', () =>
+    aplicarOutroValor('run_limit', 'ensaioCustom', 10, 7200,
+      valor => { ensaioEditando = valor; }));
+  $('quedaCustomApply')?.addEventListener('click', () =>
+    aplicarOutroValor('link_grace', 'quedaCustom', 0, 3600,
+      valor => { quedaEditando = valor; }));
   $('ensaioSel')?.addEventListener('change', () => {
     const segundos = Number($('ensaioSel').value);
     ensaioEditando = true;
@@ -219,7 +274,7 @@
     const segundos = Number($('quedaSel').value);
     quedaEditando = true;
     const aviso = segundos < 0
-      ? 'O ensaio vai continuar mesmo sem rede, até o limite de 5 minutos do ensaio.\n\nNinguém consegue mandar parar pelo painel enquanto a rede estiver fora. Continuar?'
+      ? 'O ensaio vai continuar mesmo sem rede, até o limite configurado do ensaio.\n\nNinguém consegue mandar parar pelo painel enquanto a rede estiver fora. Continuar?'
       : null;
     if (aviso !== null && !confirm(aviso)) { quedaEditando = false; refresh(); return; }
     manutencao('link_grace', null, {seconds: segundos});

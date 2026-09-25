@@ -21,7 +21,7 @@ Quanto tempo as saídas podem ficar ligadas numa mesma partida. O padrão de
 fábrica são **5 minutos** (`LIMITE_BANCADA_MS`); o valor em uso fica gravado na
 placa.
 
-- No painel: **"Duração máxima do ensaio"**, no quadro de comando.
+- No painel: **"Duração máxima do ensaio"**, na aba **Configurações**.
 - Por MQTT: `{"v":1,"device_id":"esp32-01","seq":"1","action":"run_limit","seconds":900}`.
 - `seconds`: de **10 a 7200**; **-1** tira o limite de tempo.
 - Aparece na telemetria como `run_limit_s` (-1 = sem limite).
@@ -37,7 +37,7 @@ Quanto tempo as saídas continuam ligadas depois que o Wi-Fi ou o MQTT cai. O
 padrão são **15 s**, que cobrem as quedas curtas do broker público sem deixar a
 bancada ligada sozinha.
 
-- No painel: **"Se a conexão cair, o ensaio segue por"**, no quadro de comando.
+- No painel: **"Se a conexão cair, o ensaio segue por"**, na aba **Configurações**.
 - Por MQTT: `{"v":1,"device_id":"esp32-01","seq":"1","action":"link_grace","seconds":60}`.
 - `seconds`: **0** derruba as saídas assim que a rede cair; **1 a 3600** segue
   por esse tempo; **-1** segue sem limite de rede.
