@@ -173,6 +173,15 @@ uint8_t probeIndice=0,probeModo=0;
 uint32_t probePasso=700,probeProximo=0;
 String probeSeq;
 
+// ---- Procura dos canais do LED RGB ----
+// Testa somente GPIOs livres, um por vez, em nivel alto e baixo.
+// O GPIO17 (verde conhecido) fica fora da varredura para nao confundir.
+static const uint8_t LED_CANDIDATOS[]={16,18,42,41,40,39,38,47,48,21,14,13,12,11,10,8,7,6,2,1};
+bool ledProbeAtivo=false,ledProbeLigado=false;
+uint8_t ledProbeIndice=0,ledProbeModo=0;
+uint32_t ledProbePasso=900,ledProbeProximo=0;
+String ledProbeSeq;
+
 void beepDeEvento(uint8_t vezes) {
   if(sonsDeEventos)pedirBeep(vezes,BEEP_HZ,70);
 }
@@ -279,9 +288,60 @@ bool atualizarProcuraDoBuzzer(uint32_t now) {
   return true;
 }
 
+// Avanca a procura dos canais do LED; true enquanto estiver em andamento.
+bool atualizarProcuraDosLeds(uint32_t now) {
+  if(!ledProbeAtivo)return false;
+  if((int32_t)(now-ledProbeProximo)<0)return true;
+  const uint8_t pino=LED_CANDIDATOS[ledProbeIndice];
+
+  if(ledProbeLigado) {
+    // Desliga o pino testado e devolve para alta impedancia.
+    digitalWrite(pino,ledProbeModo?HIGH:LOW);
+    pinMode(pino,INPUT);
+    ledProbeLigado=false;
+    ledProbeProximo=now+250;
+    if(++ledProbeModo>1) {
+      ledProbeModo=0;
+      if(++ledProbeIndice>=sizeof(LED_CANDIDATOS)) {
+        ledProbeAtivo=false;
+        pinMode(LED_AZUL_PIN,OUTPUT);
+        pinMode(LED_VERDE_PIN,OUTPUT);
+        pinMode(LED_VERM_PIN,OUTPUT);
+        publishAck(ledProbeSeq.c_str(),"led_probe",true,"procura encerrada");
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // Nao interfere em I2C, USB/UART, sensor de temperatura, verde conhecido ou buzzer.
+  if(pino==SDA_PIN||pino==SCL_PIN||pino==19||pino==20||pino==43||pino==44||
+     pino==ds18b20Pin||pino==LED_VERDE_PIN||pino==BUZZER_PIN) {
+    ledProbeModo=0;
+    if(++ledProbeIndice>=sizeof(LED_CANDIDATOS)) {
+      ledProbeAtivo=false;
+      publishAck(ledProbeSeq.c_str(),"led_probe",true,"procura encerrada");
+      return false;
+    }
+    return true;
+  }
+
+  pinMode(pino,OUTPUT);
+  // modo 0 testa HIGH (catodo comum); modo 1 testa LOW (anodo comum).
+  digitalWrite(pino,ledProbeModo?LOW:HIGH);
+  char aviso[64];
+  snprintf(aviso,sizeof(aviso),"GPIO%u nivel %s",pino,ledProbeModo?"LOW":"HIGH");
+  publishAck(ledProbeSeq.c_str(),"led_probe",true,aviso);
+  Serial.printf("[LED] %s\n",aviso);
+  ledProbeLigado=true;
+  ledProbeProximo=now+ledProbePasso;
+  return true;
+}
+
 // Azul: sem sensor valido. Verde: tudo normal. Vermelho: limite ultrapassado.
 void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
+  if(atualizarProcuraDosLeds(now))return;   // Procura dos canais do LED em andamento.
   // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
   const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
                                             temperatureC,relogio::agoraUtc());
@@ -561,6 +621,16 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     delay(200);
     abrirPortalDeRede(PORTAL_SEGUNDOS);
     ESP.restart();
+    return;
+  }
+  if(!strcmp(acao,"led_probe")) {  // Procura os canais do LED RGB.
+    ledProbeSeq=seq;
+    ledProbePasso=constrain((long)(doc["ms"] | 900),300,2500);
+    ledProbeIndice=0;ledProbeModo=0;ledProbeLigado=false;ledProbeProximo=millis();ledProbeAtivo=true;
+    // Evita que o buzzer ou outro teste concorram com a varredura.
+    probeAtivo=false;testeAtivo=false;noTone(BUZZER_PIN);buzzerLigado=false;
+    aplicarLed(false,false,false);
+    publishAck(seq,acao,true,"procurando canais do LED: observe as cores");
     return;
   }
   if(!strcmp(acao,"buzzer_probe")) {  // Procura o buzzer; anda no laco principal.
