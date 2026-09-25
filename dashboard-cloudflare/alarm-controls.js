@@ -254,7 +254,7 @@
       $('buzzerFreqValor').textContent = `${buzzerConfiguradoHz} Hz`;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
-    for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
+    for (const id of ['alarmeSalvar', 'alarmeTesteLed', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
       $(id).disabled = !pronto();
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharAtivos();
@@ -328,6 +328,10 @@
   $('alarmeBipe').addEventListener('click', () => {
     if (publicar('buzzer_beep', {count: 2, ms: 120, freq: Number($('buzzerFreq').value)}))
       aviso(`Testando buzzer em ${$('buzzerFreq').value} Hz…`);
+  });
+  $('alarmeTesteLed').addEventListener('click', () => {
+    if (publicar('led_test', {}))
+      aviso('Testando LED: azul, verde e vermelho…');
   });
   $('alarmeTeste').addEventListener('click', () => {
     const freq = Number($('buzzerFreq').value);
