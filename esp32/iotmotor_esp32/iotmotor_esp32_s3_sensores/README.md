@@ -19,24 +19,6 @@ A pinagem abaixo foi extraída da proposta de dois módulos do projeto, **não f
 A pinagem do LED e do buzzer foi recuperada do firmware original do módulo 2.
 Esses quatro pinos ficam excluídos da busca automática do DS18B20.
 
-### Tipo do buzzer
-
-Buzzer **passivo** precisa de `tone()`; **ativo** tem oscilador próprio e só quer
-nível. Muito módulo ativo de 3 pinos apita em nível **baixo** — nesse caso,
-deixar o pino em LOW para "calar" faz o contrário e ele apita sem parar.
-
-O tipo fica gravado na placa e é escolhido no painel (aba de alarmes, campo
-**Tipo do buzzer**) ou por MQTT:
-
-```json
-{"v":1,"device_id":"esp32-02","seq":"1","action":"buzzer_set","type":"active","level":"low"}
-```
-
-`type`: `passive` ou `active`; `level` (só para ativo): `high` ou `low`. A
-telemetria publica `buzzer` como `passivo`, `ativo-alto` ou `ativo-baixo`. Ao
-gravar, a placa silencia na hora com a regra nova, e o boot também começa em
-silêncio.
-
 **Buzzer sem som (setembro de 2026):** em ensaio na bancada, o firmware
 aciona o GPIO42 e responde `bipe acionado`, mas nada é ouvido — a causa é
 elétrica (ligação/alimentação do buzzer), não de software. Depois de refazer
