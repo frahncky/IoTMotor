@@ -48,6 +48,14 @@ void main() {
       controller.acknowledgeAlert(controller.alerts.first.id);
       expect(controller.pendingAlertsCount, 2);
 
+      service.emit(
+        'iotmotor/esp-1/telemetry',
+        '{"voltage":220,"current":2,"temperature":30}',
+      );
+
+      expect(controller.pendingAlertsCount, 0);
+      expect(controller.acknowledgedAlertsCount, 3);
+
       controller.dispose();
     },
   );

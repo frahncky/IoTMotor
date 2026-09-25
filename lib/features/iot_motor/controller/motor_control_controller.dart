@@ -2324,7 +2324,7 @@ class MotorControlController extends ChangeNotifier {
       );
     }
 
-    _activeAlertKeys.remove(alertKey);
+    _resolveTelemetryAlert(deviceId: deviceId, metricKey: 'voltage');
     return null;
   }
 
@@ -2359,10 +2359,31 @@ class MotorControlController extends ChangeNotifier {
       );
     }
 
-    if (_activeAlertKeys.contains(alertKey) && value <= limit * 0.95) {
-      _activeAlertKeys.remove(alertKey);
+    if (value <= limit * 0.95) {
+      _resolveTelemetryAlert(deviceId: deviceId, metricKey: metricKey);
     }
     return null;
+  }
+
+  void _resolveTelemetryAlert({
+    required String deviceId,
+    required String metricKey,
+  }) {
+    _activeAlertKeys.remove('$deviceId:$metricKey');
+    bool changed = false;
+    for (int i = 0; i < _alertHistory.length; i++) {
+      final TelemetryAlert alert = _alertHistory[i];
+      if (alert.acknowledged ||
+          alert.deviceId != deviceId ||
+          alert.metric != metricKey) {
+        continue;
+      }
+      _alertHistory[i] = alert.copyWith(acknowledged: true);
+      changed = true;
+    }
+    if (changed) {
+      _scheduleAlertsPersist();
+    }
   }
 
   TelemetryAlert _registerAlert({
