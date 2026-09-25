@@ -330,7 +330,9 @@
       aviso(`Testando buzzer em ${$('buzzerFreq').value} Hz…`);
   });
   $('alarmeTeste').addEventListener('click', () => {
-    if (publicar('alarm_test', {})) aviso('Acendendo o LED e apitando por 1,5 s…');
+    const freq = Number($('buzzerFreq').value);
+    if (publicar('alarm_test', {freq}))
+      aviso(`Testando LED e buzzer em ${freq} Hz por 1,5 s…`);
   });
 
   function desconectar() {
