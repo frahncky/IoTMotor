@@ -251,7 +251,7 @@
       $('alarmeSons').checked = estado.sounds;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
-    for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeProbe', 'alarmeRecarregar'])
+    for (const id of ['alarmeSalvar', 'alarmeTeste', 'ledAzulTeste', 'ledVerdeTeste', 'ledVermelhoTeste', 'alarmeBipe', 'alarmeProbe', 'alarmeRecarregar'])
       $(id).disabled = !pronto();
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharAtivos();
@@ -326,6 +326,15 @@
   });
   $('alarmeTeste').addEventListener('click', () => {
     if (publicar('alarm_test', {})) aviso('Acendendo o LED e apitando por 1,5 s…');
+  });
+  $('ledAzulTeste').addEventListener('click', () => {
+    if (publicar('led_test', {color: 'blue'})) aviso('Testando somente o LED azul por 1,5 s…');
+  });
+  $('ledVerdeTeste').addEventListener('click', () => {
+    if (publicar('led_test', {color: 'green'})) aviso('Testando somente o LED verde por 1,5 s…');
+  });
+  $('ledVermelhoTeste').addEventListener('click', () => {
+    if (publicar('led_test', {color: 'red'})) aviso('Testando somente o LED vermelho por 1,5 s…');
   });
 
   function desconectar() {
