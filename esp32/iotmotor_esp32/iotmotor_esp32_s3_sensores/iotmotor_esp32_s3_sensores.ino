@@ -576,9 +576,17 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
       StaticJsonDocument<1024> quadro;
       if(!deserializeJson(quadro,payload,length) &&
          !strcmp(quadro["device_id"] | "","esp32-01")) {
+        // Estado do motor: use a informacao da partida ativa publicada pelo esp32-01.
+        // Nao trate "qualquer rele ligado" como motor ligado, pois ha estados/manobras
+        // em que um rele pode permanecer energizado sem o motor estar em operacao.
         bool ligado=false;
-        JsonArrayConst relays=quadro["relays"].as<JsonArrayConst>();
-        if(!relays.isNull()) for(JsonVariantConst r:relays) if(r.as<bool>()){ligado=true;break;}
+        const char* modo=quadro["mode"] | "";
+        const char* perfil=quadro["profile"] | "";
+        const char* fase=quadro["start_phase"] | "";
+        if(!strcmp(modo,"profile_bench") || perfil[0]) ligado=true;
+        // Compatibilidade: algumas versoes antigas nao publicam profile.
+        else if(fase[0] && strcmp(fase,"Parado / comando manual") &&
+                     strcmp(fase,"parado") && strcmp(fase,"stopped")) ligado=true;
         xSemaphoreTake(sensoresMutex,portMAX_DELAY);
         motorLigado=ligado;
         ultimaTelemetriaQuadro=millis();
