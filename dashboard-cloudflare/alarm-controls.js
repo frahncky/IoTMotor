@@ -263,7 +263,7 @@
       $('alarmeSons').checked = estado.sounds;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
-    for (const id of ['alarmeSalvar', 'alarmeTeste', 'ledAzulTeste', 'ledVerdeTeste', 'ledVermelhoTeste', 'ledProbe', 'alarmeBipe', 'alarmeProbe', 'alarmeRecarregar'])
+    for (const id of ['alarmeSalvar', 'alarmeTeste', 'ledAzulTeste', 'ledVerdeTeste', 'ledVermelhoTeste', 'ledProbe', 'hardwareTeste', 'alarmeBipe', 'alarmeProbe', 'alarmeRecarregar'])
       $(id).disabled = !pronto();
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharAtivos();
@@ -283,15 +283,15 @@
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
     const ativo = client;
     pendente = {seq, acao, extras, alvo};
-    if (acao === 'led_probe' || acao === 'buzzer_probe') limparProbeLog(`Iniciando ${acao}…`);
+    if (acao === 'led_probe' || acao === 'buzzer_probe' || acao === 'hardware_test') limparProbeLog(`Iniciando ${acao}…`);
     const falhou = erro => {
       if (!erro || client !== ativo || pendente?.seq !== seq) return;
       limparPendente(); aviso(`Falha ao enviar: ${erro.message || erro}`); renderizar();
     };
-    const timeoutMs = (acao === 'led_probe' || acao === 'buzzer_probe') ? 90000 : 8000;
+    const timeoutMs = (acao === 'led_probe' || acao === 'buzzer_probe' || acao === 'hardware_test') ? 90000 : 8000;
     pendente.timer = setTimeout(() => {
       if (client !== ativo || pendente?.seq !== seq) return;
-      if (acao === 'led_probe' || acao === 'buzzer_probe') registrarProbe('TIMEOUT: a placa parou de responder.');
+      if (acao === 'led_probe' || acao === 'buzzer_probe' || acao === 'hardware_test') registrarProbe('TIMEOUT: a placa parou de responder.');
       limparPendente(); aviso(`Sem resposta do ${dispositivo}.`); renderizar();
     }, timeoutMs);
     // O comando sai cifrado quando a placa exige senha (command-seal.js).
@@ -353,6 +353,9 @@
   });
   $('ledProbe').addEventListener('click', () => {
     if (publicar('led_probe', {ms: 900})) aviso('Procurando os canais do LED: observe qual cor acende em cada GPIO…');
+  });
+  $('hardwareTeste').addEventListener('click', () => {
+    if (publicar('hardware_test', {})) aviso('Executando teste físico: azul → verde → vermelho → buzzer…');
   });
 
   function desconectar() {
@@ -440,11 +443,11 @@
         recebidoEm = Date.now();
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
                  dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
-        const ehProbe = pendente.acao === 'led_probe' || pendente.acao === 'buzzer_probe';
+        const ehProbe = pendente.acao === 'led_probe' || pendente.acao === 'buzzer_probe' || pendente.acao === 'hardware_test';
         if (ehProbe) {
           registrarProbe(`${dados.accepted ? 'OK' : 'ERRO'} · ${dados.reason || dados.action}`);
           aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
-          if (!dados.accepted || String(dados.reason || '').includes('procura encerrada')) limparPendente();
+          if (!dados.accepted || String(dados.reason || '').includes('procura encerrada') || String(dados.reason || '').includes('teste fisico encerrado')) limparPendente();
         } else {
           if (dados.accepted && pendente.acao === 'alarm_set') {
             estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds};
