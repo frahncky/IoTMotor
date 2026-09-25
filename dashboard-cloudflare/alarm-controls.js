@@ -25,7 +25,7 @@
     return g ? `${g.nome}${g.unidade ? ` (${g.unidade})` : ''}` : campo;
   };
 
-  const CAMPOS = ['alarmeOn', 'alarmeSons'];
+  const CAMPOS = ['alarmeOn', 'alarmeSons', 'buzzerFreq'];
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-02';
   let estado = null, recebidoEm = 0, pendente = null, sequencia = 0, editando = false;
   let lista = null, maxAlarmes = 8;
@@ -249,6 +249,8 @@
     if (estado && !editando && !pendente) {
       $('alarmeOn').checked = estado.enabled;
       $('alarmeSons').checked = estado.sounds;
+      if (Number.isFinite(estado.buzzerHz)) $('buzzerFreq').value = String(estado.buzzerHz);
+      $('buzzerFreqValor').textContent = `${$('buzzerFreq').value} Hz`;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
     for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
@@ -296,7 +298,7 @@
 
   $('alarmeForm').addEventListener('submit', evento => {
     evento.preventDefault();
-    if (publicar('alarm_set', {enabled: $('alarmeOn').checked, sounds: $('alarmeSons').checked}))
+    if (publicar('alarm_set', {enabled: $('alarmeOn').checked, sounds: $('alarmeSons').checked, buzzer_hz: Number($('buzzerFreq').value)}))
       aviso('Gravando a configuração na placa…');
   });
   $('alarmeAddForm').addEventListener('submit', evento => {
@@ -317,9 +319,14 @@
   $('alarmeRecarregar').addEventListener('click', () => {
     if (publicar('alarm_list', {})) aviso('Pedindo a lista de alarmes à placa…');
   });
-  // Bipe curto: confirma na bancada que a placa esta ouvindo o painel.
+  $('buzzerFreq').addEventListener('input', () => {
+    editando = true;
+    $('buzzerFreqValor').textContent = `${$('buzzerFreq').value} Hz`;
+  });
+  // Bipe curto usa a posição atual do slider como prévia, mesmo antes de salvar.
   $('alarmeBipe').addEventListener('click', () => {
-    if (publicar('buzzer_beep', {count: 2, ms: 120})) aviso('Bipando na placa de sensores…');
+    if (publicar('buzzer_beep', {count: 2, ms: 120, freq: Number($('buzzerFreq').value)}))
+      aviso(`Testando buzzer em ${$('buzzerFreq').value} Hz…`);
   });
   $('alarmeTeste').addEventListener('click', () => {
     if (publicar('alarm_test', {})) aviso('Acendendo o LED e apitando por 1,5 s…');
@@ -393,6 +400,10 @@
         if (!Array.isArray(dados.alarms)) return;
         lista = dados.alarms.filter(alarmeValido);
         maxAlarmes = Number.isFinite(dados.max) && dados.max > 0 ? dados.max : 8;
+        if (Number.isFinite(dados.buzzer_hz)) {
+          $('buzzerFreq').value = String(dados.buzzer_hz);
+          $('buzzerFreqValor').textContent = `${dados.buzzer_hz} Hz`;
+        }
         for (const id of [...rascunhos.keys()]) if (!lista.some(a => a.id === id)) rascunhos.delete(id);
         renderizar();
         return;
@@ -404,6 +415,7 @@
         estado = {
           enabled: dados.alarm_enabled, active: dados.alarm_active,
           sounds: dados.event_sounds === true,
+          buzzerHz: Number.isFinite(dados.buzzer_hz) ? dados.buzzer_hz : 2000,
           sensors: dados.mpu_ok || dados.temperature_ok,
           firing: Array.isArray(dados.alarms_firing) ? dados.alarms_firing : []
         };
@@ -411,7 +423,7 @@
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
                  dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
         if (dados.accepted && pendente.acao === 'alarm_set') {
-          estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds};
+          estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds, buzzerHz: pendente.extras.buzzer_hz};
           editando = false;
         }
         // Gravou: o rascunho some e a lista retida traz o valor confirmado.
