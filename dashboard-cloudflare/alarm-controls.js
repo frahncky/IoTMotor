@@ -422,13 +422,25 @@
       }
       renderizar();
     });
+    const QUEDA_TOLERADA_MS = 6000;
+    let quedaTimer = null;
     const caiu = () => {
-      if (client !== ativo) return;
-      conectado = false; estado = null; recebidoEm = 0;
-      limparPendente(); aviso('Conexão interrompida. Aguardando reconexão.'); renderizar();
+      if (client !== ativo || quedaTimer) return;
+      aviso('Conexão instável; reconectando ao broker…');
+      quedaTimer = setTimeout(() => {
+        quedaTimer = null;
+        if (client !== ativo || ativo.connected) return;
+        conectado = false; estado = null; recebidoEm = 0;
+        limparPendente(); aviso('Desconectado do broker.'); renderizar();
+      }, QUEDA_TOLERADA_MS);
+    };
+    const voltou = () => {
+      if (quedaTimer) { clearTimeout(quedaTimer); quedaTimer = null; }
     };
     ativo.on('offline', caiu);
     ativo.on('close', caiu);
+    ativo.on('reconnect', caiu);
+    ativo.on('connect', voltou);
     ativo.on('error', erro => { if (client === ativo) aviso(`MQTT: ${erro.message || erro}`); });
     renderizar();
   }
