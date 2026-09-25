@@ -299,9 +299,9 @@ void iniciarTesteLed(uint32_t now) {
 bool atualizarTesteLed(uint32_t now) {
   if(!testeLedAtivo)return false;
   const uint32_t decorrido=(uint32_t)(now-inicioTesteLed);
-  if(decorrido<600UL) aplicarLed(true,false,false);       // azul
-  else if(decorrido<1200UL) aplicarLed(false,true,false); // verde
-  else if(decorrido<1800UL) aplicarLed(false,false,true); // vermelho
+  if(decorrido<1000UL) aplicarLed(true,false,false);        // azul
+  else if(decorrido<2000UL) aplicarLed(false,true,false);    // verde
+  else if(decorrido<3000UL) aplicarLed(false,false,true);    // vermelho
   else {
     testeLedAtivo=false;
     return false;
@@ -571,7 +571,8 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
 
   const char* acao=doc["action"] | "";
   const char* seq=doc["seq"] | "";
-  beepDeEvento(1);  // Confirma na bancada que o comando chegou.
+  // O teste de LED deve ser totalmente silencioso.
+  if(strcmp(acao,"led_test")) beepDeEvento(1);  // Confirma na bancada os demais comandos.
   // Lista de redes: a senha chega cifrada para a chave desta placa.
   const char* motivoWifi="";
   const wifistore::Resultado resultado=wifistore::tratarComando(acao,doc.as<JsonVariantConst>(),motivoWifi);
