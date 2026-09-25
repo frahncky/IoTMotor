@@ -132,7 +132,7 @@ function render(){
 }
 function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.pending=null;state.subscribed=false;
- text('commandFeedback','Nenhum comando enviado.');render();}
+ render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
  window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
@@ -154,9 +154,7 @@ function ingest(which,raw,packet){
   clockSource:sample.measuredAt?'placa':'navegador',deviceId:expected,...sample});
  if(state.records.length>MAX_REGISTROS)state.records.shift();
  guardarRegistros();
- if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target){
-  text('commandFeedback',`ESP32 informou saída ${sample.motorOn?'ligada':'desligada'}; não confirma contatores ou motor físico.`);state.pending=null;
- }
+ if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
  diag(`Recebendo ${which==='command'?'medições do quadro de comando':'vibração e temperatura dos sensores'} · seq ${sample.seq??'—'}.`);render();return true;
 }
 function connect(automatico){
@@ -274,7 +272,7 @@ function init(){
   state.group=button.dataset.group;for(const b of document.querySelectorAll('[data-group]'))b.setAttribute('aria-pressed',String(button===b));renderCharts();
  });
  setInterval(()=>{
-  if(state.pending&&Date.now()-state.pending.at>6500){text('commandFeedback','Sem confirmação do ESP32. Não pressuponha que a saída esteja desligada.');state.pending=null;}
+  if(state.pending&&Date.now()-state.pending.at>6500)state.pending=null;
   if(state.connected&&state.subscribed&&(!freshness('command')||!freshness('sensor')))
    diag(`Broker conectado; ${!freshness('command')?'sem dados recentes do quadro de comando':''}${!freshness('command')&&!freshness('sensor')?' e ':''}${!freshness('sensor')?'sem dados recentes dos sensores':''}.`);
   render();

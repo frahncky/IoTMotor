@@ -17,7 +17,7 @@
   let perfis = [], limiteMs = 300000, maximo = 6, selecionado = '', pendente = null, sequencia = 0;
 
   const topico = tipo => `${prefixo}/${dispositivo}/${tipo}`;
-  const aviso = texto => { $('commandFeedback').textContent = texto; };
+  const aviso = texto => { const el = $('commandFeedback'); if (el) el.textContent = texto; };
   const segundos = ms => (ms / 1000).toLocaleString('pt-BR', {maximumFractionDigits: 1});
 
   const caixa = document.createElement('section');

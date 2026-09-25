@@ -17,7 +17,6 @@
   // Duração máxima de um ensaio (-1 = sem limite), também vinda da placa.
   let ensaio = null, ensaioEditando = false;
   const feedback = message => {
-    $('commandFeedback').textContent = message;
     if ($('ensaioFeedback')) $('ensaioFeedback').textContent = message;
   };
   function refreshCustom(selectId, wrapId, inputId, applyId, valor, editando) {
