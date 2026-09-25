@@ -121,6 +121,10 @@ bool testeLedAtivo=false;
 uint32_t inicioTesteLed=0;
 float picoAtual=0.0f,rmsAtual=0.0f;
 uint32_t amostrasAtuais=0;
+// Estado do motor vem da telemetria do quadro de comando (esp32-01).
+bool motorLigado=false;
+uint32_t ultimaTelemetriaQuadro=0;
+static const uint32_t QUADRO_STALE_MS=6000UL;
 // Sensores e sinalizacao continuam durante reconexao Wi-Fi, portal e MQTT.
 SemaphoreHandle_t sensoresMutex=nullptr;
 void aplicarLed(bool azul,bool verde,bool vermelho) {
@@ -309,25 +313,57 @@ bool atualizarTesteLed(uint32_t now) {
   return true;
 }
 
-// Azul: sem sensor valido. Verde: tudo normal. Vermelho: limite ultrapassado.
+// Maquina de estados do LED:
+// azul piscando = conectando; azul fixo = conectado/motor desligado;
+// verde fixo = motor ligado normal; vermelho piscando = motor ligado anormal;
+// vermelho fixo = falha de sensor com motor desligado.
 void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
   if(atualizarTesteLed(now))return;
-  // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
-  const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
-                                            temperatureC,relogio::agoraUtc());
-  estadoCritico=alarmeHabilitado&&algumDisparou;
-  if(testeAtivo&&(uint32_t)(now-inicioDoTeste)<1500UL)return;
-  testeAtivo=false;  // Subtracao unsigned suporta a volta de millis() a zero.
-  if(!mpuReady&&!tempReady)aplicarLed(true,false,false);
-  else aplicarLed(false,!estadoCritico,estadoCritico);
-  if(!estadoCritico) {
+
+  const bool conectado=WiFi.status()==WL_CONNECTED && mqtt.connected();
+  if(!conectado) {
+    const bool aceso=((now/500UL)&1U)==0U;
+    aplicarLed(aceso,false,false);
     if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
-    atualizarBeeps(now);  // Fora da emergencia o buzzer fica com os bipes.
+    beepsRestantes=0;beepTocando=false;
     return;
   }
-  beepsRestantes=0;beepTocando=false;  // Emergencia tem prioridade.
-  if((uint32_t)(now-ultimoBeep)>=BEEP_MS) {  // Bipe intermitente.
+
+  // Quem decide os alarmes e a lista configurada na placa.
+  const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
+                                            temperatureC,relogio::agoraUtc());
+  const bool falhaSensor=!mpuReady || !tempReady;
+  estadoCritico=alarmeHabilitado&&(algumDisparou||falhaSensor);
+
+  if(testeAtivo&&(uint32_t)(now-inicioDoTeste)<1500UL)return;
+  testeAtivo=false;
+
+  // Se a telemetria do quadro sumir, nao inventa que o motor continua ligado.
+  const bool quadroRecente=ultimaTelemetriaQuadro &&
+                           (uint32_t)(now-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
+  const bool motorAtivo=quadroRecente&&motorLigado;
+
+  if(!motorAtivo) {
+    if(estadoCritico) aplicarLed(false,false,true);  // falha parada: vermelho fixo
+    else aplicarLed(true,false,false);               // conectado/parado: azul fixo
+    if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
+    beepsRestantes=0;beepTocando=false;
+    return;
+  }
+
+  if(!estadoCritico) {
+    aplicarLed(false,true,false);                    // motor ligado normal: verde
+    if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
+    atualizarBeeps(now);
+    return;
+  }
+
+  // Motor ligado e anormal: vermelho piscando + buzzer intermitente.
+  const bool vermelho=((now/500UL)&1U)==0U;
+  aplicarLed(false,false,vermelho);
+  beepsRestantes=0;beepTocando=false;
+  if((uint32_t)(now-ultimoBeep)>=BEEP_MS) {
     ultimoBeep=now;
     buzzerLigado=!buzzerLigado;
     if(buzzerLigado)tone(BUZZER_PIN,buzzerHz);
@@ -495,6 +531,9 @@ void publishTelemetry() {
   doc["event_sounds"]=sonsDeEventos;
   doc["buzzer_hz"]=buzzerHz;
   doc["alarm_active"]=estadoCritico;
+  doc["motor_on"]=motorLigado;
+  doc["command_telemetry_fresh"]=ultimaTelemetriaQuadro &&
+      (uint32_t)(millis()-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
   if(mpuReady && amostrasAtuais>=10) {
     doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
     doc["vibration_peak"]=picoAtual;
@@ -532,11 +571,20 @@ void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo)
 // Comandos aceitos: alarme, lista de redes Wi-Fi, portal e atualizacao.
 void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(!topic || !length)return;
-  if(!strcmp(topic,quadroTelemetryTopic)) {  // Medidas eletricas do outro ESP32.
+  if(!strcmp(topic,quadroTelemetryTopic)) {  // Medidas eletricas e estado do motor.
     if(length<=900) {
-      xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-      alarmes::receberMedidasDoQuadro(payload,length,millis());
-      xSemaphoreGive(sensoresMutex);
+      StaticJsonDocument<1024> quadro;
+      if(!deserializeJson(quadro,payload,length) &&
+         !strcmp(quadro["device_id"] | "","esp32-01")) {
+        bool ligado=false;
+        JsonArrayConst relays=quadro["relays"].as<JsonArrayConst>();
+        if(!relays.isNull()) for(JsonVariantConst r:relays) if(r.as<bool>()){ligado=true;break;}
+        xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+        motorLigado=ligado;
+        ultimaTelemetriaQuadro=millis();
+        alarmes::receberMedidasDoQuadro(payload,length,ultimaTelemetriaQuadro);
+        xSemaphoreGive(sensoresMutex);
+      }
     }
     return;
   }
@@ -682,7 +730,7 @@ void setup() {
   comandoseguro::iniciar(DEVICE_ID);
   carregarConfigDoAlarme();
   alarmes::carregar(VIBRACAO_LIMITE_PADRAO,TEMPERATURA_LIMITE_PADRAO);
-  aplicarLed(true,false,false);  // Azul ate haver sensor valido.
+  aplicarLed(true,false,false);  // Azul durante a inicializacao/conexao.
   mpuReady=initMpu(true);
   lastMpuRetry=millis();
   procurarDs18b20();
