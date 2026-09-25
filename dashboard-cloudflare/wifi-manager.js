@@ -377,9 +377,24 @@ if (typeof document !== 'undefined') (() => {
       }
       renderizar();
     });
-    const caiu = () => { if (client === ativo) { connected = false; renderizar(); } };
+    const QUEDA_TOLERADA_MS = 6000;
+    let quedaTimer = null;
+    const caiu = () => {
+      if (client !== ativo || quedaTimer) return;
+      quedaTimer = setTimeout(() => {
+        quedaTimer = null;
+        if (client !== ativo || ativo.connected) return;
+        connected = false;
+        renderizar();
+      }, QUEDA_TOLERADA_MS);
+    };
+    const voltou = () => {
+      if (quedaTimer) { clearTimeout(quedaTimer); quedaTimer = null; }
+    };
     ativo.on('offline', caiu);
     ativo.on('close', caiu);
+    ativo.on('reconnect', caiu);
+    ativo.on('connect', voltou);
     renderizar();
   }
 
