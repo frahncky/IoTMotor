@@ -83,10 +83,10 @@ static const uint16_t BEEP_HZ = 2000;
 static const float VIBRACAO_LIMITE_PADRAO = 0.50f;
 static const float TEMPERATURA_LIMITE_PADRAO = 60.0f;
 static const uint8_t MPU_ADDR = 0x68;
-static const uint32_t WIFI_RETRY_MS = 12000UL;
+static const uint32_t WIFI_RETRY_MS = 5000UL;
 // Radio recem ligado demora a associar, e abrir o portal cedo demais obriga
 // a recadastrar a rede a cada religada. Insiste por este tempo primeiro.
-static const uint32_t INSISTIR_NA_REDE_MS = 90000UL;
+static const uint32_t INSISTIR_NA_REDE_MS = 30000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
 static const uint32_t SAMPLE_MS = 20UL;  // aproximadamente 50 amostras/s
 static const uint32_t PUBLISH_MS = 1000UL;
@@ -731,7 +731,7 @@ void setup() {
   // cabem varias tentativas antes de a rede propria entrar no ar.
   const uint32_t comecouWifi=millis();
   bool naRede=false;
-  while(!(naRede=wifistore::conectarEmOrdem(10000)) &&
+  while(!(naRede=wifistore::conectarEmOrdem(5000)) &&
         (uint32_t)(millis()-comecouWifi)<INSISTIR_NA_REDE_MS)
     Serial.printf("[S3/Wi-Fi] sem rede apos %lu s, insistindo\n",
                   (unsigned long)((millis()-comecouWifi)/1000));
@@ -746,7 +746,7 @@ void loop() {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
       Serial.printf("[S3/Wi-Fi] conectando, status=%d\n",WiFi.status());
-      wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
+      wifistore::conectarEmOrdem(5000);  // Ultima rede boa; depois as demais.
     }
     delay(2);return;
   }
