@@ -182,6 +182,13 @@ uint8_t ledProbeIndice=0,ledProbeModo=0;
 uint32_t ledProbePasso=900,ledProbeProximo=0;
 String ledProbeSeq;
 
+// ---- Teste fisico sequencial do hardware ----
+// Azul, verde, vermelho e buzzer, 2 s por etapa. Ignora a logica normal do alarme.
+bool hardwareTesteAtivo=false;
+uint8_t hardwareTesteEtapa=0;
+uint32_t hardwareTesteProximo=0;
+String hardwareTesteSeq;
+
 void beepDeEvento(uint8_t vezes) {
   if(sonsDeEventos)pedirBeep(vezes,BEEP_HZ,70);
 }
@@ -338,8 +345,50 @@ bool atualizarProcuraDosLeds(uint32_t now) {
   return true;
 }
 
+bool atualizarTesteFisico(uint32_t now) {
+  if(!hardwareTesteAtivo)return false;
+  if((int32_t)(now-hardwareTesteProximo)<0)return true;
+
+  noTone(BUZZER_PIN);
+  aplicarLed(false,false,false);
+
+  switch(hardwareTesteEtapa) {
+    case 0:
+      aplicarLed(true,false,false);
+      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 1/4: GPIO16 AZUL");
+      hardwareTesteProximo=now+2000;
+      hardwareTesteEtapa=1;
+      return true;
+    case 1:
+      aplicarLed(false,true,false);
+      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 2/4: GPIO17 VERDE");
+      hardwareTesteProximo=now+2000;
+      hardwareTesteEtapa=2;
+      return true;
+    case 2:
+      aplicarLed(false,false,true);
+      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 3/4: GPIO18 VERMELHO");
+      hardwareTesteProximo=now+2000;
+      hardwareTesteEtapa=3;
+      return true;
+    case 3:
+      tone(BUZZER_PIN,BEEP_HZ);
+      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 4/4: GPIO42 BUZZER 2 kHz");
+      hardwareTesteProximo=now+2000;
+      hardwareTesteEtapa=4;
+      return true;
+    default:
+      noTone(BUZZER_PIN);
+      aplicarLed(false,false,false);
+      hardwareTesteAtivo=false;
+      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"teste fisico encerrado");
+      return false;
+  }
+}
+
 // Azul: sem sensor valido. Verde: tudo normal. Vermelho: limite ultrapassado.
 void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
+  if(atualizarTesteFisico(now))return;       // Teste fisico tem prioridade total.
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
   if(atualizarProcuraDosLeds(now))return;   // Procura dos canais do LED em andamento.
   // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
@@ -621,6 +670,18 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     delay(200);
     abrirPortalDeRede(PORTAL_SEGUNDOS);
     ESP.restart();
+    return;
+  }
+  if(!strcmp(acao,"hardware_test")) {  // Teste fisico direto, sem logica de alarme.
+    hardwareTesteSeq=seq;
+    hardwareTesteEtapa=0;
+    hardwareTesteProximo=millis();
+    hardwareTesteAtivo=true;
+    probeAtivo=false;ledProbeAtivo=false;testeAtivo=false;
+    beepsRestantes=0;beepTocando=false;
+    noTone(BUZZER_PIN);buzzerLigado=false;
+    aplicarLed(false,false,false);
+    publishAck(seq,acao,true,"teste fisico iniciado");
     return;
   }
   if(!strcmp(acao,"led_probe")) {  // Procura os canais do LED RGB.
