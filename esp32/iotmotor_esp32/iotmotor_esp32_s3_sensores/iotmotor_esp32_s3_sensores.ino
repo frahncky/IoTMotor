@@ -96,8 +96,8 @@ PubSubClient mqtt(net);
 OneWire* oneWire=nullptr;
 DallasTemperature* ds18b20=nullptr;
 uint8_t ds18b20Pin=0;
-// Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44, strapping
-// e dos pinos do LED/buzzer 16/17/18/42).
+// Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44 e strapping).
+// GPIO4 so e pulado em runtime quando estiver realmente ocupado pelo DS18B20.
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96];
@@ -167,7 +167,7 @@ void pedirBeep(uint8_t vezes,uint16_t frequencia,uint32_t duracaoMs) {
 // nivel alto (buzzer ativo). Cada passo e anunciado em command_ack, entao da
 // para casar o som ouvido com o pino. Anda no laco principal: chamar
 // mqtt.loop() de dentro do tratador de comandos corrompe as mensagens.
-static const uint8_t BUZZER_CANDIDATOS[]={42,41,40,39,38,47,48,21,14,13,12,11,10,8,7,6,2,1};
+static const uint8_t BUZZER_CANDIDATOS[]={42,41,40,39,38,47,48,21,15,14,13,12,11,10,8,7,6,4,2,1};
 bool probeAtivo=false,probeTocando=false;
 uint8_t probeIndice=0,probeModo=0;
 uint32_t probePasso=700,probeProximo=0;
@@ -176,7 +176,7 @@ String probeSeq;
 // ---- Procura dos canais do LED RGB ----
 // Testa somente GPIOs livres, um por vez, em nivel alto e baixo.
 // O GPIO17 (verde conhecido) fica fora da varredura para nao confundir.
-static const uint8_t LED_CANDIDATOS[]={16,18,42,41,40,39,38,47,48,21,14,13,12,11,10,8,7,6,2,1};
+static const uint8_t LED_CANDIDATOS[]={16,18,42,41,40,39,38,47,48,21,15,14,13,12,11,10,8,7,6,4,2,1};
 bool ledProbeAtivo=false,ledProbeLigado=false;
 uint8_t ledProbeIndice=0,ledProbeModo=0;
 uint32_t ledProbePasso=900,ledProbeProximo=0;
