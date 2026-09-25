@@ -687,7 +687,7 @@ void loop() {
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
         mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();publishAlarmLog();
-        beepDeEvento(2);  // Dois bipes: placa conectada ao broker.
+        pedirBeep(2,BEEP_HZ,70);  // Dois bipes sempre: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());
     }
