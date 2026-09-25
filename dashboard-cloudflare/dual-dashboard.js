@@ -44,7 +44,7 @@ function parseTelemetry(json){
   dataSource:String(json.data_source||source.data_source||'não informada'),seq:numeric(source.seq),
   measuredAt:Number.isFinite(source.ts)&&source.ts>1700000000?source.ts*1000:null,
   benchArmed:source.bench_armed===true,motorOn:typeof source.motor_on==='boolean'?source.motor_on:null,
-  mode:typeof source.mode==='string'?source.mode:'—',phase:typeof source.start_phase==='string'?source.start_phase:null,vibrationPeak:numeric(source.vibration_peak),
+  mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak),
   relays:Array.isArray(source.relays)&&source.relays.length===4&&source.relays.every(v=>typeof v==='boolean')?source.relays:null};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
@@ -96,7 +96,6 @@ function updateControl(){
   chip.textContent=`CNT ${i+1} · ${on===undefined?'—':on?'ligado':'desligado'}`;
   return chip;
  }));
- text('modeValue',active&&s.phase?s.phase:'—');
 }
 function svg(tag,attrs={},content){const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,v]of Object.entries(attrs))n.setAttribute(key,String(v));if(content!==undefined)n.textContent=String(content);return n;}
 function drawChart(target,metric){
