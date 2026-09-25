@@ -282,11 +282,18 @@ inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
       vista[i] = WiFi.SSID(j) == redes[i].ssid;
   WiFi.scanDelete();
 
-  for (uint8_t i = 0; i < total; ++i)  // Primeiro as que a varredura viu.
+  // Primeira passada: tenta rapidamente todas as redes visiveis.
+  // Evita ficar 8-10 s preso numa rede antiga/fraca antes de chegar a IFMA_IOT.
+  const uint32_t rapida = esperaPorRedeMs > 3000 ? 3000 : esperaPorRedeMs;
+  for (uint8_t i = 0; i < total; ++i)
+    if (vista[i] && tentarRede(redes[i], rapida)) return true;
+
+  // Segunda passada: se nenhuma entrou, da uma chance maior, ainda respeitando a prioridade.
+  for (uint8_t i = 0; i < total; ++i)
     if (vista[i] && tentarRede(redes[i], esperaPorRedeMs)) return true;
 
-  const uint32_t curta = esperaPorRedeMs > 5000 ? 5000 : esperaPorRedeMs;
-  for (uint8_t i = 0; i < total; ++i)  // Depois as demais, com espera menor.
+  const uint32_t curta = esperaPorRedeMs > 3000 ? 3000 : esperaPorRedeMs;
+  for (uint8_t i = 0; i < total; ++i)  // Redes nao vistas: tentativa curta.
     if (!vista[i] && tentarRede(redes[i], curta)) return true;
 
   Serial.println("[WiFi] tentando as credenciais guardadas pelo proprio ESP32");
