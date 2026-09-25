@@ -12,7 +12,9 @@ test('indicador de conexao combina telemetria recente e status online/offline',(
  assert.equal(deviceConnection({brokerOk:true,status:'offline',statusAt:now-1000,at:now-3000,now}).kind,'error');
  // Offline retido antigo nao esconde telemetria nova.
  assert.equal(deviceConnection({brokerOk:true,status:'offline',statusAt:now-9000,at:now-1000,now}).kind,'live');
- assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-15000,now}).kind,'error');
+ // O limite agora tolera oscilacoes curtas do broker publico.
+ assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-15000,now}).kind,'live');
+ assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-30000,now}).kind,'error');
 });
 
 test('o historico guardado no navegador descarta o velho e o invalido',()=>{

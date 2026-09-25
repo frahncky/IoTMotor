@@ -14,6 +14,7 @@ let gravarRegistrosTimer=null;
 const PONTE=typeof location!=='undefined'&&location.protocol==='https:'
  ?`wss://${location.host}/mqtt`:'wss://test.mosquitto.org:8081';
 const DEFAULT={broker:PONTE,prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
+const TELEMETRY_STALE_MS=25000;
 // Quem já usava o broker direto passa para a ponte uma vez, sem perder nada.
 const BROKER_ANTIGO=['wss://test.mosquitto.org:8081','wss://test.mosquitto.org:8081/'];
 const METRICS=[
@@ -65,16 +66,16 @@ function text(id,value){$(id).textContent=String(value);}
 function diag(message){text('diagnostic',message);}
 function pill(message,kind=''){text('connectionText',message);$('connection').className=`pill ${kind}`.trim();$('connectBtn').textContent=state.client?'Desconectar':'Conectar ao MQTT';}
 function topic(device,kind){return `${state.config.prefix}/${device}/${kind}`;}
-function freshness(which){return state.connected&&state.subscribed&&state[which].at>0&&Date.now()-state[which].at<10000;}
+function freshness(which){return state.connected&&state.subscribed&&state[which].at>0&&Date.now()-state[which].at<TELEMETRY_STALE_MS;}
 // Conexao do dispositivo: telemetria recente prevalece; senao usa o status retido/LWT mais novo.
 function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now()}){
  if(!brokerOk)return {label:'broker desconectado',kind:''};
- const fresh=at>0&&now-at<10000,st=String(status||'').trim().toLowerCase();
+ const fresh=at>0&&now-at<TELEMETRY_STALE_MS,st=String(status||'').trim().toLowerCase();
  if(st==='offline'&&statusAt>=at)return {label:'desconectado',kind:'error'};
  if(fresh)return {label:'conectado',kind:'live'};
  if(st==='offline')return {label:'desconectado',kind:'error'};
- if(st==='online')return {label:at?'online · sem dados há mais de 10 s':'online · aguardando dados',kind:'wait'};
- return {label:at?'sem dados há mais de 10 s':'sem sinal',kind:at?'error':''};
+ if(st==='online')return {label:at?'online · sem dados há mais de 25 s':'online · aguardando dados',kind:'wait'};
+ return {label:at?'sem dados há mais de 25 s':'sem sinal',kind:at?'error':''};
 }
 function renderDevice(id,which,name){
  const s=state[which],info=deviceConnection({brokerOk:state.connected&&state.subscribed,status:s.status,statusAt:s.statusAt,at:s.at});
