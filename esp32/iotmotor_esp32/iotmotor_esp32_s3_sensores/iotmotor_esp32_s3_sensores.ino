@@ -117,6 +117,8 @@ bool sonsDeEventos=true;  // Bipes curtos de evento, fora da emergencia.
 uint16_t buzzerHz=BEEP_HZ_PADRAO;  // Frequencia ajustavel pelo painel e gravada na placa.
 uint32_t ultimoBeep=0,inicioDoTeste=0;
 bool testeAtivo=false;
+bool testeLedAtivo=false;
+uint32_t inicioTesteLed=0;
 float picoAtual=0.0f,rmsAtual=0.0f;
 uint32_t amostrasAtuais=0;
 // Sensores e sinalizacao continuam durante reconexao Wi-Fi, portal e MQTT.
@@ -285,9 +287,32 @@ bool atualizarProcuraDoBuzzer(uint32_t now) {
   return true;
 }
 
+void iniciarTesteLed(uint32_t now) {
+  testeLedAtivo=true;
+  inicioTesteLed=now;
+  noTone(BUZZER_PIN);
+  buzzerLigado=false;
+  beepsRestantes=0;
+  beepTocando=false;
+}
+
+bool atualizarTesteLed(uint32_t now) {
+  if(!testeLedAtivo)return false;
+  const uint32_t decorrido=(uint32_t)(now-inicioTesteLed);
+  if(decorrido<600UL) aplicarLed(true,false,false);       // azul
+  else if(decorrido<1200UL) aplicarLed(false,true,false); // verde
+  else if(decorrido<1800UL) aplicarLed(false,false,true); // vermelho
+  else {
+    testeLedAtivo=false;
+    return false;
+  }
+  return true;
+}
+
 // Azul: sem sensor valido. Verde: tudo normal. Vermelho: limite ultrapassado.
 void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
+  if(atualizarTesteLed(now))return;
   // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
   const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
                                             temperatureC,relogio::agoraUtc());
@@ -576,6 +601,13 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     const uint8_t vezes=constrain((int)(doc["count"] | 1),1,5);
     pedirBeep(vezes,frequencia,duracao);
     publishAck(seq,acao,true,"bipe acionado");
+    return;
+  }
+  if(!strcmp(acao,"led_test")) {  // Mostra azul, verde e vermelho sem buzzer.
+    xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+    iniciarTesteLed(millis());
+    xSemaphoreGive(sensoresMutex);
+    publishAck(seq,acao,true,"LED: azul, verde e vermelho");
     return;
   }
   if(!strcmp(acao,"alarm_test")) {  // Acende tudo e apita por 1,5 s.
