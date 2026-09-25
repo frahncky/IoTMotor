@@ -96,8 +96,8 @@ PubSubClient mqtt(net);
 OneWire* oneWire=nullptr;
 DallasTemperature* ds18b20=nullptr;
 uint8_t ds18b20Pin=0;
-// Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44 e strapping).
-// GPIO4 so e pulado em runtime quando estiver realmente ocupado pelo DS18B20.
+// Pinos livres candidatos (fora de I2C 5/9, USB 19/20, UART 43/44, strapping
+// e dos pinos do LED/buzzer 16/17/18/42).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96];
@@ -167,27 +167,11 @@ void pedirBeep(uint8_t vezes,uint16_t frequencia,uint32_t duracaoMs) {
 // nivel alto (buzzer ativo). Cada passo e anunciado em command_ack, entao da
 // para casar o som ouvido com o pino. Anda no laco principal: chamar
 // mqtt.loop() de dentro do tratador de comandos corrompe as mensagens.
-static const uint8_t BUZZER_CANDIDATOS[]={42,41,40,39,38,47,48,21,15,14,13,12,11,10,8,7,6,4,2,1};
+static const uint8_t BUZZER_CANDIDATOS[]={42,41,40,39,38,47,48,21,14,13,12,11,10,8,7,6,2,1};
 bool probeAtivo=false,probeTocando=false;
 uint8_t probeIndice=0,probeModo=0;
 uint32_t probePasso=700,probeProximo=0;
 String probeSeq;
-
-// ---- Procura dos canais do LED RGB ----
-// Testa somente GPIOs livres, um por vez, em nivel alto e baixo.
-// O GPIO17 (verde conhecido) fica fora da varredura para nao confundir.
-static const uint8_t LED_CANDIDATOS[]={16,18,42,41,40,39,38,47,48,21,15,14,13,12,11,10,8,7,6,4,2,1};
-bool ledProbeAtivo=false,ledProbeLigado=false;
-uint8_t ledProbeIndice=0,ledProbeModo=0;
-uint32_t ledProbePasso=900,ledProbeProximo=0;
-String ledProbeSeq;
-
-// ---- Teste fisico sequencial do hardware ----
-// Azul, verde, vermelho e buzzer, 2 s por etapa. Ignora a logica normal do alarme.
-bool hardwareTesteAtivo=false;
-uint8_t hardwareTesteEtapa=0;
-uint32_t hardwareTesteProximo=0;
-String hardwareTesteSeq;
 
 void beepDeEvento(uint8_t vezes) {
   if(sonsDeEventos)pedirBeep(vezes,BEEP_HZ,70);
@@ -295,102 +279,9 @@ bool atualizarProcuraDoBuzzer(uint32_t now) {
   return true;
 }
 
-// Avanca a procura dos canais do LED; true enquanto estiver em andamento.
-bool atualizarProcuraDosLeds(uint32_t now) {
-  if(!ledProbeAtivo)return false;
-  if((int32_t)(now-ledProbeProximo)<0)return true;
-  const uint8_t pino=LED_CANDIDATOS[ledProbeIndice];
-
-  if(ledProbeLigado) {
-    // Desliga o pino testado e devolve para alta impedancia.
-    digitalWrite(pino,ledProbeModo?HIGH:LOW);
-    pinMode(pino,INPUT);
-    ledProbeLigado=false;
-    ledProbeProximo=now+250;
-    if(++ledProbeModo>1) {
-      ledProbeModo=0;
-      if(++ledProbeIndice>=sizeof(LED_CANDIDATOS)) {
-        ledProbeAtivo=false;
-        pinMode(LED_AZUL_PIN,OUTPUT);
-        pinMode(LED_VERDE_PIN,OUTPUT);
-        pinMode(LED_VERM_PIN,OUTPUT);
-        publishAck(ledProbeSeq.c_str(),"led_probe",true,"procura encerrada");
-        return false;
-      }
-    }
-    return true;
-  }
-
-  // Nao interfere em I2C, USB/UART, sensor de temperatura, verde conhecido ou buzzer.
-  if(pino==SDA_PIN||pino==SCL_PIN||pino==19||pino==20||pino==43||pino==44||
-     pino==ds18b20Pin||pino==LED_VERDE_PIN||pino==BUZZER_PIN) {
-    ledProbeModo=0;
-    if(++ledProbeIndice>=sizeof(LED_CANDIDATOS)) {
-      ledProbeAtivo=false;
-      publishAck(ledProbeSeq.c_str(),"led_probe",true,"procura encerrada");
-      return false;
-    }
-    return true;
-  }
-
-  pinMode(pino,OUTPUT);
-  // modo 0 testa HIGH (catodo comum); modo 1 testa LOW (anodo comum).
-  digitalWrite(pino,ledProbeModo?LOW:HIGH);
-  char aviso[64];
-  snprintf(aviso,sizeof(aviso),"GPIO%u nivel %s",pino,ledProbeModo?"LOW":"HIGH");
-  publishAck(ledProbeSeq.c_str(),"led_probe",true,aviso);
-  Serial.printf("[LED] %s\n",aviso);
-  ledProbeLigado=true;
-  ledProbeProximo=now+ledProbePasso;
-  return true;
-}
-
-bool atualizarTesteFisico(uint32_t now) {
-  if(!hardwareTesteAtivo)return false;
-  if((int32_t)(now-hardwareTesteProximo)<0)return true;
-
-  noTone(BUZZER_PIN);
-  aplicarLed(false,false,false);
-
-  switch(hardwareTesteEtapa) {
-    case 0:
-      aplicarLed(true,false,false);
-      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 1/4: GPIO16 AZUL");
-      hardwareTesteProximo=now+2000;
-      hardwareTesteEtapa=1;
-      return true;
-    case 1:
-      aplicarLed(false,true,false);
-      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 2/4: GPIO17 VERDE");
-      hardwareTesteProximo=now+2000;
-      hardwareTesteEtapa=2;
-      return true;
-    case 2:
-      aplicarLed(false,false,true);
-      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 3/4: GPIO18 VERMELHO");
-      hardwareTesteProximo=now+2000;
-      hardwareTesteEtapa=3;
-      return true;
-    case 3:
-      tone(BUZZER_PIN,BEEP_HZ);
-      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"ETAPA 4/4: GPIO42 BUZZER 2 kHz");
-      hardwareTesteProximo=now+2000;
-      hardwareTesteEtapa=4;
-      return true;
-    default:
-      noTone(BUZZER_PIN);
-      aplicarLed(false,false,false);
-      hardwareTesteAtivo=false;
-      publishAck(hardwareTesteSeq.c_str(),"hardware_test",true,"teste fisico encerrado");
-      return false;
-  }
-}
-
 // Azul: sem sensor valido. Verde: tudo normal. Vermelho: limite ultrapassado.
 void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
-  if(atualizarTesteFisico(now))return;       // Teste fisico tem prioridade total.
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
-  if(atualizarProcuraDosLeds(now))return;   // Procura dos canais do LED em andamento.
   // Quem decide e a lista: cada alarme aponta a grandeza, o lado e o limite.
   const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
                                             temperatureC,relogio::agoraUtc());
@@ -419,13 +310,6 @@ void testarSinalizacao(uint32_t now) {
   aplicarLed(true,true,true);
   tone(BUZZER_PIN,BEEP_HZ);
   buzzerLigado=true;
-}
-
-void testarLed(uint32_t now,bool azul,bool verde,bool vermelho) {
-  inicioDoTeste=now;testeAtivo=true;
-  aplicarLed(azul,verde,vermelho);
-  noTone(BUZZER_PIN);
-  buzzerLigado=false;
 }
 
 // Procura um DS18B20 nos pinos candidatos; so aceita ROM lida com CRC valido.
@@ -672,28 +556,6 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     ESP.restart();
     return;
   }
-  if(!strcmp(acao,"hardware_test")) {  // Teste fisico direto, sem logica de alarme.
-    hardwareTesteSeq=seq;
-    hardwareTesteEtapa=0;
-    hardwareTesteProximo=millis();
-    hardwareTesteAtivo=true;
-    probeAtivo=false;ledProbeAtivo=false;testeAtivo=false;
-    beepsRestantes=0;beepTocando=false;
-    noTone(BUZZER_PIN);buzzerLigado=false;
-    aplicarLed(false,false,false);
-    publishAck(seq,acao,true,"teste fisico iniciado");
-    return;
-  }
-  if(!strcmp(acao,"led_probe")) {  // Procura os canais do LED RGB.
-    ledProbeSeq=seq;
-    ledProbePasso=constrain((long)(doc["ms"] | 900),300,2500);
-    ledProbeIndice=0;ledProbeModo=0;ledProbeLigado=false;ledProbeProximo=millis();ledProbeAtivo=true;
-    // Evita que o buzzer ou outro teste concorram com a varredura.
-    probeAtivo=false;testeAtivo=false;noTone(BUZZER_PIN);buzzerLigado=false;
-    aplicarLed(false,false,false);
-    publishAck(seq,acao,true,"procurando canais do LED: observe as cores");
-    return;
-  }
   if(!strcmp(acao,"buzzer_probe")) {  // Procura o buzzer; anda no laco principal.
     probeSeq=seq;
     probePasso=constrain((long)(doc["ms"] | 700),200,2000);
@@ -714,22 +576,6 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     testarSinalizacao(millis());
     xSemaphoreGive(sensoresMutex);
     publishAck(seq,acao,true,"LED e buzzer acionados por 1,5 s");
-    return;
-  }
-  if(!strcmp(acao,"led_test")) {  // Testa uma cor do RGB por 1,5 s.
-    const char* cor=doc["color"] | "";
-    bool azul=false,verde=false,vermelho=false;
-    if(!strcmp(cor,"blue"))azul=true;
-    else if(!strcmp(cor,"green"))verde=true;
-    else if(!strcmp(cor,"red"))vermelho=true;
-    else {
-      publishAck(seq,acao,false,"cor invalida: use blue, green ou red");
-      return;
-    }
-    xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-    testarLed(millis(),azul,verde,vermelho);
-    xSemaphoreGive(sensoresMutex);
-    publishAck(seq,acao,true,cor);
     return;
   }
   if(!strcmp(acao,"alarm_set")) {  // Interruptor geral e bipes de evento.
