@@ -186,10 +186,23 @@ function connect(automatico){
   }
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'telemetry'))ingest(which,payload.toString('utf8'),packet);
  });
- client.on('reconnect',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Reconectando…','wait');render();});
- client.on('offline',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Broker indisponível','error');diag('Falha WSS: verifique rede, broker e porta 8081.');render();});
+ const QUEDA_TOLERADA_MS=6000;let quedaTimer=null;
+ const caiu=()=>{
+  if(!active()||quedaTimer)return;
+  pill('Reconectando…','wait');diag('Conexão instável; tentando reconectar ao broker.');
+  quedaTimer=setTimeout(()=>{
+   quedaTimer=null;
+   if(!active()||client.connected)return;
+   state.connected=false;state.subscribed=false;
+   pill('Broker indisponível','error');diag('Falha WSS persistente; verifique rede e broker.');render();
+  },QUEDA_TOLERADA_MS);
+ };
+ const voltou=()=>{if(quedaTimer){clearTimeout(quedaTimer);quedaTimer=null;}};
+ client.on('reconnect',caiu);
+ client.on('offline',caiu);
  client.on('error',err=>{if(active())diag(`MQTT: ${String(err.message||err).slice(0,140)}`);});
- client.on('close',()=>{if(!active())return;state.connected=false;state.subscribed=false;pill('Conexão encerrada','error');render();});
+ client.on('close',caiu);
+ client.on('connect',voltou);
 }
 function command(kind,mode){ /* Retired GPIO2 prototype: never publish control on a public broker. */ }
 function registrosValidos(linhas){
