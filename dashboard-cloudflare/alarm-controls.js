@@ -31,6 +31,18 @@
   let lista = null, maxAlarmes = 8;
   const rascunhos = new Map();  // id -> {limite, ligado} ainda não gravados.
   const aviso = texto => { $('alarmeFeedback').textContent = texto; };
+  const limparProbeLog = titulo => {
+    const log = $('probeLog');
+    if (log) log.textContent = titulo || 'Diagnóstico de GPIO.';
+  };
+  const registrarProbe = linha => {
+    const log = $('probeLog');
+    if (!log) return;
+    const texto = String(linha || '').trim();
+    if (!texto) return;
+    log.textContent += (log.textContent ? '\n' : '') + texto;
+    log.scrollTop = log.scrollHeight;
+  };
   const topico = tipo => `${prefixo}/${dispositivo}/${tipo}`;
   const recente = () => conectado && estado && Date.now() - recebidoEm < 10000;
   const pronto = () => recente() && !pendente;
@@ -271,14 +283,17 @@
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
     const ativo = client;
     pendente = {seq, acao, extras, alvo};
+    if (acao === 'led_probe' || acao === 'buzzer_probe') limparProbeLog(`Iniciando ${acao}…`);
     const falhou = erro => {
       if (!erro || client !== ativo || pendente?.seq !== seq) return;
       limparPendente(); aviso(`Falha ao enviar: ${erro.message || erro}`); renderizar();
     };
+    const timeoutMs = (acao === 'led_probe' || acao === 'buzzer_probe') ? 90000 : 8000;
     pendente.timer = setTimeout(() => {
       if (client !== ativo || pendente?.seq !== seq) return;
+      if (acao === 'led_probe' || acao === 'buzzer_probe') registrarProbe('TIMEOUT: a placa parou de responder.');
       limparPendente(); aviso(`Sem resposta do ${dispositivo}.`); renderizar();
-    }, 8000);
+    }, timeoutMs);
     // O comando sai cifrado quando a placa exige senha (command-seal.js).
     const comando = {v: 1, device_id: dispositivo, seq, action: acao, ...extras};
     const selo = window.iotmotorSelo;
@@ -425,14 +440,21 @@
         recebidoEm = Date.now();
       } else if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq &&
                  dados.action === pendente.acao && typeof dados.accepted === 'boolean') {
-        if (dados.accepted && pendente.acao === 'alarm_set') {
-          estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds};
-          editando = false;
+        const ehProbe = pendente.acao === 'led_probe' || pendente.acao === 'buzzer_probe';
+        if (ehProbe) {
+          registrarProbe(`${dados.accepted ? 'OK' : 'ERRO'} · ${dados.reason || dados.action}`);
+          aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
+          if (!dados.accepted || String(dados.reason || '').includes('procura encerrada')) limparPendente();
+        } else {
+          if (dados.accepted && pendente.acao === 'alarm_set') {
+            estado = {...estado, enabled: pendente.extras.enabled, sounds: pendente.extras.sounds};
+            editando = false;
+          }
+          // Gravou: o rascunho some e a lista retida traz o valor confirmado.
+          if (dados.accepted && pendente.alvo) rascunhos.delete(pendente.alvo);
+          aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
+          limparPendente();
         }
-        // Gravou: o rascunho some e a lista retida traz o valor confirmado.
-        if (dados.accepted && pendente.alvo) rascunhos.delete(pendente.alvo);
-        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
-        limparPendente();
       }
       renderizar();
     });
