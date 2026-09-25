@@ -14,7 +14,7 @@ let gravarRegistrosTimer=null;
 const PONTE=typeof location!=='undefined'&&location.protocol==='https:'
  ?`wss://${location.host}/mqtt`:'wss://test.mosquitto.org:8081';
 const DEFAULT={broker:PONTE,prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
-const TELEMETRY_STALE_MS=25000;
+const TELEMETRY_STALE_MS=6000;
 // Quem já usava o broker direto passa para a ponte uma vez, sem perder nada.
 const BROKER_ANTIGO=['wss://test.mosquitto.org:8081','wss://test.mosquitto.org:8081/'];
 const METRICS=[
@@ -74,8 +74,8 @@ function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now()}){
  if(st==='offline'&&statusAt>=at)return {label:'desconectado',kind:'error'};
  if(fresh)return {label:'conectado',kind:'live'};
  if(st==='offline')return {label:'desconectado',kind:'error'};
- if(st==='online')return {label:at?'online · sem dados há mais de 25 s':'online · aguardando dados',kind:'wait'};
- return {label:at?'sem dados há mais de 25 s':'sem sinal',kind:at?'error':''};
+ if(st==='online')return {label:at?'online · sem dados há mais de 6 s':'online · aguardando dados',kind:'wait'};
+ return {label:at?'sem dados há mais de 6 s':'sem sinal',kind:at?'error':''};
 }
 function renderDevice(id,which,name){
  const s=state[which],info=deviceConnection({brokerOk:state.connected&&state.subscribed,status:s.status,statusAt:s.statusAt,at:s.at});
