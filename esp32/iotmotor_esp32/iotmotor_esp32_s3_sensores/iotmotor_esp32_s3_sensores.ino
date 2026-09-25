@@ -310,11 +310,11 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   }
 }
 
-void testarSinalizacao(uint32_t now) {
+void testarSinalizacao(uint32_t now,uint16_t frequencia) {
   inicioDoTeste=now;testeAtivo=true;
   ultimoBeep=now;
   aplicarLed(true,true,true);
-  tone(BUZZER_PIN,buzzerHz);
+  tone(BUZZER_PIN,frequencia);
   buzzerLigado=true;
 }
 
@@ -579,8 +579,9 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     return;
   }
   if(!strcmp(acao,"alarm_test")) {  // Acende tudo e apita por 1,5 s.
+    const uint16_t frequencia=constrain((int)(doc["freq"] | buzzerHz),BEEP_HZ_MIN,BEEP_HZ_MAX);
     xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-    testarSinalizacao(millis());
+    testarSinalizacao(millis(),frequencia);
     xSemaphoreGive(sensoresMutex);
     publishAck(seq,acao,true,"LED e buzzer acionados por 1,5 s");
     return;
