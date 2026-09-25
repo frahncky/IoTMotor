@@ -1,8 +1,8 @@
 #pragma once
 // Lista de redes Wi-Fi gravada na placa (NVS), na ordem definida pelo usuario.
 //
-// - Ate MAX_REDES redes. A ultima conexao bem-sucedida e tentada diretamente;
-//   se falhar, a placa busca as redes visiveis e respeita a ordem da lista.
+// - Ate MAX_REDES redes. Ao conectar, a placa busca as redes visiveis e tenta
+//   na ordem da lista: a primeira que responder e usada.
 // - A lista e editada pela aba "Wi-Fi" do painel, via MQTT.
 // - A senha NAO trafega em texto aberto no broker publico: a placa tem um par
 //   de chaves P-256 proprio (gerado no primeiro boot; a privada fica so na
@@ -10,7 +10,7 @@
 //   deriva a chave AES-256 como SHA-256("iotmotor-wifi-v1" || segredo) e cifra
 //   a senha em AES-GCM, com o SSID como dado autenticado.
 //
-// Esta variante prioriza a reconexao rapida do ESP32-S3.
+// Mantenha este arquivo identico nas pastas dos dois firmwares.
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
@@ -35,7 +35,6 @@ struct Rede {
 
 inline Rede redes[MAX_REDES];
 inline uint8_t total = 0;
-inline char ultimaRede[MAX_SSID + 1] = "";
 inline uint8_t chavePrivada[32];
 inline uint8_t chavePublica[65];  // Ponto P-256 nao comprimido (0x04 || X || Y).
 inline bool chavesProntas = false;
@@ -67,19 +66,6 @@ inline int indiceDe(const char* ssid) {
   return -1;
 }
 
-// Guarda somente quando a rede muda, evitando escrita repetida na flash.
-inline void lembrarUltimaRede(const char* ssid) {
-  if (!ssid) ssid = "";
-  if (!strcmp(ultimaRede, ssid)) return;
-  strncpy(ultimaRede, ssid, MAX_SSID);
-  ultimaRede[MAX_SSID] = '\0';
-  Preferences memoria;
-  if (!memoria.begin("iot-redes", false)) return;
-  if (*ultimaRede) memoria.putString("ultima", ultimaRede);
-  else memoria.remove("ultima");
-  memoria.end();
-}
-
 // Insere (ou atualiza) a rede na posicao pedida; posicao fora da lista = fim.
 inline bool adicionar(const char* ssid, const char* senha, int posicao, bool gravar = true) {
   if (!ssid || !*ssid || strlen(ssid) > MAX_SSID || !senha || strlen(senha) > MAX_SENHA) return false;
@@ -105,7 +91,6 @@ inline bool remover(const char* ssid) {
   if (i < 0) return false;
   for (uint8_t j = i; j + 1 < total; ++j) redes[j] = redes[j + 1];
   --total;
-  if (!strcmp(ultimaRede, ssid)) lembrarUltimaRede("");
   salvar();
   return true;
 }
@@ -133,7 +118,6 @@ inline void carregar(const char* const* ssidsIniciais, const char* const* senhas
   Preferences memoria;
   memoria.begin("iot-redes", false);
   const bool semeada = memoria.getBool("ok", false);
-  const String ultima = memoria.getString("ultima", "");
   total = 0;
   if (semeada) {
     const uint8_t salvas = memoria.getUChar("n", 0);
@@ -144,10 +128,6 @@ inline void carregar(const char* const* ssidsIniciais, const char* const* senhas
       snprintf(chave, sizeof(chave), "p%u", i);
       const String senha = memoria.getString(chave, "");
       if (ssid.length()) adicionar(ssid.c_str(), senha.c_str(), -1, false);
-    }
-    if (indiceDe(ultima.c_str()) >= 0) {
-      strncpy(ultimaRede, ultima.c_str(), MAX_SSID);
-      ultimaRede[MAX_SSID] = '\0';
     }
     memoria.end();
     return;
@@ -281,9 +261,7 @@ inline bool tentarRede(const Rede& rede, uint32_t esperaMs) {
   else WiFi.begin(rede.ssid);
   const unsigned long inicio = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaMs) delay(100);
-  const bool conectou = WiFi.status() == WL_CONNECTED;
-  if (conectou) lembrarUltimaRede(rede.ssid);
-  return conectou;
+  return WiFi.status() == WL_CONNECTED;
 }
 
 // Conecta na ordem da lista.
@@ -296,14 +274,6 @@ inline bool tentarRede(const Rede& rede, uint32_t esperaMs) {
 inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
   if (!total) return false;
   WiFi.mode(WIFI_STA);
-  const uint32_t curta = esperaPorRedeMs > 5000 ? 5000 : esperaPorRedeMs;
-
-  // Caminho normal: tenta a ultima rede boa (ou a primeira da lista no
-  // primeiro boot) sem pagar antes o custo de uma varredura completa.
-  int preferida = indiceDe(ultimaRede);
-  if (preferida < 0) preferida = 0;
-  if (tentarRede(redes[preferida], curta)) return true;
-
   delay(100);  // Radio recem ligado: a varredura sai mais completa.
   const int encontradas = WiFi.scanNetworks(false, true);
   bool vista[MAX_REDES] = {false};
@@ -313,11 +283,24 @@ inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
   WiFi.scanDelete();
 
   for (uint8_t i = 0; i < total; ++i)  // Primeiro as que a varredura viu.
-    if (i != preferida && vista[i] && tentarRede(redes[i], curta)) return true;
+    if (vista[i] && tentarRede(redes[i], esperaPorRedeMs)) return true;
 
+  const uint32_t curta = esperaPorRedeMs > 5000 ? 5000 : esperaPorRedeMs;
   for (uint8_t i = 0; i < total; ++i)  // Depois as demais, com espera menor.
-    if (i != preferida && !vista[i] && tentarRede(redes[i], curta)) return true;
-  return false;
+    if (!vista[i] && tentarRede(redes[i], curta)) return true;
+
+  Serial.println("[WiFi] tentando as credenciais guardadas pelo proprio ESP32");
+  WiFi.disconnect(false, false);
+  WiFi.begin();
+  const unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < curta) delay(100);
+  if (WiFi.status() != WL_CONNECTED) return false;
+  const String ssid = WiFi.SSID(), senha = WiFi.psk();
+  const int ja = indiceDe(ssid.c_str());
+  // Sem sobrescrever uma senha boa por uma vazia que o portal nao devolveu.
+  if (ja < 0 || (senha.length() && strcmp(redes[ja].senha, senha.c_str())))
+    adicionar(ssid.c_str(), senha.c_str(), 0);
+  return true;
 }
 
 // ---- Rede propria da placa (ponto de acesso usado pelo portal) ----

@@ -72,7 +72,7 @@ static const uint8_t SDA_PIN = 5;
 static const uint8_t SCL_PIN = 9;
 static const uint8_t DS18B20_PIN = 4;
 // Sinalizacao local da placa (mesma pinagem do modulo 2 original).
-static const uint8_t BUZZER_PIN = 42;      // Tipo e polaridade: ver "soar".
+static const uint8_t BUZZER_PIN = 42;      // Passivo: acionado com tone().
 static const uint8_t LED_AZUL_PIN = 16;
 static const uint8_t LED_VERDE_PIN = 17;
 static const uint8_t LED_VERM_PIN = 18;
@@ -83,10 +83,7 @@ static const uint16_t BEEP_HZ = 2000;
 static const float VIBRACAO_LIMITE_PADRAO = 0.50f;
 static const float TEMPERATURA_LIMITE_PADRAO = 60.0f;
 static const uint8_t MPU_ADDR = 0x68;
-static const uint32_t WIFI_RETRY_MS = 5000UL;
-// Radio recem ligado demora a associar, e abrir o portal cedo demais obriga
-// a recadastrar a rede a cada religada. Insiste por este tempo primeiro.
-static const uint32_t INSISTIR_NA_REDE_MS = 30000UL;
+static const uint32_t WIFI_RETRY_MS = 12000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
 static const uint32_t SAMPLE_MS = 20UL;  // aproximadamente 50 amostras/s
 static const uint32_t PUBLISH_MS = 1000UL;
@@ -121,35 +118,6 @@ float picoAtual=0.0f,rmsAtual=0.0f;
 uint32_t amostrasAtuais=0;
 // Sensores e sinalizacao continuam durante reconexao Wi-Fi, portal e MQTT.
 SemaphoreHandle_t sensoresMutex=nullptr;
-// ---- Buzzer: tipo e polaridade ----
-// Passivo precisa de tone(); ativo tem oscilador proprio e so quer nivel. Muito
-// modulo ativo de 3 pinos e acionado em nivel BAIXO: nesse caso, deixar o pino
-// em LOW para "calar" faz exatamente o contrario, e ele apita sem parar. Por
-// isso o tipo e o nivel sao configuraveis e ficam gravados na placa.
-bool buzzerAtivo=false;      // false = passivo (tone), true = ativo (nivel).
-bool buzzerNivelAlto=true;   // Nivel que FAZ SOM num buzzer ativo.
-
-void soar(bool ligado,uint16_t frequencia=BEEP_HZ) {
-  if(buzzerAtivo) {
-    // Solta o pino de um tone() anterior. Chamar soar(false) aqui reentra
-    // neste mesmo ramo e recursa sem fim: a pilha estoura e a placa reinicia.
-    noTone(BUZZER_PIN);
-    pinMode(BUZZER_PIN,OUTPUT);
-    digitalWrite(BUZZER_PIN,ligado==buzzerNivelAlto?HIGH:LOW);
-    return;
-  }
-  if(ligado)tone(BUZZER_PIN,frequencia);
-  else {
-    noTone(BUZZER_PIN);
-    pinMode(BUZZER_PIN,OUTPUT);
-    digitalWrite(BUZZER_PIN,LOW);  // Sem deixar o pino solto depois do tone.
-  }
-}
-
-const char* buzzerDescrito() {
-  return !buzzerAtivo ? "passivo" : buzzerNivelAlto ? "ativo-alto" : "ativo-baixo";
-}
-
 void aplicarLed(bool azul,bool verde,bool vermelho) {
   digitalWrite(LED_AZUL_PIN, azul==!RGB_ANODO_COMUM?HIGH:LOW);
   digitalWrite(LED_VERDE_PIN, verde==!RGB_ANODO_COMUM?HIGH:LOW);
@@ -162,23 +130,7 @@ void carregarConfigDoAlarme() {
   if(!memoria.begin("iot-alarme",true))return;
   alarmeHabilitado=memoria.getBool("ligado",true);
   sonsDeEventos=memoria.getBool("sons",true);
-  buzzerAtivo=memoria.getBool("bzativo",false);
-  buzzerNivelAlto=memoria.getBool("bzalto",true);
   memoria.end();
-  Serial.printf("[BUZZER] %s\n",buzzerDescrito());
-}
-
-bool salvarTipoDoBuzzer(bool ativo,bool nivelAlto) {
-  Preferences memoria;
-  if(!memoria.begin("iot-alarme",false))return false;
-  memoria.putBool("bzativo",ativo);
-  memoria.putBool("bzalto",nivelAlto);
-  memoria.end();
-  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-  buzzerAtivo=ativo;buzzerNivelAlto=nivelAlto;buzzerLigado=false;
-  soar(false);  // Cala na hora, ja com a regra nova.
-  xSemaphoreGive(sensoresMutex);
-  return true;
 }
 
 bool salvarConfigDoAlarme(bool ligado,bool sons) {
@@ -238,7 +190,7 @@ bool atualizarBeeps(uint32_t now) {
   }
   if(!beepsRestantes)return false;
   --beepsRestantes;
-  soar(true,beepFrequencia);
+  tone(BUZZER_PIN,beepFrequencia);
   beepTocando=true;
   beepProximo=now+beepDuracao;
   return true;
@@ -339,7 +291,7 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(!mpuReady&&!tempReady)aplicarLed(true,false,false);
   else aplicarLed(false,!estadoCritico,estadoCritico);
   if(!estadoCritico) {
-    if(buzzerLigado){soar(false);buzzerLigado=false;}
+    if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
     atualizarBeeps(now);  // Fora da emergencia o buzzer fica com os bipes.
     return;
   }
@@ -347,7 +299,8 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if((uint32_t)(now-ultimoBeep)>=BEEP_MS) {  // Bipe intermitente.
     ultimoBeep=now;
     buzzerLigado=!buzzerLigado;
-    soar(buzzerLigado);
+    if(buzzerLigado)tone(BUZZER_PIN,BEEP_HZ);
+    else noTone(BUZZER_PIN);
   }
 }
 
@@ -355,7 +308,7 @@ void testarSinalizacao(uint32_t now) {
   inicioDoTeste=now;testeAtivo=true;
   ultimoBeep=now;
   aplicarLed(true,true,true);
-  soar(true);
+  tone(BUZZER_PIN,BEEP_HZ);
   buzzerLigado=true;
 }
 
@@ -509,7 +462,6 @@ void publishTelemetry() {
   if(const uint32_t carimbo=relogio::agoraUtc())doc["ts"]=carimbo;
   doc["alarm_enabled"]=alarmeHabilitado;
   doc["event_sounds"]=sonsDeEventos;
-  doc["buzzer"]=buzzerDescrito();
   doc["alarm_active"]=estadoCritico;
   if(mpuReady && amostrasAtuais>=10) {
     doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
@@ -619,19 +571,6 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     publishAck(seq,acao,true,"bipe acionado");
     return;
   }
-  if(!strcmp(acao,"buzzer_set")) {  // passivo, ativo-alto ou ativo-baixo.
-    const char* tipo=doc["type"] | "";
-    if(strcmp(tipo,"passive") && strcmp(tipo,"active")) {
-      publishAck(seq,acao,false,"type deve ser passive ou active");
-      return;
-    }
-    const bool ativo=!strcmp(tipo,"active");
-    const bool alto=strcmp(doc["level"] | "high","low")!=0;
-    const bool ok=salvarTipoDoBuzzer(ativo,alto);
-    publishAck(seq,acao,ok,ok?buzzerDescrito():"falha ao gravar");
-    if(ok)publishTelemetry();
-    return;
-  }
   if(!strcmp(acao,"alarm_test")) {  // Acende tudo e apita por 1,5 s.
     xSemaphoreTake(sensoresMutex,portMAX_DELAY);
     testarSinalizacao(millis());
@@ -692,7 +631,7 @@ void setup() {
   Wire.begin(SDA_PIN,SCL_PIN);
   Wire.setClock(100000);
   pinMode(LED_AZUL_PIN,OUTPUT);pinMode(LED_VERDE_PIN,OUTPUT);pinMode(LED_VERM_PIN,OUTPUT);
-  pinMode(BUZZER_PIN,OUTPUT);soar(false);  // Boot em silencio, seja qual for o tipo.
+  pinMode(BUZZER_PIN,OUTPUT);noTone(BUZZER_PIN);
   comandoseguro::iniciar(DEVICE_ID);
   carregarConfigDoAlarme();
   alarmes::carregar(VIBRACAO_LIMITE_PADRAO,TEMPERATURA_LIMITE_PADRAO);
@@ -720,22 +659,12 @@ void setup() {
   mqtt.setBufferSize(1536);
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
-  WiFi.persistent(false);  // Credenciais ficam na lista da placa, nao na do core.
-  WiFi.setSleep(false);    // Sem dormir entre os beacons: o quadro faz assim.
   wifistore::carregar(REDES_INICIAIS,SENHAS_INICIAIS,sizeof(REDES_INICIAIS)/sizeof(REDES_INICIAIS[0]));
   wifistore::prepararChaves();
   wifistore::carregarRedePropria(PORTAL_NOME);
   Serial.printf("[S3/Wi-Fi] %u rede(s) na lista da placa\n",wifistore::total);
-  // Nenhuma rede da lista respondeu depois de insistir: so o portal permite
-  // cadastrar sem cabo. Uma passada so leva menos de meio minuto, entao aqui
-  // cabem varias tentativas antes de a rede propria entrar no ar.
-  const uint32_t comecouWifi=millis();
-  bool naRede=false;
-  while(!(naRede=wifistore::conectarEmOrdem(5000)) &&
-        (uint32_t)(millis()-comecouWifi)<INSISTIR_NA_REDE_MS)
-    Serial.printf("[S3/Wi-Fi] sem rede apos %lu s, insistindo\n",
-                  (unsigned long)((millis()-comecouWifi)/1000));
-  if(!naRede)abrirPortalDeRede(PORTAL_SEGUNDOS);
+  // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
+  if(!wifistore::conectarEmOrdem(10000))abrirPortalDeRede(PORTAL_SEGUNDOS);
   Serial.printf("[S3/boot] %s broker=%s:%u\n",DEVICE_ID,MQTT_HOST,MQTT_PORT);
 }
 
@@ -746,7 +675,7 @@ void loop() {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
       Serial.printf("[S3/Wi-Fi] conectando, status=%d\n",WiFi.status());
-      wifistore::conectarEmOrdem(5000);  // Ultima rede boa; depois as demais.
+      wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
     }
     delay(2);return;
   }
