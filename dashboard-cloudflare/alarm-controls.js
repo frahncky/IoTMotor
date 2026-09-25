@@ -251,7 +251,7 @@
       $('alarmeSons').checked = estado.sounds;
     }
     for (const id of CAMPOS) $(id).disabled = Boolean(pendente);
-    for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeRecarregar'])
+    for (const id of ['alarmeSalvar', 'alarmeTeste', 'alarmeBipe', 'alarmeProbe', 'alarmeRecarregar'])
       $(id).disabled = !pronto();
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharAtivos();
@@ -320,6 +320,9 @@
   // Bipe curto: confirma na bancada que a placa esta ouvindo o painel.
   $('alarmeBipe').addEventListener('click', () => {
     if (publicar('buzzer_beep', {count: 2, ms: 120})) aviso('Bipando na placa de sensores…');
+  });
+  $('alarmeProbe').addEventListener('click', () => {
+    if (publicar('buzzer_probe', {ms: 700})) aviso('Procurando o buzzer: ouça a placa e acompanhe os testes de GPIO…');
   });
   $('alarmeTeste').addEventListener('click', () => {
     if (publicar('alarm_test', {})) aviso('Acendendo o LED e apitando por 1,5 s…');
