@@ -312,6 +312,13 @@ void testarSinalizacao(uint32_t now) {
   buzzerLigado=true;
 }
 
+void testarLed(uint32_t now,bool azul,bool verde,bool vermelho) {
+  inicioDoTeste=now;testeAtivo=true;
+  aplicarLed(azul,verde,vermelho);
+  noTone(BUZZER_PIN);
+  buzzerLigado=false;
+}
+
 // Procura um DS18B20 nos pinos candidatos; so aceita ROM lida com CRC valido.
 void procurarDs18b20() {
   for (uint8_t pino : DS18B20_CANDIDATOS) {
@@ -576,6 +583,22 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     testarSinalizacao(millis());
     xSemaphoreGive(sensoresMutex);
     publishAck(seq,acao,true,"LED e buzzer acionados por 1,5 s");
+    return;
+  }
+  if(!strcmp(acao,"led_test")) {  // Testa uma cor do RGB por 1,5 s.
+    const char* cor=doc["color"] | "";
+    bool azul=false,verde=false,vermelho=false;
+    if(!strcmp(cor,"blue"))azul=true;
+    else if(!strcmp(cor,"green"))verde=true;
+    else if(!strcmp(cor,"red"))vermelho=true;
+    else {
+      publishAck(seq,acao,false,"cor invalida: use blue, green ou red");
+      return;
+    }
+    xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+    testarLed(millis(),azul,verde,vermelho);
+    xSemaphoreGive(sensoresMutex);
+    publishAck(seq,acao,true,cor);
     return;
   }
   if(!strcmp(acao,"alarm_set")) {  // Interruptor geral e bipes de evento.
