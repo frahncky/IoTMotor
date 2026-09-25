@@ -86,6 +86,7 @@ static const float VIBRACAO_LIMITE_PADRAO = 0.50f;
 static const float TEMPERATURA_LIMITE_PADRAO = 60.0f;
 static const uint8_t MPU_ADDR = 0x68;
 static const uint32_t WIFI_RETRY_MS = 6000UL;
+static const uint32_t WIFI_RADIO_RESET_MS = 30000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
 static const uint32_t SAMPLE_MS = 20UL;  // aproximadamente 50 amostras/s
 static const uint32_t PUBLISH_MS = 1000UL;
@@ -104,6 +105,7 @@ static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
+uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
 uint32_t sampleCount=0;
@@ -729,6 +731,23 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(n)mqtt.publish(ackTopic,(const uint8_t*)saida,(unsigned int)n,false);
 }
 
+void recuperarWifiS3() {
+  // Limpa qualquer sessao MQTT/WebSocket antiga antes de reiniciar o radio.
+  mqtt.disconnect();
+  net.stop();
+  WiFi.disconnect(false,false);
+  delay(50);
+  WiFi.mode(WIFI_OFF);
+  delay(150);
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
+  delay(100);
+  lastMqttAttempt=0;
+  lastWifiAttempt=0;
+  Serial.println("[S3/Wi-Fi] radio reiniciado para recuperar conexao");
+}
+
 bool conectarWifiS3(uint32_t esperaPadraoMs) {
   // Neste modulo, IFMA_IOT e a rede de bancada mais comum. Tenta primeiro
   // por poucos segundos para evitar percorrer toda a lista antes de alcança-la.
@@ -770,6 +789,8 @@ void setup() {
   mqtt.setBufferSize(1536);
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);  // Mantem o radio acordado: melhora estabilidade perto do motor.
   wifistore::carregar(REDES_INICIAIS,SENHAS_INICIAIS,sizeof(REDES_INICIAIS)/sizeof(REDES_INICIAIS[0]));
   wifistore::prepararChaves();
   wifistore::carregarRedePropria(PORTAL_NOME);
@@ -787,12 +808,29 @@ void loop() {
   uint32_t now=millis();
 
   if(WiFi.status()!=WL_CONNECTED) {
+    if(!wifiCaiuEm) {
+      wifiCaiuEm=now;
+      mqtt.disconnect();
+      net.stop();  // descarta WebSocket antigo imediatamente
+      Serial.printf("[S3/Wi-Fi] conexao perdida, status=%d\n",WiFi.status());
+    }
+    if((uint32_t)(now-wifiCaiuEm)>=WIFI_RADIO_RESET_MS) {
+      recuperarWifiS3();
+      wifiCaiuEm=millis();
+      now=wifiCaiuEm;
+    }
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
-      Serial.printf("[S3/Wi-Fi] conectando, status=%d\n",WiFi.status());
+      Serial.printf("[S3/Wi-Fi] reconectando, status=%d\n",WiFi.status());
       conectarWifiS3(5000);  // IFMA_IOT primeiro; depois as demais redes cadastradas.
     }
     delay(2);return;
+  }
+  if(wifiCaiuEm) {
+    Serial.printf("[S3/Wi-Fi] recuperado em %lu ms, rede=%s, RSSI=%d dBm\n",
+                  (unsigned long)(now-wifiCaiuEm),WiFi.SSID().c_str(),WiFi.RSSI());
+    wifiCaiuEm=0;
+    lastMqttAttempt=0;
   }
   if(!mqtt.connected()) {
     if(lastMqttAttempt==0 || (uint32_t)(now-lastMqttAttempt)>=MQTT_RETRY_MS) {
