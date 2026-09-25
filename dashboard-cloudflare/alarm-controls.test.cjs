@@ -215,7 +215,7 @@ test('a telemetria diz quais alarmes estao disparados agora', () => {
   assert.equal(h.node('alarmeAtivosResumo').textContent, 'Nenhum alarme ativo.');
 });
 
-test('o botao Salvar envia apenas o interruptor geral e os bipes de evento', () => {
+test('o botao Salvar envia interruptor, bipes e frequencia do buzzer', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c);
   h.node('alarmeOn').checked = false; h.node('alarmeOn').fire('change');
@@ -224,7 +224,7 @@ test('o botao Salvar envia apenas o interruptor geral e os bipes de evento', () 
   assert.equal(h.node('alarmeOn').checked, false);
   h.node('alarmeForm').fire('submit');
   assert.deepEqual(c.published[0].data, {v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq,
-    action: 'alarm_set', enabled: false, sounds: true});
+    action: 'alarm_set', enabled: false, sounds: true, buzzer_hz: 2000});
   h.node('alarmeForm').fire('submit');
   assert.equal(c.published.length, 1);
   h.send(c, 'command_ack', {...c.published[0].data, accepted: true});
@@ -275,9 +275,10 @@ test('reconexao exige novos dados e ignora mensagens da conexao encerrada', () =
   h.telemetry(next);
   assert.equal(h.node('alarmeTeste').disabled, false);
   next.emit('offline');
-  assert.equal(h.node('alarmeTeste').disabled, true);
+  // Quedas curtas do broker sao toleradas por 6 s para evitar oscilacao visual.
+  assert.equal(h.node('alarmeTeste').disabled, false);
   next.emit('connect');
-  assert.equal(h.node('alarmeTeste').disabled, true);
+  assert.equal(h.node('alarmeTeste').disabled, false);
   h.telemetry(next);
   next.emit('message', 'iotmotor/esp32-02/status', Buffer.from('offline'), {retain: false});
   assert.equal(h.node('alarmeTeste').disabled, true);
@@ -327,5 +328,15 @@ test('o botao Bipar pede um bipe curto ao S3, sem mexer nos limites', () => {
   const cmd = c.published[0];
   assert.equal(cmd.topic, 'iotmotor/esp32-02/command');
   assert.deepEqual(cmd.data, {v: 1, device_id: 'esp32-02', seq: cmd.data.seq,
-    action: 'buzzer_beep', count: 2, ms: 120});
+    action: 'buzzer_beep', count: 2, ms: 120, freq: 2000});
+});
+
+test('o botao Testar LED envia led_test sem comando de buzzer', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c);
+  h.node('alarmeTesteLed').fire('click');
+  const cmd = c.published[0];
+  assert.equal(cmd.topic, 'iotmotor/esp32-02/command');
+  assert.deepEqual(cmd.data, {v: 1, device_id: 'esp32-02', seq: cmd.data.seq,
+    action: 'led_test'});
 });
