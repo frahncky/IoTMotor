@@ -78,7 +78,9 @@ static const uint8_t LED_VERDE_PIN = 17;
 static const uint8_t LED_VERM_PIN = 18;
 static const bool RGB_ANODO_COMUM = false;  // Catodo comum: nivel alto acende.
 static const uint32_t BEEP_MS = 400UL;      // Intervalo do alarme intermitente.
-static const uint16_t BEEP_HZ = 2000;
+static const uint16_t BEEP_HZ_PADRAO = 2000;
+static const uint16_t BEEP_HZ_MIN = 500;
+static const uint16_t BEEP_HZ_MAX = 5000;
 // Limites padrao do alarme; ajustaveis pelo painel e gravados na placa.
 static const float VIBRACAO_LIMITE_PADRAO = 0.50f;
 static const float TEMPERATURA_LIMITE_PADRAO = 60.0f;
@@ -112,6 +114,7 @@ bool mpuReady=false,tempPending=false,tempReady=false;
 // Alarme local: LED RGB e buzzer.
 bool alarmeHabilitado=true,estadoCritico=false,buzzerLigado=false;
 bool sonsDeEventos=true;  // Bipes curtos de evento, fora da emergencia.
+uint16_t buzzerHz=BEEP_HZ_PADRAO;  // Frequencia ajustavel pelo painel e gravada na placa.
 uint32_t ultimoBeep=0,inicioDoTeste=0;
 bool testeAtivo=false;
 float picoAtual=0.0f,rmsAtual=0.0f;
@@ -130,17 +133,19 @@ void carregarConfigDoAlarme() {
   if(!memoria.begin("iot-alarme",true))return;
   alarmeHabilitado=memoria.getBool("ligado",true);
   sonsDeEventos=memoria.getBool("sons",true);
+  buzzerHz=constrain((int)memoria.getUShort("buzzer_hz",BEEP_HZ_PADRAO),BEEP_HZ_MIN,BEEP_HZ_MAX);
   memoria.end();
 }
 
-bool salvarConfigDoAlarme(bool ligado,bool sons) {
+bool salvarConfigDoAlarme(bool ligado,bool sons,uint16_t frequencia) {
   Preferences memoria;
   if(!memoria.begin("iot-alarme",false))return false;
   memoria.putBool("ligado",ligado);
   memoria.putBool("sons",sons);
+  memoria.putUShort("buzzer_hz",frequencia);
   memoria.end();
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-  alarmeHabilitado=ligado;sonsDeEventos=sons;
+  alarmeHabilitado=ligado;sonsDeEventos=sons;buzzerHz=frequencia;
   xSemaphoreGive(sensoresMutex);
   return true;
 }
@@ -149,7 +154,7 @@ bool salvarConfigDoAlarme(bool ligado,bool sons) {
 // Avisos de conexao e de comando recebido, e o bipe pedido pelo painel. Sao
 // tocados sem travar o laco e nunca atrapalham o alarme, que tem prioridade.
 uint8_t beepsRestantes=0;
-uint16_t beepFrequencia=BEEP_HZ;
+uint16_t beepFrequencia=BEEP_HZ_PADRAO;
 uint32_t beepDuracao=80,beepProximo=0;
 bool beepTocando=false;
 
@@ -174,7 +179,7 @@ uint32_t probePasso=700,probeProximo=0;
 String probeSeq;
 
 void beepDeEvento(uint8_t vezes) {
-  if(sonsDeEventos)pedirBeep(vezes,BEEP_HZ,70);
+  if(sonsDeEventos)pedirBeep(vezes,buzzerHz,70);
 }
 
 // Retorna true enquanto estiver tocando um bipe (o alarme nao mexe no buzzer).
@@ -204,6 +209,7 @@ void publishAlarms() {
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   doc["enabled"]=alarmeHabilitado;
   doc["sounds"]=sonsDeEventos;
+  doc["buzzer_hz"]=buzzerHz;
   alarmes::descrever(doc);
   xSemaphoreGive(sensoresMutex);
   String texto;
@@ -273,7 +279,7 @@ bool atualizarProcuraDoBuzzer(uint32_t now) {
   publishAck(probeSeq.c_str(),"buzzer_probe",true,aviso);
   Serial.printf("[BUZZER] %s\n",aviso);
   if(probeModo){pinMode(pino,OUTPUT);digitalWrite(pino,HIGH);}
-  else tone(pino,BEEP_HZ);
+  else tone(pino,buzzerHz);
   probeTocando=true;
   probeProximo=now+probePasso;
   return true;
@@ -299,7 +305,7 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if((uint32_t)(now-ultimoBeep)>=BEEP_MS) {  // Bipe intermitente.
     ultimoBeep=now;
     buzzerLigado=!buzzerLigado;
-    if(buzzerLigado)tone(BUZZER_PIN,BEEP_HZ);
+    if(buzzerLigado)tone(BUZZER_PIN,buzzerHz);
     else noTone(BUZZER_PIN);
   }
 }
@@ -308,7 +314,7 @@ void testarSinalizacao(uint32_t now) {
   inicioDoTeste=now;testeAtivo=true;
   ultimoBeep=now;
   aplicarLed(true,true,true);
-  tone(BUZZER_PIN,BEEP_HZ);
+  tone(BUZZER_PIN,buzzerHz);
   buzzerLigado=true;
 }
 
@@ -462,6 +468,7 @@ void publishTelemetry() {
   if(const uint32_t carimbo=relogio::agoraUtc())doc["ts"]=carimbo;
   doc["alarm_enabled"]=alarmeHabilitado;
   doc["event_sounds"]=sonsDeEventos;
+  doc["buzzer_hz"]=buzzerHz;
   doc["alarm_active"]=estadoCritico;
   if(mpuReady && amostrasAtuais>=10) {
     doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
@@ -564,7 +571,7 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     return;
   }
   if(!strcmp(acao,"buzzer_beep")) {  // Bipe pedido pelo painel ou pelo app.
-    const uint16_t frequencia=constrain((int)(doc["freq"] | BEEP_HZ),200,5000);
+    const uint16_t frequencia=constrain((int)(doc["freq"] | buzzerHz),BEEP_HZ_MIN,BEEP_HZ_MAX);
     const uint32_t duracao=constrain((long)(doc["ms"] | 120),20,2000);
     const uint8_t vezes=constrain((int)(doc["count"] | 1),1,5);
     pedirBeep(vezes,frequencia,duracao);
@@ -578,14 +585,20 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     publishAck(seq,acao,true,"LED e buzzer acionados por 1,5 s");
     return;
   }
-  if(!strcmp(acao,"alarm_set")) {  // Interruptor geral e bipes de evento.
+  if(!strcmp(acao,"alarm_set")) {  // Interruptor geral, bipes e tom do buzzer.
     if(!doc["enabled"].is<bool>()) {
       publishAck(seq,acao,false,"campo enabled ausente");
       return;
     }
+    const int freqPedido=doc["buzzer_hz"] | (int)buzzerHz;
+    if(freqPedido<BEEP_HZ_MIN || freqPedido>BEEP_HZ_MAX) {
+      publishAck(seq,acao,false,"buzzer_hz deve ficar entre 500 e 5000 Hz");
+      return;
+    }
     const bool ok=salvarConfigDoAlarme(doc["enabled"].as<bool>(),
-                                       doc["sounds"] | sonsDeEventos);
-    publishAck(seq,acao,ok,ok?"alarme configurado":"falha ao gravar");
+                                       doc["sounds"] | sonsDeEventos,
+                                       (uint16_t)freqPedido);
+    publishAck(seq,acao,ok,ok?"alarme e buzzer configurados":"falha ao gravar");
     if(ok)publishAlarms();
     return;
   }
@@ -687,7 +700,7 @@ void loop() {
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
         mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();publishAlarmLog();
-        pedirBeep(2,BEEP_HZ,70);  // Dois bipes sempre: placa conectada ao broker.
+        pedirBeep(2,buzzerHz,70);  // Dois bipes sempre: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());
     }
