@@ -1,8 +1,9 @@
 #pragma once
 // Lista de redes Wi-Fi gravada na placa (NVS), na ordem definida pelo usuario.
 //
-// - Ate MAX_REDES redes. A ultima conexao bem-sucedida e tentada diretamente;
-//   se falhar, a placa busca as redes visiveis e respeita a ordem da lista.
+// - Ate MAX_REDES redes. A ultima conexao bem-sucedida e tentada diretamente,
+//   no mesmo ponto de acesso (BSSID) e canal, sem varredura; se falhar, a
+//   placa busca as redes visiveis e respeita a ordem da lista.
 // - A lista e editada pela aba "Wi-Fi" do painel, via MQTT.
 // - A senha NAO trafega em texto aberto no broker publico: a placa tem um par
 //   de chaves P-256 proprio (gerado no primeiro boot; a privada fica so na
@@ -36,6 +37,8 @@ struct Rede {
 inline Rede redes[MAX_REDES];
 inline uint8_t total = 0;
 inline char ultimaRede[MAX_SSID + 1] = "";
+inline uint8_t ultimoBssid[6] = {0};  // Ponto de acesso da ultima conexao.
+inline uint8_t ultimoCanal = 0;       // 0 = desconhecido: conecta com varredura.
 inline uint8_t chavePrivada[32];
 inline uint8_t chavePublica[65];  // Ponto P-256 nao comprimido (0x04 || X || Y).
 inline bool chavesProntas = false;
@@ -67,16 +70,30 @@ inline int indiceDe(const char* ssid) {
   return -1;
 }
 
-// Guarda somente quando a rede muda, evitando escrita repetida na flash.
-inline void lembrarUltimaRede(const char* ssid) {
+// Guarda rede, BSSID e canal somente quando mudam, evitando escrita repetida
+// na flash. Sem BSSID, a proxima conexao volta a fazer varredura.
+inline void lembrarUltimaRede(const char* ssid, const uint8_t* bssid = nullptr, uint8_t canal = 0) {
   if (!ssid) ssid = "";
-  if (!strcmp(ultimaRede, ssid)) return;
+  uint8_t novo[6] = {0};
+  if (bssid && *ssid) memcpy(novo, bssid, sizeof(novo));
+  else canal = 0;
+  if (!strcmp(ultimaRede, ssid) && ultimoCanal == canal && !memcmp(ultimoBssid, novo, sizeof(novo)))
+    return;
   strncpy(ultimaRede, ssid, MAX_SSID);
   ultimaRede[MAX_SSID] = '\0';
+  memcpy(ultimoBssid, novo, sizeof(novo));
+  ultimoCanal = canal;
   Preferences memoria;
   if (!memoria.begin("iot-redes", false)) return;
   if (*ultimaRede) memoria.putString("ultima", ultimaRede);
   else memoria.remove("ultima");
+  if (ultimoCanal) {
+    memoria.putBytes("bssid", ultimoBssid, sizeof(ultimoBssid));
+    memoria.putUChar("canal", ultimoCanal);
+  } else {
+    memoria.remove("bssid");
+    memoria.remove("canal");
+  }
   memoria.end();
 }
 
@@ -148,6 +165,8 @@ inline void carregar(const char* const* ssidsIniciais, const char* const* senhas
     if (indiceDe(ultima.c_str()) >= 0) {
       strncpy(ultimaRede, ultima.c_str(), MAX_SSID);
       ultimaRede[MAX_SSID] = '\0';
+      if (memoria.getBytes("bssid", ultimoBssid, sizeof(ultimoBssid)) == sizeof(ultimoBssid))
+        ultimoCanal = memoria.getUChar("canal", 0);
     }
     memoria.end();
     return;
@@ -273,16 +292,31 @@ inline bool decifrarSenha(const char* ssid, const char* epkB64, const char* ivB6
   return true;
 }
 
-// Busca as redes visiveis e tenta as cadastradas na ordem da lista.
-inline bool tentarRede(const Rede& rede, uint32_t esperaMs) {
-  Serial.printf("[WiFi] tentando %s\n", rede.ssid);
+// Tenta uma rede. Com BSSID e canal, o driver vai direto ao ponto de acesso
+// conhecido, sem varrer os 13 canais: e o que torna a reconexao rapida. Nesse
+// modo, "rede nao encontrada" ou "senha recusada" encerram a espera na hora,
+// para cair logo na conexao com varredura.
+inline bool tentarRede(const Rede& rede, uint32_t esperaMs, const uint8_t* bssid = nullptr,
+                       uint8_t canal = 0) {
+  const bool direto = bssid && canal;
+  Serial.printf("[WiFi] tentando %s%s\n", rede.ssid, direto ? " (ponto de acesso conhecido)" : "");
   WiFi.disconnect(false, false);
-  if (*rede.senha) WiFi.begin(rede.ssid, rede.senha);
-  else WiFi.begin(rede.ssid);
+  const char* senha = *rede.senha ? rede.senha : nullptr;
+  if (direto) WiFi.begin(rede.ssid, senha, canal, bssid);
+  else WiFi.begin(rede.ssid, senha);
   const unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaMs) delay(100);
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaMs) {
+    delay(50);
+    const wl_status_t estado = WiFi.status();
+    if (direto && millis() - inicio > 500 &&  // Ignora eventos da desconexao anterior.
+        (estado == WL_NO_SSID_AVAIL || estado == WL_CONNECT_FAILED)) break;
+  }
+  const unsigned long levou = millis() - inicio;
   const bool conectou = WiFi.status() == WL_CONNECTED;
-  if (conectou) lembrarUltimaRede(rede.ssid);
+  if (conectou) {
+    lembrarUltimaRede(rede.ssid, WiFi.BSSID(), (uint8_t)WiFi.channel());
+    Serial.printf("[WiFi] conectado em %s em %lu ms (canal %d)\n", rede.ssid, levou, WiFi.channel());
+  }
   return conectou;
 }
 
@@ -299,10 +333,14 @@ inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
   const uint32_t curta = esperaPorRedeMs > 5000 ? 5000 : esperaPorRedeMs;
 
   // Caminho normal: tenta a ultima rede boa (ou a primeira da lista no
-  // primeiro boot) sem pagar antes o custo de uma varredura completa.
+  // primeiro boot) sem pagar antes o custo de uma varredura completa. Primeiro
+  // direto no ponto de acesso e canal da ultima conexao; se ele mudou, a mesma
+  // rede com varredura, com mais tempo porque e a rede esperada.
   int preferida = indiceDe(ultimaRede);
+  if (preferida >= 0 && ultimoCanal && tentarRede(redes[preferida], 4000, ultimoBssid, ultimoCanal))
+    return true;
   if (preferida < 0) preferida = 0;
-  if (tentarRede(redes[preferida], curta)) return true;
+  if (tentarRede(redes[preferida], esperaPorRedeMs > 8000 ? esperaPorRedeMs : 8000)) return true;
 
   delay(100);  // Radio recem ligado: a varredura sai mais completa.
   const int encontradas = WiFi.scanNetworks(false, true);
