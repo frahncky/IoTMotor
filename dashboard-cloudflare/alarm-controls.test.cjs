@@ -278,7 +278,8 @@ test('reconexao exige novos dados e ignora mensagens da conexao encerrada', () =
   // Quedas curtas do broker sao toleradas por 6 s para evitar oscilacao visual.
   assert.equal(h.node('alarmeTeste').disabled, false);
   next.emit('connect');
-  assert.equal(h.node('alarmeTeste').disabled, false);
+  // Ao reconectar o transporte, exige telemetria nova da placa antes de liberar comandos.
+  assert.equal(h.node('alarmeTeste').disabled, true);
   h.telemetry(next);
   next.emit('message', 'iotmotor/esp32-02/status', Buffer.from('offline'), {retain: false});
   assert.equal(h.node('alarmeTeste').disabled, true);
