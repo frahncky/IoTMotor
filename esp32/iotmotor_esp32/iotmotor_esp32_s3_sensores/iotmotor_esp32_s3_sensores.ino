@@ -729,6 +729,14 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(n)mqtt.publish(ackTopic,(const uint8_t*)saida,(unsigned int)n,false);
 }
 
+bool conectarWifiS3(uint32_t esperaPadraoMs) {
+  // Neste modulo, IFMA_IOT e a rede de bancada mais comum. Tenta primeiro
+  // por poucos segundos para evitar percorrer toda a lista antes de alcança-la.
+  const int ifma=wifistore::indiceDe("IFMA_IOT");
+  if(ifma>=0 && wifistore::tentarRede(wifistore::redes[ifma],3000UL)) return true;
+  return wifistore::conectarEmOrdem(esperaPadraoMs);
+}
+
 void setup() {
   Serial.begin(115200);
   Wire.begin(SDA_PIN,SCL_PIN);
@@ -767,7 +775,7 @@ void setup() {
   wifistore::carregarRedePropria(PORTAL_NOME);
   Serial.printf("[S3/Wi-Fi] %u rede(s) na lista da placa\n",wifistore::total);
   // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
-  if(!wifistore::conectarEmOrdem(10000))abrirPortalDeRede(PORTAL_SEGUNDOS);
+  if(!conectarWifiS3(5000))abrirPortalDeRede(PORTAL_SEGUNDOS);
   Serial.printf("[S3/boot] %s broker=%s:%u\n",DEVICE_ID,MQTT_HOST,MQTT_PORT);
 }
 
@@ -778,7 +786,7 @@ void loop() {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
       Serial.printf("[S3/Wi-Fi] conectando, status=%d\n",WiFi.status());
-      wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
+      conectarWifiS3(5000);  // IFMA_IOT primeiro; depois as demais redes cadastradas.
     }
     delay(2);return;
   }
