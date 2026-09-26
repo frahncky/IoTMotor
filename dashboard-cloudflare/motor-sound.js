@@ -46,7 +46,7 @@
   function gainForVolume(volume) {
     // Curva simples: 70% fica próximo do volume aprovado no teste anterior.
     const normalized = clampVolume(volume) / 100;
-    return Math.max(0.0001, 0.42 * normalized * normalized);
+    return Math.max(0.0001, 0.57 * normalized * normalized);
   }
 
   function makeNoiseBuffer(audioCtx, seconds = 2) {
