@@ -85,6 +85,27 @@ function renderDevice(id,which,name){
  $(id).title=`${ident} · ${s.at?`última telemetria ${new Date(s.at).toLocaleTimeString('pt-BR')}`:'nenhuma telemetria recebida'}`;
 }
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
+function motorVisualState({brokerReady,commandFresh,motorOn}){
+ if(!brokerReady)return {state:'offline',label:'Desconectado',badge:'SEM DADOS'};
+ if(!commandFresh)return {state:'waiting',label:'Aguardando quadro de comando',badge:'AGUARDANDO'};
+ if(motorOn===true)return {state:'running',label:'Motor ligado',badge:'EM OPERAÇÃO'};
+ if(motorOn===false)return {state:'stopped',label:'Motor desligado',badge:'PARADO'};
+ return {state:'waiting',label:'Estado do motor não informado',badge:'AGUARDANDO'};
+}
+function renderMotorVisual(){
+ const root=$('motorVisual');if(!root)return;
+ const commandFresh=freshness('command'),sensorFresh=freshness('sensor');
+ const cmd=commandFresh?state.command.sample:null,sensor=sensorFresh?state.sensor.sample:null;
+ const visual=motorVisualState({brokerReady:state.connected&&state.subscribed,commandFresh,motorOn:cmd?.motorOn});
+ root.dataset.state=visual.state;text('motorVisualStatus',visual.label);text('motorVisualBadge',visual.badge);
+ const dados=[];
+ if(cmd?.current!==null&&cmd?.current!==undefined)dados.push(`Corrente ${cmd.current.toFixed(2)} A`);
+ if(sensor?.vibration!==null&&sensor?.vibration!==undefined)dados.push(`Vibração ${sensor.vibration.toFixed(3)} g`);
+ if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${sensor.temperature.toFixed(1)} °C`);
+ text('motorVisualMetrics',dados.length?dados.join(' · '):
+  visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
+ root.setAttribute('aria-label',`${visual.label}. ${dados.length?dados.join(', '):'Sem grandezas recentes.'}`);
+}
 function updateControl(){
  const active=freshness('command');const s=state.command.sample;
  if(!window.iotmotorLocalControls) $('startBtn').disabled=true; // Local controller owns this button.
@@ -128,7 +149,7 @@ function render(){
  renderDevice('sensorState','sensor',NOMES.sensor);
  text('commandAge',state.command.at?new Date(state.command.at).toLocaleTimeString('pt-BR'):'—');
  text('sensorAge',state.sensor.at?new Date(state.sensor.at).toLocaleTimeString('pt-BR'):'—');
- $('exportBtn').disabled=!state.records.length;updateControl();renderCharts();
+ $('exportBtn').disabled=!state.records.length;updateControl();renderMotorVisual();renderCharts();
 }
 function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.pending=null;state.subscribed=false;
@@ -292,4 +313,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,registrosValidos,METRICS};
