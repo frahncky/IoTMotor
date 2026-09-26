@@ -469,7 +469,9 @@
     renderizar();
   }
 
-  window.iotmotorAlarme = {connect: conectar, disconnect: desconectar};
+  // lista: cópia da lista retida de alarmes, para o desenho do motor saber o que cada id vigia.
+  window.iotmotorAlarme = {connect: conectar, disconnect: desconectar,
+    lista: () => (lista ? lista.map(a => ({...a})) : null)};
   setInterval(renderizar, 1000);
   renderizar();
 })();

@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -100,4 +100,34 @@ test('dez metricas e IDs distintos com WSS obrigatorio',()=>{
  assert.equal(validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}).broker,'wss://test.mosquitto.org:8081/');
  assert.throws(()=>validateConfig({broker:'ws://test.mosquitto.org:8080',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}),/wss/);
  assert.throws(()=>validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-01'}),/distintos/);
+});
+
+test('carcaça do motor esquenta de 30 °C até o limite do alarme de temperatura',()=>{
+ assert.equal(motorHeat(null,60),null);
+ assert.equal(motorHeat(25,60),0);
+ assert.equal(motorHeat(45,60),0.5);
+ assert.equal(motorHeat(60,60),1);
+ assert.equal(motorHeat(90,60),1);
+ // Limite baixo: a escala começa 10 °C abaixo dele.
+ assert.equal(motorHeat(30,35),0.5);
+ assert.equal(temperatureLimit(null),60);
+ assert.equal(temperatureLimit([
+  {id:'a',field:'temperature',above:true,limit:70,on:true},
+  {id:'b',field:'temperature',above:true,limit:50,on:false},
+  {id:'c',field:'temperature',above:false,limit:5,on:true},
+  {id:'d',field:'temperature',limit:65}]),65);
+});
+
+test('alarmes disparados indicam a parte do motor afetada',()=>{
+ assert.deepEqual([...alarmParts([],null)],[]);
+ // Sem a lista retida, os ids padrão da placa ainda são reconhecidos.
+ assert.deepEqual([...alarmParts(['temp','vib'],null)].sort(),['temperature','vibration']);
+ const lista=[{id:'quente',field:'temperature'},{id:'rms',field:'vibration'},{id:'tensao',field:'voltage'}];
+ assert.deepEqual([...alarmParts(['quente'],lista)],['temperature']);
+ assert.deepEqual([...alarmParts(['rms'],lista)],['vibration']);
+ assert.deepEqual([...alarmParts(['tensao','desconhecido'],lista)],['other']);
+ const s=parseTelemetry({device_id:'esp32-02',alarm_enabled:true,alarms_firing:['temp',3,'']});
+ assert.equal(s.alarmEnabled,true);
+ assert.deepEqual(s.alarmsFiring,['temp']);
+ assert.deepEqual(parseTelemetry({device_id:'esp32-02'}).alarmsFiring,[]);
 });
