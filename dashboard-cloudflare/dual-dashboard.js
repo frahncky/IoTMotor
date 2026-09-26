@@ -123,16 +123,18 @@ function heatColor(heat){
 // Limites de fábrica da placa de sensores, usados enquanto a lista não chega.
 const LIMITES_PADRAO=[{field:'vibration_peak',above:true,limit:0.5},{field:'temperature',above:true,limit:60}];
 const GRANDEZA_AVISO={vibration_peak:{label:'Vibração (pico)',unit:'g',digits:2,read:s=>s.vibrationPeak}};
-// Avisos do quadro do motor: grandezas sem leitura e valores perto (90%) ou além do limite dos alarmes.
+// Avisos de leitura e de limite, mostrados em "Alarmes ativos" (alarm-controls.js).
+// kind: no-data (placa sem dados), missing (grandeza sem leitura), near (a partir
+// de 90% do limite) ou over (limite ultrapassado).
 function motorWarnings({brokerReady,command,sensor,alarms}){
  if(!brokerReady)return [];
  const out=[];
- if(!sensor)out.push({level:'warn',text:'Sensores do motor sem dados'});
+ if(!sensor)out.push({kind:'no-data',field:'sensor',level:'warn',text:'Sensores do motor sem dados'});
  else for(const key of ['vibration','temperature'])if(sensor[key]===null||sensor[key]===undefined)
-  out.push({level:'warn',text:`${METRICS.find(m=>m.key===key).label} sem leitura`});
- if(!command)out.push({level:'warn',text:'Quadro de comando sem dados'});
+  out.push({kind:'missing',field:key,level:'warn',text:`${METRICS.find(m=>m.key===key).label} sem leitura`});
+ if(!command)out.push({kind:'no-data',field:'command',level:'warn',text:'Quadro de comando sem dados'});
  else if(METRICS.filter(m=>m.source==='command'&&!['apparent','reactive'].includes(m.key)).every(m=>command[m.key]===null||command[m.key]===undefined))
-  out.push({level:'warn',text:'Medições elétricas (PZEM) sem leitura'});
+  out.push({kind:'missing',field:'pzem',level:'warn',text:'Medições elétricas (PZEM) sem leitura'});
  // Com o monitoramento desligado a placa não alarma; aqui também só ficam os avisos de leitura.
  if(sensor?.alarmEnabled===false)return out;
  // Vários alarmes para a mesma grandeza e sentido: vale o mais grave.
@@ -151,11 +153,17 @@ function motorWarnings({brokerReady,command,sensor,alarms}){
   const chave=`${a.field}:${above}`,anterior=porGrandeza.get(chave);
   if(anterior&&(anterior.passou||!passou))continue;
   const label=extra?.label??metric.label,unit=extra?.unit??metric.unit,digits=extra?.digits??metric.digits;
-  porGrandeza.set(chave,{passou,level:passou?'alarm':'warn',text:`${label} ${above?'alta':'baixa'}: ${value.toFixed(digits)}${unit?` ${unit}`:''} (limite ${a.limit}${unit?` ${unit}`:''})`});
+  porGrandeza.set(chave,{passou,kind:passou?'over':'near',field:a.field,level:passou?'alarm':'warn',text:`${label} ${above?'alta':'baixa'}: ${value.toFixed(digits)}${unit?` ${unit}`:''} (limite ${a.limit}${unit?` ${unit}`:''})`});
  }
- for(const {level,text} of porGrandeza.values())out.push({level,text});
+ for(const {kind,field,level,text} of porGrandeza.values())out.push({kind,field,level,text});
  return out;
 }
+// Avisos atuais para a lista de "Alarmes ativos".
+function avisosAtuais(){
+ return motorWarnings({brokerReady:state.connected&&state.subscribed,command:freshness('command')?state.command.sample:null,
+  sensor:freshness('sensor')?state.sensor.sample:null,alarms:window.iotmotorAlarme?.lista?.()||null});
+}
+if(typeof window!=='undefined')window.iotmotorPainel={avisos:avisosAtuais};
 function renderMotorVisual(){
  const root=$('motorVisual');if(!root)return;
  const commandFresh=freshness('command'),sensorFresh=freshness('sensor');
@@ -176,12 +184,8 @@ function renderMotorVisual(){
  if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${sensor.temperature.toFixed(1)} °C`);
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
- const warnings=motorWarnings({brokerReady:state.connected&&state.subscribed,command:cmd,sensor,alarms});
- const lista=$('motorWarnings');
- if(lista){const atual=warnings.map(w=>`${w.level}:${w.text}`).join('|');
-  if(lista.dataset.sig!==atual){lista.dataset.sig=atual;lista.replaceChildren(...warnings.map(w=>{const li=document.createElement('li');li.className=w.level;li.textContent=w.text;return li;}));}}
  const avisos=[parts.has('temperature')&&'alarme de temperatura',parts.has('vibration')&&'alarme de vibração',
-  parts.has('other')&&'alarme ativo',...warnings.map(w=>w.text)].filter(Boolean);
+  parts.has('other')&&'alarme ativo'].filter(Boolean);
  root.setAttribute('aria-label',`${visual.label}. ${dados.length?dados.join(', '):'Sem grandezas recentes.'}${avisos.length?` Atenção: ${avisos.join(', ')}.`:''}`);
 }
 function updateControl(){

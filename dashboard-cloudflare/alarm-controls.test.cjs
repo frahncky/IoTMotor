@@ -364,3 +364,30 @@ test('sensor sem leitura aparece como falha, nao como limite ultrapassado', () =
   h.telemetry(c, {alarm_enabled: false, alarm_active: false, temperature_ok: false});
   assert.equal(h.node('alarmeAtivosLista').children.length, 0);
 });
+
+test('alarmes ativos tambem lista os avisos do painel sem repetir o que a placa ja informa', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  const avisos = [
+    {kind: 'near', field: 'temperature', level: 'warn', text: 'Temperatura alta: 56.0 °C (limite 60 °C)'},
+    {kind: 'over', field: 'vibration_peak', level: 'alarm', text: 'Vibração (pico) alta: 0.70 g (limite 0.5 g)'},
+    {kind: 'missing', field: 'temperature', level: 'warn', text: 'Temperatura sem leitura'},
+    {kind: 'missing', field: 'pzem', level: 'warn', text: 'Medições elétricas (PZEM) sem leitura'},
+    {kind: 'no-data', field: 'command', level: 'warn', text: 'Quadro de comando sem dados'},
+    {kind: 'no-data', field: 'sensor', level: 'warn', text: 'Sensores do motor sem dados'}
+  ];
+  h.context.window.iotmotorPainel = {avisos: () => avisos};
+  h.telemetry(c, {alarm_active: true, alarms_firing: ['vib'], temperature_ok: false});
+  const textos = h.node('alarmeAtivosLista').children.map(li => `${li.children[0].textContent}|${li.children[1].textContent}`);
+  assert.deepEqual(textos, [
+    'Vibração (pico) (g) acima de 0.5|disparado',
+    'Falha de sensor: temperatura sem leitura (DS18B20)|falha',
+    'Temperatura alta: 56.0 °C (limite 60 °C)|atenção',
+    'Medições elétricas (PZEM) sem leitura|sem leitura',
+    'Quadro de comando sem dados|sem leitura'
+  ]);
+  assert.equal(h.node('alarmeAtivosResumo').textContent, '1 alarme ativo, 1 falha de sensor e 3 avisos neste momento.');
+  // Monitoramento desligado: sem falha listada, a falta de leitura aparece como aviso.
+  h.telemetry(c, {alarm_enabled: false, temperature_ok: false});
+  assert.ok(h.node('alarmeAtivosLista').children.some(li => li.children[0].textContent === 'Temperatura sem leitura'));
+});
