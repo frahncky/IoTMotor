@@ -26,6 +26,12 @@ class MqttMotorService {
   _updatesSubscription;
   MqttConnectionConfig? _activeConfig;
 
+  // Presença no broker dos clientes que podem enviar comandos. O painel usa
+  // esses heartbeats para mostrar quantos controladores ativos são App/Web.
+  Timer? _presenceTimer;
+  String? _presenceId;
+  static const Duration _presenceInterval = Duration(seconds: 3);
+
   bool _disconnectRequested = false;
   bool _suppressDisconnectEvent = false;
 
@@ -39,6 +45,59 @@ class MqttMotorService {
   bool get isConnected =>
       _client?.connectionStatus?.state == MqttConnectionState.connected;
   MqttConnectionConfig? get activeConfig => _activeConfig;
+
+  String _commandPresenceId() {
+    return _presenceId ??=
+        'app_${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}_'
+        '${identityHashCode(this).toRadixString(36)}';
+  }
+
+  String? get _commandPresenceTopic {
+    final MqttConnectionConfig? config = _activeConfig;
+    if (config == null) return null;
+    return '${config.topicPrefix}/clients/${_commandPresenceId()}/presence';
+  }
+
+  void _publishCommandPresence({required bool online}) {
+    final MqttServerClient? client = _client;
+    final String? presenceTopic = _commandPresenceTopic;
+    if (client == null ||
+        presenceTopic == null ||
+        client.connectionStatus?.state != MqttConnectionState.connected) {
+      return;
+    }
+    final String payload = jsonEncode(<String, dynamic>{
+      'kind': 'command_client',
+      'source': 'app',
+      'client_id': _commandPresenceId(),
+      'state': online ? 'online' : 'offline',
+      'ts': DateTime.now().millisecondsSinceEpoch,
+    });
+    final MqttClientPayloadBuilder builder =
+        MqttClientPayloadBuilder()..addString(payload);
+    client.publishMessage(
+      presenceTopic,
+      MqttQos.atMostOnce,
+      builder.payload!,
+    );
+  }
+
+  void _startCommandPresence() {
+    _presenceTimer?.cancel();
+    _publishCommandPresence(online: true);
+    _presenceTimer = Timer.periodic(
+      _presenceInterval,
+      (_) => _publishCommandPresence(online: true),
+    );
+  }
+
+  void _stopCommandPresence({bool announceOffline = true}) {
+    if (announceOffline) {
+      _publishCommandPresence(online: false);
+    }
+    _presenceTimer?.cancel();
+    _presenceTimer = null;
+  }
 
   /// Uma linha a mais quando o endereço e a porta não combinam.
   ///
@@ -133,6 +192,7 @@ class MqttMotorService {
     );
 
     _subscribeToDefaultTopics();
+    _startCommandPresence();
     return MqttConnectResult(
       success: true,
       message: 'Conectado em ${config.host}:${config.port}',
@@ -142,6 +202,7 @@ class MqttMotorService {
   Future<void> disconnect({bool silent = false}) async {
     _disconnectRequested = true;
     _suppressDisconnectEvent = silent;
+    _stopCommandPresence(announceOffline: true);
 
     await _updatesSubscription?.cancel();
     _updatesSubscription = null;
@@ -532,6 +593,7 @@ class MqttMotorService {
 
   void _handleAutoReconnected() {
     _subscribeToDefaultTopics();
+    _startCommandPresence();
     onAutoReconnected?.call();
   }
 
