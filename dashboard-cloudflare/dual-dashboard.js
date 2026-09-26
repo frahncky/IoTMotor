@@ -237,7 +237,7 @@ function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.pending=null;state.subscribed=false;
  render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
- window.iotmotorMotorSound?.stopSilently?.();  // Desconectar o painel nunca toca o som de desligamento.
+ window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
  window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
  window.iotmotorAlarme?.disconnect?.();window.iotmotorPerfis?.disconnect?.();
@@ -250,6 +250,7 @@ function ingest(which,raw,packet){
  const hasFields=METRICS.some(m=>m.source===which&&sample[m.key]!==null);
  if(which==='command'&&!hasFields&&sample.motorOn===null&&!sample.relays){diag('Mensagem do módulo de comandos sem grandezas nem estado válido.');return false;}
  state[which].sample=sample;state[which].at=Date.now();state[which].count++;
+ if(which==='command')window.iotmotorMotorSound?.resumeAfterReconnect?.(sample.motorOn);
  for(const m of METRICS.filter(m=>m.source===which)){
   if(sample[m.key]!==null){const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
  }
