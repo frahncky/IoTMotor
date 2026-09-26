@@ -27,6 +27,7 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "alarm_list.h"
 #include "comando_seguro.h"
 #include "relogio.h"
+#include "historico.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -103,7 +104,7 @@ uint8_t ds18b20Pin=0;
 // e dos pinos do LED/buzzer 16/17/18/42).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
-char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96];
+char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
@@ -244,6 +245,39 @@ void publishAlarmLog() {
   serializeJson(doc,texto);
   if(texto.length())
     mqtt.publish(alarmLogTopic,(const uint8_t*)texto.c_str(),(unsigned int)texto.length(),true);
+}
+
+// Historico por hora (historico.h): um topico retido por dia, <prefixo>/<placa>/history/<0..6>.
+void publishHistory(uint8_t slot) {
+  if(!mqtt.connected())return;
+  DynamicJsonDocument doc(4608);
+  doc["device_id"]=DEVICE_ID;
+  historico::descrever(slot,doc);
+  String texto;
+  serializeJson(doc,texto);
+  char topico[112];
+  snprintf(topico,sizeof(topico),"%s/%u",historyTopic,slot);
+  if(texto.length()&&!mqtt.publish(topico,(const uint8_t*)texto.c_str(),(unsigned int)texto.length(),true))
+    Serial.printf("[S3/historico] falha publicando dia %u (%u bytes)\n",slot,(unsigned int)texto.length());
+}
+
+// Uma amostra por segundo para o historico, com as mesmas leituras da telemetria.
+void amostrarHistorico() {
+  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+  const bool quadroFresco=ultimaTelemetriaQuadro&&(uint32_t)(millis()-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
+  const bool ligado=quadroFresco&&motorLigado;
+  auto doQuadro=[&](const char* campo){
+    return quadroFresco&&alarmes::medidasDoQuadro[campo].is<float>()?alarmes::medidasDoQuadro[campo].as<float>():NAN;
+  };
+  const float corrente=doQuadro("current"),tensao=doQuadro("voltage");
+  const float temperatura=tempReady&&isfinite(temperatureC)?temperatureC:NAN;
+  const float vibracao=mpuReady&&amostrasAtuais>=10?rmsAtual:NAN;
+  xSemaphoreGive(sensoresMutex);
+  historico::amostrar(relogio::agoraUtc(),ligado,corrente,tensao,temperatura,vibracao);
+  if(historico::diaParaPublicar>=0){
+    publishHistory((uint8_t)historico::diaParaPublicar);
+    historico::diaParaPublicar=-1;
+  }
 }
 
 // Desafio da vez, retido: o painel precisa dele para cifrar um comando.
@@ -519,7 +553,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.5-partidas";
+  doc["firmware_version"]="s3-sensors-1.6-historico";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -787,6 +821,7 @@ void setup() {
   comandoseguro::iniciar(DEVICE_ID);
   carregarConfigDoAlarme();
   alarmes::carregar(VIBRACAO_LIMITE_PADRAO,TEMPERATURA_LIMITE_PADRAO);
+  historico::carregar();
   aplicarLed(true,false,false);  // Azul durante a inicializacao/conexao.
   mpuReady=initMpu(true);
   lastMpuRetry=millis();
@@ -807,9 +842,10 @@ void setup() {
   snprintf(alarmsTopic,sizeof(alarmsTopic),"%s/%s/alarms",TOPIC_PREFIX,DEVICE_ID);
   snprintf(authTopic,sizeof(authTopic),"%s/%s/auth",TOPIC_PREFIX,DEVICE_ID);
   snprintf(alarmLogTopic,sizeof(alarmLogTopic),"%s/%s/alarm_log",TOPIC_PREFIX,DEVICE_ID);
+  snprintf(historyTopic,sizeof(historyTopic),"%s/%s/history",TOPIC_PREFIX,DEVICE_ID);
   // Alarmes de tensao e corrente leem a telemetria do quadro de comando.
   snprintf(quadroTelemetryTopic,sizeof(quadroTelemetryTopic),"%s/esp32-01/telemetry",TOPIC_PREFIX);
-  mqtt.setBufferSize(1536);
+  mqtt.setBufferSize(2048);  // Cabe um dia inteiro do historico.
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
@@ -867,6 +903,7 @@ void loop() {
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
         mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();publishAlarmLog();
+        for(uint8_t d=0;d<historico::DIAS;d++)publishHistory(d);
         pedirBeep(2,buzzerHz,70);  // Dois bipes sempre: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
       } else Serial.printf("[S3/MQTT] falha state=%d\n",mqtt.state());
@@ -878,7 +915,7 @@ void loop() {
   relogio::manter(now);  // Hora real para carimbar as medicoes.
   now=millis();
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
-    lastPublish=now;publishTelemetry();
+    lastPublish=now;publishTelemetry();amostrarHistorico();
   }
   if(alarmes::eventosMudaram)publishAlarmLog();
   delay(2);
