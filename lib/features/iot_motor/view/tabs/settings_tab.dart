@@ -499,7 +499,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         children: <Widget>[
           _buildPanelTitle(
             context,
-            icon: Icons.electric_motor_rounded,
+            icon: Icons.electric_bolt_rounded,
             color: AppTheme.brandBlue,
             title: 'Dados do motor',
             subtitle: 'Dados da placa gravados no quadro de comando.',
@@ -565,7 +565,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                           acao: controller.markMotorMaintenanceDone,
                         )
                     : null,
-                icon: const Icon(Icons.build_done_rounded),
+                icon: const Icon(Icons.check_circle_outline_rounded),
                 label: const Text('Manutenção feita'),
               ),
               OutlinedButton.icon(
@@ -2221,7 +2221,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   if (intervalo != null) 'maint_interval_h': intervalo,
                 });
               } on FormatException catch (e) {
-                setDialogState(() => erro = e.message);
+                setDialogState(() => erro = e.message.toString());
               }
             }
 
