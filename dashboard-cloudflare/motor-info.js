@@ -19,7 +19,12 @@
     {id: 'motorInfoV', chave: 'voltage_v', chaveY: 'voltage_y_v', max: 1000, nome: 'Tensão', trianguloPrimeiro: (a, b) => a - b},
     {id: 'motorInfoA', chave: 'current_a', chaveY: 'current_y_a', max: 2000, nome: 'Corrente', trianguloPrimeiro: (a, b) => b - a}
   ];
-  const decimal = n => String(n).replace('.', ',');
+  const casasPorCampo = chave => chave === 'service_factor' ? 2 : 3;
+  const normalizarDecimal = (chave, valor) => {
+    if (!Number.isFinite(valor)) return valor;
+    return Number(valor.toFixed(casasPorCampo(chave)));
+  };
+  const decimal = (n, chave) => String(normalizarDecimal(chave, n)).replace('.', ',');
 
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-01';
   let info = null, pendente = null, sequencia = 0, editando = false;
@@ -53,11 +58,11 @@
     if (editando || pendente) return;
     for (const campo of CAMPOS) {
       const v = info?.[campo.chave];
-      $(campo.id).value = Number.isFinite(v) ? decimal(v) : '';
+      $(campo.id).value = Number.isFinite(v) ? decimal(v, campo.chave) : '';
     }
     for (const par of PARES) {
       const valores = [info?.[par.chave], info?.[par.chaveY]].filter(Number.isFinite);
-      $(par.id).value = valores.map(decimal).join('/');
+      $(par.id).value = valores.map(v => decimal(v, par.chave)).join('/');
     }
     $('motorInfoFases').value = info?.phases === 1 || info?.phases === 3 ? String(info.phases) : '';
     $('motorInfoLigacao').value = info?.connection === 'star' ? 'star' : 'delta';
@@ -168,9 +173,10 @@
       // Retido: chega assim que assinamos, e de novo a cada gravação.
       if (nome === topico('motor_info')) {
         info = {};
-        for (const campo of CAMPOS) if (Number.isFinite(dados[campo.chave])) info[campo.chave] = dados[campo.chave];
+        for (const campo of CAMPOS) if (Number.isFinite(dados[campo.chave]))
+          info[campo.chave] = normalizarDecimal(campo.chave, dados[campo.chave]);
         for (const par of PARES) for (const chave of [par.chave, par.chaveY])
-          if (Number.isFinite(dados[chave])) info[chave] = dados[chave];
+          if (Number.isFinite(dados[chave])) info[chave] = normalizarDecimal(chave, dados[chave]);
         if (dados.phases === 1 || dados.phases === 3) info.phases = dados.phases;
         if (dados.connection === 'delta' || dados.connection === 'star') info.connection = dados.connection;
         preencher();
