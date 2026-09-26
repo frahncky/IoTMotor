@@ -7,6 +7,75 @@
   let client = null, connected = false, prefix = '', device = '', boot = '';
   let updatedAt = 0, relays = null, pending = null, sequence = 0;
   const topic = kind => `${prefix}/${device}/${kind}`;
+
+  // Presença dos clientes que efetivamente podem publicar comandos.
+  // O broker público não fornece uma lista de clientes, então app e páginas
+  // anunciam um heartbeat curto e o painel considera ativo quem foi visto há
+  // poucos segundos.
+  const PRESENCE_TTL_MS = 10000;
+  const PRESENCE_HEARTBEAT_MS = 3000;
+  const presenceId = `web_${Math.random().toString(36).slice(2, 12)}`;
+  const commandClients = new Map();
+  let presenceTimer = null;
+  const presenceFilter = () => `${prefix}/clients/+/presence`;
+  const presenceTopic = () => `${prefix}/clients/${presenceId}/presence`;
+
+  function renderCommandClients() {
+    const now = Date.now();
+    for (const [id, info] of commandClients) {
+      if (!info || now - info.seenAt > PRESENCE_TTL_MS) commandClients.delete(id);
+    }
+    const ativos = [...commandClients.values()];
+    const app = ativos.filter(info => info.source === 'app').length;
+    const web = ativos.filter(info => info.source === 'web').length;
+    const el = $('commandClients');
+    if (el) el.textContent = `${ativos.length} · App ${app} · Web ${web}`;
+  }
+
+  function publishPresence(state = 'online') {
+    if (!client?.connected || !prefix) return;
+    const payload = JSON.stringify({
+      kind: 'command_client',
+      source: 'web',
+      client_id: presenceId,
+      state,
+      ts: Date.now()
+    });
+    client.publish(presenceTopic(), payload, {qos: 0, retain: false});
+    if (state === 'online') {
+      commandClients.set(presenceId, {source: 'web', seenAt: Date.now()});
+    } else {
+      commandClients.delete(presenceId);
+    }
+    renderCommandClients();
+  }
+
+  function startPresence() {
+    if (presenceTimer) clearInterval(presenceTimer);
+    publishPresence('online');
+    presenceTimer = setInterval(() => publishPresence('online'), PRESENCE_HEARTBEAT_MS);
+  }
+
+  function stopPresence(announce = true) {
+    if (announce) publishPresence('offline');
+    if (presenceTimer) clearInterval(presenceTimer);
+    presenceTimer = null;
+    commandClients.delete(presenceId);
+    renderCommandClients();
+  }
+
+  function handlePresence(name, payload) {
+    if (!name.startsWith(`${prefix}/clients/`) || !name.endsWith('/presence')) return false;
+    let data;
+    try { data = JSON.parse(payload.toString('utf8')); } catch { return true; }
+    const id = String(data?.client_id || '').trim();
+    const source = data?.source === 'app' ? 'app' : data?.source === 'web' ? 'web' : '';
+    if (!id || !source) return true;
+    if (data.state === 'offline') commandClients.delete(id);
+    else commandClients.set(id, {source, seenAt: Date.now()});
+    renderCommandClients();
+    return true;
+  }
   // Janela de telemetria "recente". Medido no broker publico: intervalos de
   // 8 a 20 s sao comuns, e 10 s desabilitavam os botoes o tempo todo.
   const recent = () => Boolean(boot && Date.now() - updatedAt < 25000 && relays);
@@ -89,12 +158,14 @@
     active.on('connect', () => {
       if (client !== active) return;
       connected = true;
-      active.subscribe([topic('telemetry'), topic('command_ack'), topic('auth')], {qos: 1});
+      active.subscribe([topic('telemetry'), topic('command_ack'), topic('auth'), presenceFilter()], {qos: 1});
+      startPresence();
       feedback('MQTT conectado. Aguardando telemetria do ESP32-01.');
       refresh();
     });
     active.on('message', (name, payload, packet) => {
       if (client !== active) return;
+      if (handlePresence(name, payload)) return;
       if (name === topic('auth')) {
         try { window.iotmotorSelo?.registrarAuth(device, JSON.parse(payload.toString('utf8'))); } catch { /* auth ilegivel */ }
         refresh();
@@ -149,6 +220,7 @@
     };
     const voltou = () => {
       if (quedaTimer) { clearTimeout(quedaTimer); quedaTimer = null; }
+      if (client === active) startPresence();
     };
     active.on('offline', caiu);
     active.on('close', caiu);
@@ -195,6 +267,7 @@
   // Encerra a conexao dos comandos junto com a do painel: antes, "Desconectar"
   // so parava os graficos e os botoes continuavam publicando no broker.
   function desconectar() {
+    stopPresence(true);
     if (client) client.end(true);
     client = null; connected = false; boot = ''; updatedAt = 0; relays = null; pending = null;
     window.iotmotorSelo?.esquecer(device);
@@ -295,5 +368,8 @@
   // (dual-dashboard.js chama connect/disconnect deste modulo).
   feedback('Desconectado. Use "Conectar ao MQTT" para comandar.');
   refresh();
-  setInterval(refresh, 1000);
+  setInterval(() => {
+    refresh();
+    renderCommandClients();
+  }, 1000);
 })();
