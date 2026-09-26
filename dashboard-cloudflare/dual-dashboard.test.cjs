@@ -153,3 +153,18 @@ test('avisos do motor: grandezas sem leitura e valores perto ou além do limite'
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{...cmd,voltage:210},sensor:{vibration:0.1,temperature:41},alarms})),
   ['alarm|Temperatura alta: 41.0 °C (limite 40 °C)','warn|Tensão baixa: 210.0 V (limite 200 V)']);
 });
+
+test('avisos de limite seguem o firmware: estrito, o mais grave vale e nada com alarme desligado',()=>{
+ const textos=a=>a.map(w=>`${w.level}|${w.text}`);
+ const cmd={voltage:220,current:3.9,power:800,pf:0.9,frequency:60,energy:1.2};
+ // Exatamente no limite: a placa não dispara (valor > limite), então é só aviso.
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.1,temperature:60,vibrationPeak:0.1},alarms:null})),
+  ['warn|Temperatura alta: 60.0 °C (limite 60 °C)']);
+ // Dois alarmes de temperatura: o de 60 °C disparou mesmo vindo depois do de 100 °C.
+ const dois=[{id:'a',field:'temperature',above:true,limit:100,on:true},{id:'b',field:'temperature',above:true,limit:60,on:true}];
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.1,temperature:95},alarms:dois})),
+  ['alarm|Temperatura alta: 95.0 °C (limite 60 °C)']);
+ // Monitoramento desligado: sem avisos de limite, mas a falta de leitura continua.
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{alarmEnabled:false,vibration:null,temperature:95},alarms:dois})),
+  ['warn|Vibração RMS sem leitura']);
+});

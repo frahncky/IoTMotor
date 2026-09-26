@@ -133,7 +133,10 @@ function motorWarnings({brokerReady,command,sensor,alarms}){
  if(!command)out.push({level:'warn',text:'Quadro de comando sem dados'});
  else if(METRICS.filter(m=>m.source==='command'&&!['apparent','reactive'].includes(m.key)).every(m=>command[m.key]===null||command[m.key]===undefined))
   out.push({level:'warn',text:'Medições elétricas (PZEM) sem leitura'});
- const vistos=new Set();
+ // Com o monitoramento desligado a placa não alarma; aqui também só ficam os avisos de leitura.
+ if(sensor?.alarmEnabled===false)return out;
+ // Vários alarmes para a mesma grandeza e sentido: vale o mais grave.
+ const porGrandeza=new Map();
  for(const a of (alarms||LIMITES_PADRAO)){
   if(a.on===false||!Number.isFinite(a.limit))continue;
   const metric=METRICS.find(m=>m.key===a.field),extra=GRANDEZA_AVISO[a.field];
@@ -141,13 +144,16 @@ function motorWarnings({brokerReady,command,sensor,alarms}){
   const sample=(metric?.source??'sensor')==='command'?command:sensor;
   const value=sample?(extra?extra.read(sample):sample[a.field]):null;
   if(!Number.isFinite(value))continue;
-  const above=a.above!==false,passou=above?value>=a.limit:value<=a.limit;
+  // Mesma comparação estrita do firmware (alarm_list.h); 90% do limite já avisa.
+  const above=a.above!==false,passou=above?value>a.limit:value<a.limit;
   const perto=above?value>=a.limit*0.9:value<=a.limit*1.1;
   if(!passou&&!perto)continue;
+  const chave=`${a.field}:${above}`,anterior=porGrandeza.get(chave);
+  if(anterior&&(anterior.passou||!passou))continue;
   const label=extra?.label??metric.label,unit=extra?.unit??metric.unit,digits=extra?.digits??metric.digits;
-  const chave=`${a.field}:${above}`;if(vistos.has(chave))continue;vistos.add(chave);
-  out.push({level:passou?'alarm':'warn',text:`${label} ${above?'alta':'baixa'}: ${value.toFixed(digits)}${unit?` ${unit}`:''} (limite ${a.limit}${unit?` ${unit}`:''})`});
+  porGrandeza.set(chave,{passou,level:passou?'alarm':'warn',text:`${label} ${above?'alta':'baixa'}: ${value.toFixed(digits)}${unit?` ${unit}`:''} (limite ${a.limit}${unit?` ${unit}`:''})`});
  }
+ for(const {level,text} of porGrandeza.values())out.push({level,text});
  return out;
 }
 function renderMotorVisual(){
