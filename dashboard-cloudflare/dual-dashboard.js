@@ -338,7 +338,7 @@ function ingest(which,raw,packet){
  const hasFields=METRICS.some(m=>m.source===which&&sample[m.key]!==null);
  if(which==='command'&&!hasFields&&sample.motorOn===null&&!sample.relays){diag('Mensagem do módulo de comandos sem grandezas nem estado válido.');return false;}
  state[which].sample=sample;state[which].at=Date.now();state[which].count++;
- if(which==='command')window.iotmotorMotorSound?.resumeAfterReconnect?.(sample.motorOn);
+ if(which==='command')window.iotmotorMotorSound?.syncConfirmedState?.(sample.motorOn);
  for(const m of METRICS.filter(m=>m.source===which)){
   if(sample[m.key]!==null){const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
  }
