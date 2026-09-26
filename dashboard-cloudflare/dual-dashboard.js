@@ -212,7 +212,7 @@ function renderMotorVisual(){
  root.dataset.alarmVib=parts.has('vibration')?'on':'off';
  const dados=[];
  if(cmd?.current!==null&&cmd?.current!==undefined){
-  const carga=cmd.motorOn===true?motorLoad(cmd.current,window.iotmotorMotorInfo?.dados?.()?.current_a):null;
+  const carga=cmd.motorOn===true?motorLoad(cmd.current,window.iotmotorMotorInfo?.dados?.()?.current_in_use_a):null;
   dados.push(`Corrente ${cmd.current.toFixed(2)} A${carga!==null?` (carga ${carga}%)`:''}`);
  }
  if(sensor?.vibration!==null&&sensor?.vibration!==undefined)dados.push(`Vibração ${sensor.vibration.toFixed(3)} g`);

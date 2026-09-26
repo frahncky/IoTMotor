@@ -48,7 +48,7 @@ test('dados retidos da placa preenchem o formulário e ficam disponíveis para o
   assert.equal(h.api.dados(), null);
   assert.equal(h.no('motorInfoCargaDica').hidden, false);
   h.receber('motor_info', {current_a: 4.2, voltage_v: 220, rpm: 1730, phases: 3});
-  assert.equal(h.no('motorInfoA').value, '4.2');
+  assert.equal(h.no('motorInfoA').value, '4,2');
   assert.equal(h.no('motorInfoV').value, '220');
   assert.equal(h.no('motorInfoCv').value, '');
   assert.equal(h.no('motorInfoFases').value, '3');
@@ -80,4 +80,44 @@ test('zerar horímetro pede o comando próprio ao quadro', () => {
   const h = secao();
   h.no('motorInfoZerar').fire('click');
   assert.equal(h.cliente.publicados.at(-1).dados.action, 'motor_counters_reset');
+});
+
+test('trifásico de dupla tensão: grava os dois pares e a ligação; a carga usa a corrente da ligação em uso', () => {
+  const h = secao();
+  h.no('motorInfoFases').value = '3';
+  h.no('motorInfoV').value = '380/220';  // Fora de ordem: o painel põe o triângulo primeiro.
+  h.no('motorInfoA').value = '12,6 / 7,3';
+  h.no('motorInfoV').fire('input');
+  assert.equal(h.no('motorInfoLigacaoCampo').hidden, false, 'com duas tensões aparece a ligação');
+  h.no('motorInfoLigacao').value = 'delta';
+  h.no('motorInfoForm').fire('submit');
+  assert.deepEqual(h.cliente.publicados.at(-1).dados.motor,
+    {phases: 3, voltage_v: 220, voltage_y_v: 380, current_a: 12.6, current_y_a: 7.3, connection: 'delta'});
+  const envio = h.cliente.publicados.at(-1).dados;
+  h.receber('command_ack', {seq: envio.seq, action: envio.action, accepted: true, reason: 'dados do motor gravados'});
+
+  h.receber('motor_info', {voltage_v: 220, voltage_y_v: 380, current_a: 12.6, current_y_a: 7.3, phases: 3, connection: 'star'});
+  assert.equal(h.no('motorInfoV').value, '220/380');
+  assert.equal(h.no('motorInfoA').value, '12,6/7,3');
+  assert.equal(h.no('motorInfoLigacao').value, 'star');
+  assert.equal(h.api.dados().current_in_use_a, 7.3, 'em estrela vale a corrente da estrela');
+  assert.equal(h.api.dados().voltage_in_use_v, 380);
+});
+
+test('dupla tensão exige trifásico e os dois pares completos', () => {
+  const h = secao();
+  const antes = h.cliente.publicados.length;
+  h.no('motorInfoV').value = '220/380';
+  h.no('motorInfoA').value = '12,6/7,3';
+  h.no('motorInfoFases').value = '1';
+  h.no('motorInfoForm').fire('submit');
+  assert.match(h.no('motorInfoFeedback').textContent, /só em motor trifásico/);
+  h.no('motorInfoFases').value = '3';
+  h.no('motorInfoA').value = '12,6';
+  h.no('motorInfoForm').fire('submit');
+  assert.match(h.no('motorInfoFeedback').textContent, /as duas tensões e as duas correntes/);
+  h.no('motorInfoA').value = '12,6/abc';
+  h.no('motorInfoForm').fire('submit');
+  assert.match(h.no('motorInfoFeedback').textContent, /Corrente: use um valor/);
+  assert.equal(h.cliente.publicados.length, antes);
 });

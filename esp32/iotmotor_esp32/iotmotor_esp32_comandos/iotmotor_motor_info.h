@@ -1,5 +1,6 @@
 #pragma once
-// Dados de placa do motor (monofasico ou trifasico, potencia em cv) e contadores de uso (horimetro e partidas),
+// Dados de placa do motor (monofasico ou trifasico, com uma ou duas tensoes,
+// potencia em cv) e contadores de uso (horimetro e partidas),
 // gravados nesta placa: o painel e o app leem os mesmos valores, e eles
 // sobrevivem a reinicio. Todos os dados de placa sao opcionais (0 = nao
 // cadastrado); sem a corrente nominal o painel apenas nao mostra a carga.
@@ -16,6 +17,12 @@ struct Dados {
   float fatorServico = 0;
   uint16_t rpm = 0;
   uint8_t fases = 0;  // 1 = monofasico, 3 = trifasico, 0 = nao informado.
+  // Trifasico de dupla tensao (ex.: 220/380 V - 12,6/7,3 A): tensaoV e
+  // correnteA sao os da ligacao triangulo (menor tensao), estes os da
+  // estrela. 0 = placa com uma tensao so.
+  float tensaoEstrelaV = 0;
+  float correnteEstrelaA = 0;
+  bool emEstrela = false;  // Ligacao em que o motor trabalha (padrao: triangulo).
 };
 
 inline Dados dados;
@@ -45,6 +52,9 @@ inline void carregar() {
   dados.fatorServico = memoria.getFloat("fs", 0);
   dados.rpm = memoria.getUShort("rpm", 0);
   dados.fases = memoria.getUChar("fases", 0);
+  dados.tensaoEstrelaV = memoria.getFloat("vy", 0);
+  dados.correnteEstrelaA = memoria.getFloat("ay", 0);
+  dados.emEstrela = memoria.getBool("estrela", false);
   segundosLigado = memoria.getUInt("horas_s", 0);
   partidas = memoria.getUInt("partidas", 0);
   partidasHoje = memoria.getUInt("hoje", 0);
@@ -139,6 +149,28 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
     return false;
   }
   novo.fases = static_cast<uint8_t>(fases);
+  // Segunda tensao/corrente (estrela): so em trifasico, e coerente com a
+  // placa: tensao maior e corrente menor que as do triangulo.
+  if (!ler("voltage_y_v", 1000, novo.tensaoEstrelaV) || !ler("current_y_a", 2000, novo.correnteEstrelaA)) {
+    motivo = "estrela: tensao de 0 a 1000 V e corrente de 0 a 2000 A";
+    return false;
+  }
+  const bool duplaTensao = novo.tensaoEstrelaV > 0 || novo.correnteEstrelaA > 0;
+  if (duplaTensao && novo.fases != 3) { motivo = "duas tensoes so em motor trifasico"; return false; }
+  if (novo.tensaoEstrelaV > 0 && !(novo.tensaoV > 0 && novo.tensaoEstrelaV > novo.tensaoV)) {
+    motivo = "tensao: informe a menor (triangulo) e depois a maior (estrela)";
+    return false;
+  }
+  if (novo.correnteEstrelaA > 0 && !(novo.correnteA > 0 && novo.correnteEstrelaA < novo.correnteA)) {
+    motivo = "corrente: informe a maior (triangulo) e depois a menor (estrela)";
+    return false;
+  }
+  JsonVariantConst ligacao = doc["connection"];
+  if (!ligacao.isNull() && ligacao != "delta" && ligacao != "star") {
+    motivo = "ligacao: use delta ou star";
+    return false;
+  }
+  novo.emEstrela = duplaTensao && ligacao == "star";
   novo.rpm = static_cast<uint16_t>(rpm + 0.5f);
   Preferences memoria;
   if (!memoria.begin("iot-motor", false)) { motivo = "falha ao gravar"; return false; }
@@ -148,6 +180,9 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
   memoria.putFloat("fs", novo.fatorServico);
   memoria.putUShort("rpm", novo.rpm);
   memoria.putUChar("fases", novo.fases);
+  memoria.putFloat("vy", novo.tensaoEstrelaV);
+  memoria.putFloat("ay", novo.correnteEstrelaA);
+  memoria.putBool("estrela", novo.emEstrela);
   memoria.end();
   dados = novo;
   motivo = "dados do motor gravados";
@@ -171,6 +206,10 @@ inline void descrever(JsonDocument& doc) {
   if (dados.rpm > 0) doc["rpm"] = dados.rpm;
   if (dados.fatorServico > 0) doc["service_factor"] = dados.fatorServico;
   if (dados.fases) doc["phases"] = dados.fases;
+  if (dados.tensaoEstrelaV > 0) doc["voltage_y_v"] = dados.tensaoEstrelaV;
+  if (dados.correnteEstrelaA > 0) doc["current_y_a"] = dados.correnteEstrelaA;
+  if (dados.tensaoEstrelaV > 0 || dados.correnteEstrelaA > 0)
+    doc["connection"] = dados.emEstrela ? "star" : "delta";
 }
 
 }  // namespace motorinfo

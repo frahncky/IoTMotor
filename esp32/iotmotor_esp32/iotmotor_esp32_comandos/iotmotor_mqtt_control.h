@@ -88,10 +88,10 @@ void publicarPerfis() {
 // Dados de placa do motor, retidos: o painel e o app abrem ja preenchidos.
 void publicarMotorInfo() {
   if (!mqttClient.connected()) return;
-  StaticJsonDocument<256> doc;
+  StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   motorinfo::descrever(doc);
-  char payload[256];
+  char payload[384];
   const size_t len = serializeJson(doc, payload, sizeof(payload));
   if (len) mqttClient.publish(topicoMotorInfo, reinterpret_cast<const uint8_t*>(payload),
                               static_cast<unsigned int>(len), true);
