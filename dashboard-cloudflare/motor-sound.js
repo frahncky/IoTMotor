@@ -17,6 +17,7 @@
   let ctx = null;
   let active = null;
   let testTimer = null;
+  let coasting = null;
   let unlocked = false;
 
   function clampVolume(value) {
@@ -278,7 +279,30 @@
 
   function createMotorSound({ startup = true } = {}) {
     if (!ctx) return null;
+    // Um som anterior ainda desacelerando não pode tocar junto com o novo.
+    silenceCoasting();
     return buildMotorSound(ctx, ctx.destination, gainForVolume(settings.volume), { startup });
+  }
+
+  function releaseSound(playing, tail) {
+    const timer = setTimeout(() => {
+      if (coasting?.playing === playing) coasting = null;
+      for (const source of playing.sources) {
+        try { source.stop(); } catch (_) {}
+      }
+      try { playing.master.disconnect(); } catch (_) {}
+    }, Math.ceil(tail * 1000) + 30);
+    return timer;
+  }
+
+  function silenceCoasting() {
+    if (!coasting) return;
+    const { playing, timer } = coasting;
+    coasting = null;
+    clearTimeout(timer);
+    let tail = 0.05;
+    try { tail = playing.stop({ fade: false }); } catch (_) {}
+    releaseSound(playing, tail);
   }
 
   function stopActive({ fade = true } = {}) {
@@ -291,15 +315,11 @@
 
     const playing = active;
     active = null;
+    silenceCoasting();
     let tail = fade ? 0.9 : 0.05;
     try { tail = playing.stop({ fade }); } catch (_) {}
-
-    setTimeout(() => {
-      for (const source of playing.sources) {
-        try { source.stop(); } catch (_) {}
-      }
-      try { playing.master.disconnect(); } catch (_) {}
-    }, Math.ceil(tail * 1000) + 30);
+    const timer = releaseSound(playing, tail);
+    if (fade) coasting = { playing, timer };
 
     testBtn.textContent = '🔊 Testar som do motor';
     testBtn.setAttribute('aria-pressed', 'false');
