@@ -18,6 +18,9 @@
   let active = null;
   let testTimer = null;
   let coasting = null;
+  // Cada pedido de som (automático ou teste) ganha um número; depois de
+  // esperar a gravação carregar, só o pedido mais recente segue.
+  let ultimoPedido = 0;
   let unlocked = false;
 
   function clampVolume(value) {
@@ -82,6 +85,7 @@
     }
 
     ctx = ctx || new AudioCtx();
+    loadSample(ctx);
     if (ctx.state === 'suspended') {
       try { await ctx.resume(); } catch (_) {}
     }
@@ -112,7 +116,7 @@
   const FAN_BLADES = 5;
   const STARTUP_S = 1.8;
   const COAST_S = 3.4;
-  const HUM_LEVEL = 0.26;
+  const HUM_LEVEL = 0.14;
   const MIX_LEVEL = 0.42;
 
   const easeStartup = (x) => x * x * (3 - 2 * x);
@@ -134,6 +138,38 @@
     const real = new Float32Array(harmonics.length);
     const imag = Float32Array.from(harmonics);
     return audioCtx.createPeriodicWave(real, imag);
+  }
+
+  // Parâmetros que acompanham a rotação ("speed": 0 parado, 1 nominal).
+  // Começa parado e acelera em STARTUP_S; rampSpeed também faz a parada.
+  function speedControl(driven, now, startup) {
+    let segment = { t0: now, dur: 0, from: startup ? 0 : 1, to: startup ? 0 : 1, ease: easeStartup };
+
+    function speedAt(time) {
+      const { t0, dur, from, to, ease } = segment;
+      if (time <= t0 || dur <= 0) return time <= t0 ? from : to;
+      if (time >= t0 + dur) return to;
+      return from + (to - from) * ease((time - t0) / dur);
+    }
+
+    function rampSpeed(to, dur, ease, time) {
+      const from = speedAt(time);
+      const start = time + 0.005;
+      const points = 96;
+      for (const [param, map] of driven) {
+        holdParam(param, time);
+        const curve = new Float32Array(points);
+        for (let i = 0; i < points; i += 1) {
+          curve[i] = map(from + (to - from) * ease(i / (points - 1)));
+        }
+        param.setValueCurveAtTime(curve, start, dur);
+      }
+      segment = { t0: start, dur, from, to, ease };
+    }
+
+    for (const [param, map] of driven) param.setValueAtTime(map(segment.from), now);
+    if (startup) rampSpeed(1, STARTUP_S, easeStartup, now);
+    return { speedAt, rampSpeed };
   }
 
   function buildMotorSound(audioCtx, destination, targetGain, { startup = true } = {}) {
@@ -220,37 +256,12 @@
       [blade.frequency, (s) => Math.max(0.5, ROTOR_HZ * FAN_BLADES * s)],
       [bladeDepth.gain, (s) => 1.1 * s * s],
       [fanAmp.gain, (s) => 2.4 * s ** 1.6],
-      [fanFilter.frequency, (s) => 160 + 1900 * s],
+      [fanFilter.frequency, (s) => 160 + 1300 * s],
       [fanBody.frequency, (s) => Math.max(40, ROTOR_HZ * FAN_BLADES * s)],
-      [bearingGain.gain, (s) => 0.05 * s],
+      [bearingGain.gain, (s) => 0.02 * s],
     ];
 
-    let segment = { t0: now, dur: 0, from: startup ? 0 : 1, to: startup ? 0 : 1, ease: easeStartup };
-
-    function speedAt(time) {
-      const { t0, dur, from, to, ease } = segment;
-      if (time <= t0 || dur <= 0) return time <= t0 ? from : to;
-      if (time >= t0 + dur) return to;
-      return from + (to - from) * ease((time - t0) / dur);
-    }
-
-    function rampSpeed(to, dur, ease, time) {
-      const from = speedAt(time);
-      const start = time + 0.005;
-      const points = 96;
-      for (const [param, map] of driven) {
-        holdParam(param, time);
-        const curve = new Float32Array(points);
-        for (let i = 0; i < points; i += 1) {
-          curve[i] = map(from + (to - from) * ease(i / (points - 1)));
-        }
-        param.setValueCurveAtTime(curve, start, dur);
-      }
-      segment = { t0: start, dur, from, to, ease };
-    }
-
-    for (const [param, map] of driven) param.setValueAtTime(map(segment.from), now);
-    if (startup) rampSpeed(1, STARTUP_S, easeStartup, now);
+    const { speedAt, rampSpeed } = speedControl(driven, now, startup);
 
     const sources = [hum, hum60, rotor, blade, fanNoise, bearingNoise];
     for (const source of [hum, hum60, rotor, blade, fanNoise]) source.start(now);
@@ -277,11 +288,138 @@
     return { master, sources, stop };
   }
 
+  // Gravação real de um motor (motor-ligado.mp3), usada inteira:
+  // - início (0 a 1 s): estalo de ligar, que sinaliza a partida;
+  // - trecho estável (1 a 3,55 s): repete enquanto o motor está ligado;
+  // - final (3,70 s ao fim): estalos de desligar e o motor parando.
+  const SAMPLE_URL = './motor-ligado.mp3';
+  const LOOP_START_S = 1.0;
+  const LOOP_END_S = 3.55;
+  const LOOP_XFADE_S = 0.25;
+  const OUTRO_START_S = 3.70;
+  const SAMPLE_RMS = 0.25;  // Nível do trecho estável, próximo do som sintetizado.
+  const CLICK_PEAK = 1.3;   // Pico dos estalos antes do volume (máx. 0,57 em 100%).
+  let samplePromise = null;
+  let sample = null;
+
+  function loadSample(audioCtx) {
+    if (!samplePromise) {
+      samplePromise = fetch(SAMPLE_URL)
+        .then((resposta) => {
+          if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+          return resposta.arrayBuffer();
+        })
+        .then((dados) => audioCtx.decodeAudioData(dados))
+        .then((decoded) => { sample = makeSampleParts(audioCtx, decoded); return sample; })
+        .catch(() => null);  // Sem o arquivo, fica o som sintetizado.
+    }
+    return samplePromise;
+  }
+
+  function copyRange(audioCtx, decoded, from, to) {
+    const buffer = audioCtx.createBuffer(decoded.numberOfChannels, Math.max(1, to - from), decoded.sampleRate);
+    for (let c = 0; c < decoded.numberOfChannels; c += 1) {
+      buffer.getChannelData(c).set(decoded.getChannelData(c).subarray(from, to));
+    }
+    return buffer;
+  }
+
+  // "main" = início com o estalo + trecho estável. O fim do trecho estável
+  // se funde no que vem logo antes dele (potência constante): ao voltar para
+  // loopStart a onda continua sem clique. "outro" = desligamento.
+  function makeSampleParts(audioCtx, decoded) {
+    const rate = decoded.sampleRate;
+    const loopStart = Math.floor(LOOP_START_S * rate);
+    const loopEnd = Math.min(decoded.length, Math.floor(LOOP_END_S * rate));
+    const fade = Math.floor(LOOP_XFADE_S * rate);
+    const main = copyRange(audioCtx, decoded, 0, loopEnd);
+    let squares = 0;
+    for (let c = 0; c < decoded.numberOfChannels; c += 1) {
+      const src = decoded.getChannelData(c);
+      const dst = main.getChannelData(c);
+      for (let i = 0; i < fade; i += 1) {
+        const x = (i / fade) * Math.PI / 2;
+        const j = loopEnd - fade + i;
+        dst[j] = src[j] * Math.cos(x) + src[loopStart - fade + i] * Math.sin(x);
+      }
+      for (let i = loopStart; i < loopEnd; i += 1) squares += dst[i] * dst[i];
+    }
+    const outro = copyRange(audioCtx, decoded, Math.floor(OUTRO_START_S * rate), decoded.length);
+    // Pontas do desligamento sem estalo digital (o estalo gravado continua).
+    const ramp = Math.floor(0.01 * rate), tail = Math.floor(0.15 * rate);
+    for (let c = 0; c < outro.numberOfChannels; c += 1) {
+      const d = outro.getChannelData(c);
+      for (let i = 0; i < ramp && i < d.length; i += 1) d[i] *= i / ramp;
+      for (let i = 0; i < tail && i < d.length; i += 1) d[d.length - 1 - i] *= i / tail;
+    }
+    const rms = Math.sqrt(squares / ((loopEnd - loopStart) * decoded.numberOfChannels)) || 1;
+    const level = SAMPLE_RMS / rms;
+    // Os estalos foram gravados no máximo; com o ganho do trecho estável
+    // estourariam. Compressão suave só nos picos: depois do ganho, nenhum
+    // passa de CLICK_PEAK, e o som baixo fica igual.
+    const knee = CLICK_PEAK / level;
+    const soften = (d, from, to) => {
+      for (let i = from; i < to; i += 1) d[i] = knee * Math.tanh(d[i] / knee);
+    };
+    for (let c = 0; c < decoded.numberOfChannels; c += 1) {
+      soften(main.getChannelData(c), 0, loopStart);
+      soften(outro.getChannelData(c), 0, outro.length);
+    }
+    return {
+      main, outro, level,
+      loopStart: loopStart / rate, loopEnd: loopEnd / rate,
+    };
+  }
+
+  function buildSampleSound(audioCtx, destination, targetGain, parts) {
+    const now = audioCtx.currentTime;
+    const master = audioCtx.createGain();
+    master.gain.value = Math.max(targetGain, 0.0001);
+    master.connect(destination);
+    const level = audioCtx.createGain();
+    level.gain.value = parts.level;
+    level.connect(master);
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = parts.main;
+    source.loop = true;
+    source.loopStart = parts.loopStart;
+    source.loopEnd = parts.loopEnd;
+    const running = audioCtx.createGain();
+    source.connect(running).connect(level);
+    source.start(now);  // Começa pelo estalo de ligar.
+    const sources = [source];
+
+    function stop({ fade = true } = {}) {
+      const time = audioCtx.currentTime;
+      holdParam(running.gain, time);
+      running.gain.setTargetAtTime(0, time, fade ? 0.01 : 0.005);
+      if (!fade) {
+        // Corte imediato (outro som vai começar): cala também o desligamento.
+        holdParam(master.gain, time);
+        master.gain.setTargetAtTime(0.0001, time, 0.005);
+        return 0.05;
+      }
+      // Desligamento gravado: estalos do interruptor e o motor parando.
+      const outro = audioCtx.createBufferSource();
+      outro.buffer = parts.outro;
+      outro.connect(level);
+      outro.start(time);
+      sources.push(outro);
+      return parts.outro.duration + 0.05;
+    }
+
+    return { master, sources, stop };
+  }
+
   function createMotorSound({ startup = true } = {}) {
     if (!ctx) return null;
     // Um som anterior ainda desacelerando não pode tocar junto com o novo.
     silenceCoasting();
-    return buildMotorSound(ctx, ctx.destination, gainForVolume(settings.volume), { startup });
+    const target = gainForVolume(settings.volume);
+    return sample
+      ? buildSampleSound(ctx, ctx.destination, target, sample)
+      : buildMotorSound(ctx, ctx.destination, target, { startup });
   }
 
   function releaseSound(playing, tail) {
@@ -327,7 +465,11 @@
 
   async function startAutomatic() {
     if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
+    const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
+    await loadSample(ctx);
+    if (pedido !== ultimoPedido) return;  // Um teste começou enquanto carregava.
+    if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
 
     stopActive({ fade: false });
     active = { mode: 'auto', ...createMotorSound({ startup: true }) };
@@ -366,7 +508,10 @@
       return;
     }
 
+    const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
+    await loadSample(ctx);
+    if (pedido !== ultimoPedido || active?.mode === 'test') return;  // Pedido mais novo chegou.
     stopActive({ fade: false });
 
     active = { mode: 'test', ...createMotorSound({ startup: true }) };
