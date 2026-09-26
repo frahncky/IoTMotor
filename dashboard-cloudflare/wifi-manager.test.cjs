@@ -163,3 +163,43 @@ test('versão do firmware: em dia, desatualizada ou não informada', () => {
   assert.equal(h.no('wifiUpdateFw').className, 'btn', 'o botão de atualizar fica em destaque');
   assert.equal(situacaoFirmware('', 'x').atualizar, true);
 });
+
+test('atualização só termina quando a placa volta com a versão nova e falha tardia não é ignorada', () => {
+  const {FIRMWARE_PUBLICADO} = require('./wifi-manager.js');
+  const h = abaWifi();
+  h.redes('esp32-01');
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({
+    device_id: 'esp32-01', firmware_version: 'v13-antigo'
+  }));
+
+  h.no('wifiUpdateFw').fire('click');
+  const envio = h.cliente.publicados.at(-1);
+  const comando = JSON.parse(envio.dados);
+  assert.equal(comando.action, 'update');
+
+  h.enviar('iotmotor/esp32-01/command_ack', JSON.stringify({
+    device_id: 'esp32-01', seq: comando.seq, action: 'update',
+    accepted: true, reason: 'baixando firmware'
+  }));
+  assert.match(h.no('wifiFeedback').textContent, /Aguardando reinício/);
+  assert.equal(h.no('wifiUpdateFw').disabled, true);
+
+  h.enviar('iotmotor/esp32-01/command_ack', JSON.stringify({
+    device_id: 'esp32-01', seq: comando.seq, action: 'update',
+    accepted: false, reason: 'falha -1: erro de download'
+  }));
+  assert.match(h.no('wifiFeedback').textContent, /falha -1/i);
+
+  h.no('wifiUpdateFw').fire('click');
+  const comando2 = JSON.parse(h.cliente.publicados.at(-1).dados);
+  h.enviar('iotmotor/esp32-01/command_ack', JSON.stringify({
+    device_id: 'esp32-01', seq: comando2.seq, action: 'update',
+    accepted: true, reason: 'baixando firmware'
+  }));
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({
+    device_id: 'esp32-01', firmware_version: FIRMWARE_PUBLICADO[0]
+  }));
+  assert.match(h.no('wifiFeedback').textContent, /Atualização concluída/);
+  assert.match(h.no('wifiFirmware').textContent, /em dia/);
+});
