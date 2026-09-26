@@ -64,6 +64,16 @@ test('PZEM: calcula potencias derivadas apenas quando ha dados validos',()=>{
  assert.equal(x.demo,false);
 });
 
+test('firmware atual deriva motor ligado a partir dos relés quando motor_on não existe',()=>{
+ const ligado=parseTelemetry({device_id:'esp32-01',relays:[true,false,false,false],voltage:220});
+ const desligado=parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false],voltage:220});
+ assert.equal(ligado.motorOn,true);
+ assert.equal(desligado.motorOn,false);
+ assert.deepEqual(ligado.relays,[true,false,false,false]);
+ // Se motor_on vier explicitamente, ele continua tendo prioridade.
+ assert.equal(parseTelemetry({device_id:'esp32-01',motor_on:false,relays:[true,false,false,false],voltage:220}).motorOn,false);
+});
+
 test('ESP32-S3: vibração/temperatura nao viram dados eletricos inventados',()=>{
  const x=parseTelemetry({device_id:'esp32-02',data_source:'mpu6050_ds18b20',vibration:0.23,vibration_peak:0.7,temperature:37.2});
  assert.equal(x.temperature,37.2);
