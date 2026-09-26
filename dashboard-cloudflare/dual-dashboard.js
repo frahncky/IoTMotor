@@ -100,6 +100,13 @@ function renderMotorVisual(){
  const cmd=commandFresh?state.command.sample:null,sensor=sensorFresh?state.sensor.sample:null;
  const visual=motorVisualState({brokerReady:state.connected&&state.subscribed,commandFresh,motorOn:cmd?.motorOn});
  root.dataset.state=visual.state;text('motorVisualStatus',visual.label);text('motorVisualBadge',visual.badge);
+ const fanAnim=$('motorFanAnim');
+ const reduceMotion=typeof window!=='undefined'&&window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+ const fanShouldRun=visual.state==='running'&&!reduceMotion;
+ if(fanAnim&&root.dataset.fanRunning!==String(fanShouldRun)){
+  try{fanShouldRun?fanAnim.beginElement?.():fanAnim.endElement?.();}catch(_){}
+  root.dataset.fanRunning=String(fanShouldRun);
+ }
  const dados=[];
  if(cmd?.current!==null&&cmd?.current!==undefined)dados.push(`Corrente ${cmd.current.toFixed(2)} A`);
  if(sensor?.vibration!==null&&sensor?.vibration!==undefined)dados.push(`Vibração ${sensor.vibration.toFixed(3)} g`);
