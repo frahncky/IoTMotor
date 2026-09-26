@@ -146,3 +146,20 @@ test('reiniciar vale para as duas placas e envia o comando restart para a seleci
   h.enviar('iotmotor/esp32-02/status', 'offline');
   assert.equal(h.no('wifiRestart').disabled, true);
 });
+
+test('versão do firmware: em dia, desatualizada ou não informada', () => {
+  const {FIRMWARE_PUBLICADO, situacaoFirmware} = require('./wifi-manager.js');
+  const h = abaWifi();
+  h.redes('esp32-01'); h.redes('esp32-02');
+  assert.match(h.no('wifiFirmware').textContent, /aguardando/);
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({device_id: 'esp32-01', firmware_version: FIRMWARE_PUBLICADO[0]}));
+  h.enviar('iotmotor/esp32-02/capabilities', JSON.stringify({device_id: 'esp32-02', firmware_version: 's3-velho'}));
+  assert.match(h.no('wifiFirmware').textContent, /em dia/);
+  assert.equal(h.no('wifiDev0').dataset.update, 'false');
+  assert.equal(h.no('wifiDev1').dataset.update, 'true');
+  assert.equal(h.no('tabBtn-wifi').dataset.update, 'true', 'a aba Wi-Fi mostra que há atualização');
+  h.no('wifiDev1').fire('click');
+  assert.match(h.no('wifiFirmware').textContent, new RegExp(`s3-velho · nova versão publicada: ${FIRMWARE_PUBLICADO[1]}`));
+  assert.equal(h.no('wifiUpdateFw').className, 'btn', 'o botão de atualizar fica em destaque');
+  assert.equal(situacaoFirmware('', 'x').atualizar, true);
+});

@@ -391,3 +391,39 @@ test('alarmes ativos tambem lista os avisos do painel sem repetir o que a placa 
   h.telemetry(c, {alarm_enabled: false, temperature_ok: false});
   assert.ok(h.node('alarmeAtivosLista').children.some(li => li.children[0].textContent === 'Temperatura sem leitura'));
 });
+
+test('dados do motor sugerem o alarme de sobrecarga: criar, ajustar e em dia', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  // Sem corrente nominal cadastrada, nada a sugerir.
+  h.context.window.iotmotorMotorInfo = {dados: () => ({voltage_v: 220})};
+  h.advance(0);
+  assert.equal(h.node('alarmeSugestao').hidden, true);
+
+  let motor = {current_a: 4.2, service_factor: 1.15};
+  h.context.window.iotmotorMotorInfo = {dados: () => motor};
+  h.advance(0);
+  assert.equal(h.node('alarmeSugestao').hidden, false);
+  assert.match(h.node('alarmeSugestaoTexto').textContent, /4,83 A \(corrente nominal 4,2 A × fator de serviço 1,15\)/);
+  h.node('alarmeSugestaoBtn').fire('click');
+  assert.deepEqual(c.published.at(-1).data.alarm,
+    {id: 'current', field: 'current', board: 'command', above: true, limit: 4.83, on: true});
+  h.send(c, 'command_ack', {...c.published.at(-1).data, accepted: true, reason: 'alarme criado'});
+
+  // Já existe um alarme de corrente com outro limite (e desligado): ajusta o mesmo id.
+  h.alarms(c, [...h.PADRAO, {id: 'amp', field: 'current', board: 'command', above: true, limit: 10, on: false}]);
+  assert.match(h.node('alarmeSugestaoTexto').textContent, /está em 10 A/);
+  assert.equal(h.node('alarmeSugestaoBtn').textContent, 'Ajustar para 4,83 A');
+  h.node('alarmeSugestaoBtn').fire('click');
+  assert.deepEqual(c.published.at(-1).data.alarm,
+    {id: 'amp', field: 'current', board: 'command', above: true, limit: 4.83, on: false});
+  h.send(c, 'command_ack', {...c.published.at(-1).data, accepted: true, reason: 'alarme gravado'});
+
+  // De acordo: só a confirmação, sem botão. Sem fator de serviço, vale a nominal.
+  h.alarms(c, [{id: 'amp', field: 'current', board: 'command', above: true, limit: 4.83, on: true}]);
+  assert.match(h.node('alarmeSugestaoTexto').textContent, /de acordo/);
+  assert.equal(h.node('alarmeSugestaoBtn').hidden, true);
+  motor = {current_a: 4.2};
+  h.advance(0);
+  assert.match(h.node('alarmeSugestaoTexto').textContent, /4,2 A \(corrente nominal 4,2 A, sem fator de serviço cadastrado\)/);
+});
