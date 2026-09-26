@@ -28,6 +28,9 @@
   // exige uma nova interação para liberar o AudioContext.
   let restoreOnOpenPending = settings.enabled;
   let lastKnownMotorOn = null;
+  // A primeira telemetria após abrir/reconectar só estabelece a referência.
+  // Assim uma queda de conexão não é confundida com um ligar/desligar real.
+  let awaitingBaseline = true;
 
   function clampVolume(value) {
     const n = Number(value);
@@ -497,6 +500,7 @@
 
   function stopForDisconnect() {
     ++ultimoPedido;
+    awaitingBaseline = true;
     resumeAfterReconnectPending = active?.mode === 'auto'
       || (restoreOnOpenPending && lastKnownMotorOn === true);
     restoreOnOpenPending = false;
@@ -540,6 +544,68 @@
     resumeAfterReconnectPending = false;
     restoreOnOpenPending = false;
     setFeedback(`Som contínuo retomado · volume ${settings.volume}%.`);
+  }
+
+  async function syncConfirmedState(motorOn) {
+    if (motorOn !== true && motorOn !== false) return;
+
+    const previous = lastKnownMotorOn;
+    lastKnownMotorOn = motorOn;
+
+    // Primeira leitura após abrir/reconectar: apenas sincroniza. Se o motor
+    // já estiver ligado, retoma o trecho contínuo sem tocar o estalo de partida.
+    if (awaitingBaseline || previous === null) {
+      awaitingBaseline = false;
+      if (motorOn === true && settings.enabled) {
+        resumeAfterReconnectPending = true;
+        restoreOnOpenPending = true;
+        await resumeAfterReconnect(true);
+      } else {
+        resumeAfterReconnectPending = false;
+        restoreOnOpenPending = false;
+        if (active?.mode === 'auto') stopActive({ fade: false });
+      }
+      return;
+    }
+
+    if (previous === motorOn) {
+      if (motorOn === true && (resumeAfterReconnectPending || restoreOnOpenPending)) {
+        await resumeAfterReconnect(true);
+      }
+      return;
+    }
+
+    resumeAfterReconnectPending = false;
+    restoreOnOpenPending = false;
+    ++ultimoPedido;
+
+    if (motorOn === false) {
+      if (active?.mode === 'auto') stopActive({ fade: true });
+      setFeedback(settings.enabled
+        ? 'Motor confirmado como desligado.'
+        : 'Som automático desativado.');
+      return;
+    }
+
+    if (!settings.enabled) return;
+
+    // Mudança real desligado -> ligado. Se o navegador ainda não liberou
+    // áudio, não reproduz a partida atrasada: ao primeiro gesto entra direto
+    // no som contínuo.
+    if (!(unlocked || ctx?.state === 'running')) {
+      resumeAfterReconnectPending = true;
+      setFeedback('Motor ligado. Clique ou toque na página para liberar o som contínuo.');
+      return;
+    }
+
+    const pedido = ++ultimoPedido;
+    if (!(await ensureAudio())) return;
+    await loadSample(ctx);
+    if (pedido !== ultimoPedido || !settings.enabled || lastKnownMotorOn !== true) return;
+
+    stopActive({ fade: false });
+    active = { mode: 'auto', ...createMotorSound({ startup: true }) };
+    setFeedback(`Motor confirmado como ligado · volume ${settings.volume}%.`);
   }
 
   async function toggleTest() {
@@ -599,7 +665,7 @@
       await ensureAudio();
       await resumeAfterReconnect(lastKnownMotorOn);
       if (!restoreOnOpenPending && !resumeAfterReconnectPending && active?.mode !== 'auto') {
-        setFeedback('Som habilitado. Toca somente ao usar Ligar ou Desligar.');
+        setFeedback('Som habilitado. Acompanha o estado confirmado do motor.');
       }
     } else {
       restoreOnOpenPending = false;
@@ -622,8 +688,8 @@
 
   testBtn.addEventListener('click', toggleTest);
 
-  // Apenas libera o AudioContext. Nunca inicia ou encerra o som por estado,
-  // telemetria, desconexão ou reconexão.
+  // Libera o AudioContext. Mudanças de estado vêm somente da telemetria
+  // confirmada; em reconexão o primeiro estado é apenas uma referência.
   const unlock = async () => {
     if (!settings.enabled) return;
     if (!unlocked) await ensureAudio();
@@ -643,6 +709,7 @@
     stopFromCommand,
     stopForDisconnect,
     resumeAfterReconnect,
+    syncConfirmedState,
     stopSilently: () => stopActive({ fade: false }),
     settings: () => ({ ...settings }),
   };
