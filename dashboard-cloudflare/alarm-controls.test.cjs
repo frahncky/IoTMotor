@@ -258,6 +258,8 @@ test('mostra sensores ausentes, alarme ativo e alarme desligado', () => {
   assert.equal(h.node('alarmeEstado').textContent, 'sem sensores válidos');
   h.telemetry(c, {alarm_active: true});
   assert.match(h.node('alarmeEstado').textContent, /ALARME/);
+  h.telemetry(c, {alarm_active: true, alarms_firing: ['vib']});
+  assert.equal(h.node('alarmeEstado').textContent, 'ALARME: limite ultrapassado');
   h.telemetry(c, {alarm_enabled: false});
   assert.equal(h.node('alarmeEstado').textContent, 'alarme desligado');
 });
@@ -340,4 +342,25 @@ test('o botao Testar LED envia led_test sem comando de buzzer', () => {
   assert.equal(cmd.topic, 'iotmotor/esp32-02/command');
   assert.deepEqual(cmd.data, {v: 1, device_id: 'esp32-02', seq: cmd.data.seq,
     action: 'led_test'});
+});
+
+test('sensor sem leitura aparece como falha, nao como limite ultrapassado', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  h.telemetry(c, {alarm_active: true, alarms_firing: [], temperature_ok: false});
+  assert.equal(h.node('alarmeEstado').textContent, 'ALARME: falha de sensor');
+  let ativos = h.node('alarmeAtivosLista').children;
+  assert.equal(ativos.length, 1);
+  assert.match(ativos[0].children[0].textContent, /Falha de sensor: temperatura sem leitura/);
+  assert.equal(ativos[0].children[1].textContent, 'falha');
+  assert.equal(h.node('alarmeAtivosResumo').textContent, '1 falha de sensor neste momento.');
+  // Limite ultrapassado junto com a falha: os dois aparecem.
+  h.telemetry(c, {alarm_active: true, alarms_firing: ['vib'], temperature_ok: false});
+  assert.equal(h.node('alarmeEstado').textContent, 'ALARME: limite ultrapassado');
+  ativos = h.node('alarmeAtivosLista').children;
+  assert.equal(ativos.length, 2);
+  assert.equal(h.node('alarmeAtivosResumo').textContent, '1 alarme ativo e 1 falha de sensor neste momento.');
+  // Com o monitoramento desligado, a placa nao entra em alarme por isso.
+  h.telemetry(c, {alarm_enabled: false, alarm_active: false, temperature_ok: false});
+  assert.equal(h.node('alarmeAtivosLista').children.length, 0);
 });

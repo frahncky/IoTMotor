@@ -34,6 +34,12 @@
   const aviso = texto => { $('alarmeFeedback').textContent = texto; };
   const topico = tipo => `${prefixo}/${dispositivo}/${tipo}`;
   const recente = () => conectado && estado && Date.now() - recebidoEm < 10000;
+  // A placa entra em alarme tambem quando falta um sensor (sem limite
+  // ultrapassado); estes sao os sensores sem leitura na ultima telemetria.
+  const falhasDeSensor = () => estado ? [
+    ...(estado.tempOk === false ? ['temperatura sem leitura (DS18B20)'] : []),
+    ...(estado.mpuOk === false ? ['vibração sem leitura (MPU6050)'] : [])
+  ] : [];
   const pronto = () => recente() && !pendente;
 
   function preencherGrandezas() {
@@ -78,8 +84,12 @@
     else if (recente() && !estado.enabled) mensagem = 'O monitoramento de alarmes está desligado.';
 
     const disparados = recente() && estado.enabled ? [...new Set(estado.firing || [])] : [];
-    if (disparados.length) {
-      mensagem = `${disparados.length} ${disparados.length === 1 ? 'alarme ativo' : 'alarmes ativos'} neste momento.`;
+    const falhas = recente() && estado.enabled ? falhasDeSensor() : [];
+    if (disparados.length || falhas.length) {
+      mensagem = [
+        disparados.length && `${disparados.length} ${disparados.length === 1 ? 'alarme ativo' : 'alarmes ativos'}`,
+        falhas.length && `${falhas.length} ${falhas.length === 1 ? 'falha de sensor' : 'falhas de sensor'}`
+      ].filter(Boolean).join(' e ') + ' neste momento.';
       for (const id of disparados) {
         const alarme = (lista || []).find(item => item.id === id);
         const item = document.createElement('li');
@@ -92,6 +102,18 @@
         const estadoAtual = document.createElement('span');
         estadoAtual.className = 'tag on';
         estadoAtual.textContent = 'disparado';
+        item.append(nome, estadoAtual);
+        alvo.append(item);
+      }
+      for (const falha of falhas) {
+        const item = document.createElement('li');
+        item.className = 'atual';
+        const nome = document.createElement('span');
+        nome.className = 'nome';
+        nome.textContent = `Falha de sensor: ${falha}`;
+        const estadoAtual = document.createElement('span');
+        estadoAtual.className = 'tag on';
+        estadoAtual.textContent = 'falha';
         item.append(nome, estadoAtual);
         alvo.append(item);
       }
@@ -240,7 +262,11 @@
       mensagem = 'sem dados recentes'; classe = 'wait';
     } else if (recente()) {
       if (!estado.enabled) { mensagem = 'alarme desligado'; classe = 'wait'; }
-      else if (estado.active) { mensagem = 'ALARME: limite ultrapassado'; classe = 'error'; }
+      else if (estado.active) {
+        mensagem = estado.firing.length ? 'ALARME: limite ultrapassado'
+          : falhasDeSensor().length ? 'ALARME: falha de sensor' : 'ALARME ativo';
+        classe = 'error';
+      }
       else if (!estado.sensors) { mensagem = 'sem sensores válidos'; classe = 'wait'; }
       else { mensagem = 'normal'; classe = 'live'; }
     }
@@ -426,6 +452,7 @@
           enabled: dados.alarm_enabled, active: dados.alarm_active,
           sounds: dados.event_sounds === true,
           sensors: dados.mpu_ok || dados.temperature_ok,
+          mpuOk: dados.mpu_ok, tempOk: dados.temperature_ok,
           firing: Array.isArray(dados.alarms_firing) ? dados.alarms_firing : []
         };
         recebidoEm = Date.now();
