@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -15,6 +15,17 @@ test('indicador de conexao combina telemetria recente e status online/offline',(
  // A ausencia individual da placa e detectada em cerca de 6 s.
  assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-5000,now}).kind,'live');
  assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-7000,now}).kind,'error');
+});
+
+test('animação do diagnóstico segue o estado do motor sem exibir sentido de rotação',()=>{
+ assert.deepEqual(motorVisualState({brokerReady:false,commandFresh:false,motorOn:null}),{state:'offline',label:'Desconectado',badge:'SEM DADOS'});
+ assert.equal(motorVisualState({brokerReady:true,commandFresh:false,motorOn:null}).state,'waiting');
+ assert.equal(motorVisualState({brokerReady:true,commandFresh:true,motorOn:false}).state,'stopped');
+ const ligado=motorVisualState({brokerReady:true,commandFresh:true,motorOn:true});
+ assert.equal(ligado.state,'running');
+ assert.equal(ligado.label,'Motor ligado');
+ assert.equal(JSON.stringify(ligado).toLowerCase().includes('horário'),false);
+ assert.equal(JSON.stringify(ligado).toLowerCase().includes('anti'),false);
 });
 
 test('o historico guardado no navegador descarta o velho e o invalido',()=>{
