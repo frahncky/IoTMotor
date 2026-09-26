@@ -23,6 +23,10 @@
   let ultimoPedido = 0;
   let unlocked = false;
   let resumeAfterReconnectPending = false;
+  // Ao reabrir a página, a preferência de som persiste, mas o navegador
+  // exige uma nova interação para liberar o AudioContext.
+  let restoreOnOpenPending = settings.enabled;
+  let lastKnownMotorOn = null;
 
   function clampVolume(value) {
     const n = Number(value);
@@ -466,6 +470,7 @@
 
   async function startFromCommand() {
     resumeAfterReconnectPending = false;
+    restoreOnOpenPending = false;
     if (!settings.enabled || active?.mode === 'auto') return;
     const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
@@ -479,6 +484,7 @@
 
   function stopFromCommand() {
     resumeAfterReconnectPending = false;
+    restoreOnOpenPending = false;
     ++ultimoPedido; // Cancela uma partida sonora ainda carregando.
     if (active?.mode === 'auto') {
       stopActive({ fade: true });
@@ -490,7 +496,9 @@
 
   function stopForDisconnect() {
     ++ultimoPedido;
-    resumeAfterReconnectPending = active?.mode === 'auto';
+    resumeAfterReconnectPending = active?.mode === 'auto'
+      || (restoreOnOpenPending && lastKnownMotorOn === true);
+    restoreOnOpenPending = false;
     if (active?.mode === 'auto') stopActive({ fade: false });
     if (settings.enabled && resumeAfterReconnectPending) {
       setFeedback('Som pausado pela desconexão. Será retomado se o motor continuar ligado.');
@@ -498,25 +506,39 @@
   }
 
   async function resumeAfterReconnect(motorOn) {
-    if (!resumeAfterReconnectPending) return;
+    if (motorOn === true || motorOn === false) lastKnownMotorOn = motorOn;
+
     if (motorOn === false) {
       resumeAfterReconnectPending = false;
+      restoreOnOpenPending = false;
       setFeedback(settings.enabled
         ? 'Som habilitado. Motor confirmado como desligado.'
         : 'Som automático desativado.');
       return;
     }
-    if (motorOn !== true || !settings.enabled || active?.mode === 'auto') return;
+
+    const pending = resumeAfterReconnectPending || restoreOnOpenPending;
+    if (!pending || motorOn !== true || !settings.enabled || active?.mode === 'auto') return;
+
+    // Sem gesto do usuário, navegadores normalmente mantêm o AudioContext
+    // suspenso. Nesse caso aguardamos o primeiro clique/toque, sem estalo.
+    if (!(unlocked || ctx?.state === 'running')) {
+      setFeedback('Motor ligado. Clique ou toque na página para liberar o som.');
+      return;
+    }
 
     const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
     await loadSample(ctx);
-    if (pedido !== ultimoPedido || !settings.enabled || !resumeAfterReconnectPending) return;
+    if (pedido !== ultimoPedido || !settings.enabled
+        || !(resumeAfterReconnectPending || restoreOnOpenPending)
+        || lastKnownMotorOn !== true) return;
 
     stopActive({ fade: false });
     active = { mode: 'auto', ...createMotorSound({ startup: false }) };
     resumeAfterReconnectPending = false;
-    setFeedback(`Som retomado após reconexão · volume ${settings.volume}%.`);
+    restoreOnOpenPending = false;
+    setFeedback(`Som contínuo retomado · volume ${settings.volume}%.`);
   }
 
   async function toggleTest() {
@@ -563,9 +585,14 @@
     updateEnabledText();
 
     if (settings.enabled) {
+      restoreOnOpenPending = lastKnownMotorOn === true;
       await ensureAudio();
-      setFeedback('Som habilitado. Toca somente ao usar Ligar ou Desligar.');
+      await resumeAfterReconnect(lastKnownMotorOn);
+      if (!restoreOnOpenPending && !resumeAfterReconnectPending && active?.mode !== 'auto') {
+        setFeedback('Som habilitado. Toca somente ao usar Ligar ou Desligar.');
+      }
     } else {
+      restoreOnOpenPending = false;
       resumeAfterReconnectPending = false;
       ++ultimoPedido;
       if (active?.mode === 'auto') stopActive({ fade: false });
@@ -588,14 +615,17 @@
   // Apenas libera o AudioContext. Nunca inicia ou encerra o som por estado,
   // telemetria, desconexão ou reconexão.
   const unlock = async () => {
-    if (!settings.enabled || unlocked) return;
-    await ensureAudio();
+    if (!settings.enabled) return;
+    if (!unlocked) await ensureAudio();
+    if (unlocked && (resumeAfterReconnectPending || restoreOnOpenPending)) {
+      await resumeAfterReconnect(lastKnownMotorOn);
+    }
   };
   window.addEventListener('pointerdown', unlock, { passive: true });
   window.addEventListener('keydown', unlock);
 
   setFeedback(settings.enabled
-    ? 'Som habilitado. Toca somente ao usar Ligar ou Desligar.'
+    ? 'Som habilitado. Ao reabrir a página, o som contínuo volta se o motor estiver ligado.'
     : 'Som automático desativado.');
 
   window.iotmotorMotorSound = {
