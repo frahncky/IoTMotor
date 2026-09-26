@@ -61,7 +61,7 @@
 <div id="painel-wifi" role="tabpanel" aria-labelledby="tabBtn-wifi" hidden>
 <section class="panel wifi" aria-labelledby="wifiTitle"><div class="wifi-head"><div><h2 id="wifiTitle">Redes Wi-Fi</h2><p class="muted">A placa tenta as redes nesta ordem e usa a primeira disponível.</p></div><div class="segmented" role="group" aria-label="Placa"><button type="button" id="wifiDev0" aria-pressed="true">esp32-01</button><button type="button" id="wifiDev1" aria-pressed="false">esp32-02</button></div></div>
 <p class="wifi-status" id="wifiStatus" aria-live="polite">Conecte ao MQTT para ver as redes.</p>
-<div class="wifi-actions"><button class="btn secondary" type="button" id="wifiUpdateFw" disabled title="A placa baixa o firmware publicado no GitHub e reinicia">⭳ Atualizar firmware desta placa</button></div>
+<div class="wifi-actions"><button class="btn secondary" type="button" id="wifiUpdateFw" disabled title="A placa baixa o firmware publicado no GitHub e reinicia">⭳ Atualizar firmware desta placa</button><button class="btn secondary" type="button" id="wifiRestart" disabled hidden title="Reinicia a placa de sensores, como o botão de reset">↻ Reiniciar placa</button></div>
 <ol class="wifi-list" id="wifiList" aria-label="Redes em ordem de prioridade"></ol>
 <div class="wifi-actions"><button class="btn" type="button" id="wifiSaveOrder" disabled>Salvar ordem</button><button class="btn secondary" type="button" id="wifiUndoOrder" disabled>Desfazer</button></div>
 <h3>Adicionar rede</h3>

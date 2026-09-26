@@ -59,6 +59,7 @@ function abaWifi() {
       return c;
     }}},
     URL, Date, Math, JSON, Number, Set, Map, Array, String, Boolean, Object,
+    confirm: () => true,
     setTimeout() { return 0; }, clearTimeout() {}, setInterval() { return 0; },
     localStorage: {getItem: () => null, setItem() {}, removeItem() {}},
     crypto: globalThis.crypto, TextEncoder, Uint8Array, btoa: () => ''
@@ -120,4 +121,25 @@ test('outra placa nao consegue decifrar', async () => {
   const intrusa = await parDaPlaca();
   const pacote = await cifrarSenha(placa.publica, 'Casa', 'minhasenha123', cripto);
   await assert.rejects(decifrarComoAPlaca(intrusa.privada, 'Casa', pacote));
+});
+
+test('reiniciar so aparece para a placa de sensores e envia o comando restart', () => {
+  const h = abaWifi();
+  h.redes('esp32-01'); h.redes('esp32-02');
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  h.enviar('iotmotor/esp32-02/status', 'online');
+  // Quadro de comando selecionado: reiniciar derrubaria os contatores.
+  assert.equal(h.no('wifiRestart').hidden, true);
+  assert.equal(h.no('wifiRestart').disabled, true);
+  h.no('wifiDev1').fire('click');
+  assert.equal(h.no('wifiRestart').hidden, false);
+  assert.equal(h.no('wifiRestart').disabled, false);
+  h.no('wifiRestart').fire('click');
+  const envio = h.cliente.publicados.at(-1);
+  assert.equal(envio.topico, 'iotmotor/esp32-02/command');
+  const comando = JSON.parse(envio.dados);
+  assert.equal(comando.action, 'restart');
+  assert.equal(comando.device_id, 'esp32-02');
+  // Aguardando a resposta, o botão fica travado.
+  assert.equal(h.no('wifiRestart').disabled, true);
 });

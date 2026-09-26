@@ -730,6 +730,15 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
     if(ok)publishAlarms();
     return;
   }
+  // Reinicio remoto: mesmo efeito do botao de reset. Esta placa so mede,
+  // entao reiniciar nao mexe no motor; volta em poucos segundos.
+  if(!strcmp(acao,"restart")) {
+    publishAck(seq,acao,true,"reiniciando");
+    mqtt.loop();
+    delay(300);
+    ESP.restart();
+    return;
+  }
   if(strcmp(acao,"update"))return;
   StaticJsonDocument<256> resposta;
   resposta["device_id"]=DEVICE_ID;resposta["seq"]=seq;resposta["action"]="update";
