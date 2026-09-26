@@ -463,55 +463,38 @@
     testBtn.setAttribute('aria-pressed', 'false');
   }
 
-  async function startAutomatic() {
-    if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
+  async function startFromCommand() {
+    if (!settings.enabled || active?.mode === 'auto') return;
     const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
     await loadSample(ctx);
-    if (pedido !== ultimoPedido) return;  // Um teste começou enquanto carregava.
-    if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
+    if (pedido !== ultimoPedido || !settings.enabled) return;
 
     stopActive({ fade: false });
     active = { mode: 'auto', ...createMotorSound({ startup: true }) };
-    setFeedback(`Som automático ativo · volume ${settings.volume}%.`);
+    setFeedback(`Som do motor ativo · volume ${settings.volume}%.`);
   }
 
-  function stopAutomatic() {
-    if (active?.mode === 'auto') stopActive({ fade: true });
-    if (settings.enabled) {
-      setFeedback(currentMotorState() === 'running'
-        ? 'Som habilitado. Interaja com a página para liberar o áudio do navegador.'
-        : 'Som habilitado. Aguardando o motor ligar.');
-    } else {
-      setFeedback('Som automático desativado.');
-    }
-  }
-
-  async function syncWithMotor() {
-    if (!settings.enabled) {
-      stopAutomatic();
-      return;
-    }
-
-    if (currentMotorState() === 'running') {
-      if (unlocked || ctx?.state === 'running') await startAutomatic();
-      else setFeedback('Som habilitado. Interaja com a página para liberar o áudio do navegador.');
-    } else {
-      stopAutomatic();
+  function stopFromCommand() {
+    ++ultimoPedido; // Cancela uma partida sonora ainda carregando.
+    if (active?.mode === 'auto') {
+      stopActive({ fade: true });
+      setFeedback(settings.enabled
+        ? 'Som habilitado. Aguardando novo comando Ligar.'
+        : 'Som automático desativado.');
     }
   }
 
   async function toggleTest() {
     if (active?.mode === 'test') {
       stopActive({ fade: true });
-      await syncWithMotor();
       return;
     }
 
     const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
     await loadSample(ctx);
-    if (pedido !== ultimoPedido || active?.mode === 'test') return;  // Pedido mais novo chegou.
+    if (pedido !== ultimoPedido || active?.mode === 'test') return;
     stopActive({ fade: false });
 
     active = { mode: 'test', ...createMotorSound({ startup: true }) };
@@ -519,9 +502,8 @@
     testBtn.setAttribute('aria-pressed', 'true');
     setFeedback(`Teste local · volume ${settings.volume}% · não envia comando ao motor.`);
 
-    testTimer = setTimeout(async () => {
+    testTimer = setTimeout(() => {
       if (active?.mode === 'test') stopActive({ fade: true });
-      await syncWithMotor();
     }, 5000);
   }
 
@@ -548,9 +530,10 @@
 
     if (settings.enabled) {
       await ensureAudio();
-      await syncWithMotor();
+      setFeedback('Som habilitado. Toca somente ao usar Ligar ou Desligar.');
     } else {
-      if (active?.mode === 'auto') stopActive({ fade: true });
+      ++ultimoPedido;
+      if (active?.mode === 'auto') stopActive({ fade: false });
       setFeedback('Som automático desativado.');
     }
   });
@@ -561,33 +544,29 @@
     saveSettings();
     applyLiveVolume();
 
-    if (active?.mode === 'auto') setFeedback(`Som automático ativo · volume ${settings.volume}%.`);
+    if (active?.mode === 'auto') setFeedback(`Som do motor ativo · volume ${settings.volume}%.`);
     if (active?.mode === 'test') setFeedback(`Teste local · volume ${settings.volume}% · não envia comando ao motor.`);
   });
 
   testBtn.addEventListener('click', toggleTest);
 
-  const observer = new MutationObserver(() => { syncWithMotor(); });
-  observer.observe(motorVisual, { attributes: true, attributeFilter: ['data-state'] });
-
+  // Apenas libera o AudioContext. Nunca inicia ou encerra o som por estado,
+  // telemetria, desconexão ou reconexão.
   const unlock = async () => {
     if (!settings.enabled || unlocked) return;
-    if (await ensureAudio()) await syncWithMotor();
+    await ensureAudio();
   };
   window.addEventListener('pointerdown', unlock, { passive: true });
   window.addEventListener('keydown', unlock);
 
-  if (settings.enabled) {
-    setFeedback(currentMotorState() === 'running'
-      ? 'Som habilitado. Interaja com a página para liberar o áudio do navegador.'
-      : 'Som habilitado. Aguardando o motor ligar.');
-  } else {
-    setFeedback('Som automático desativado.');
-  }
+  setFeedback(settings.enabled
+    ? 'Som habilitado. Toca somente ao usar Ligar ou Desligar.'
+    : 'Som automático desativado.');
 
   window.iotmotorMotorSound = {
-    sync: syncWithMotor,
-    stop: () => stopActive({ fade: true }),
+    startFromCommand,
+    stopFromCommand,
+    stopSilently: () => stopActive({ fade: false }),
     settings: () => ({ ...settings }),
   };
 })();
