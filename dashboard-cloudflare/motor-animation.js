@@ -17,18 +17,20 @@
   ].filter((part) => part.el);
   for (const part of PARTS) part.angle = 0;
 
-  // Mesmo tempo do som: partida em 1,8 s e desaceleração ao desligar.
+  // Mesmas curvas do som (motor-sound.js): partida em 1,8 s e, ao desligar,
+  // desaceleração que chega a zero em até 3,4 s, proporcional à velocidade.
   const STARTUP_S = 1.8;
-  const COAST_TAU_S = 1.2;
-  const STOPPED = 0.004;
+  const COAST_S = 3.4;
+  const easeCoast = (x) => (1 - Math.exp(-2.2 * x)) / (1 - Math.exp(-2.2));
 
   const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const smoothstep = (x) => x * x * (3 - 2 * x);
 
   // progress avança linearmente na partida; speed = smoothstep(progress) dá
-  // o arranque suave. Na parada a velocidade decai de forma exponencial.
+  // o arranque suave. Na parada segue easeCoast a partir da velocidade atual.
   let progress = 0;
   let speed = 0;
+  let coast = null;
   let last = performance.now();
   let raf = 0;
 
@@ -51,11 +53,14 @@
 
     if (running) {
       if (!wasRunning) progress = progressFor(speed);
+      coast = null;
       progress = Math.min(1, progress + dt / STARTUP_S);
       speed = smoothstep(progress);
     } else if (speed > 0) {
-      speed *= Math.exp(-dt / COAST_TAU_S);
-      if (speed < STOPPED) speed = 0;
+      if (!coast) coast = { from: speed, elapsed: 0, total: COAST_S * Math.max(0.25, speed) };
+      coast.elapsed += dt;
+      const x = coast.elapsed / coast.total;
+      speed = x >= 1 ? 0 : coast.from * (1 - easeCoast(x));
     }
     wasRunning = running;
 
