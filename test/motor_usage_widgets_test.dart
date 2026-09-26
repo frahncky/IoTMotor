@@ -57,6 +57,21 @@ void main() {
     await tester.tap(find.text('Temperatura'));
     await tester.pump();
 
+    // Outro quadro e outra placa de sensores no mesmo prefixo não se misturam.
+    service.emit('iotmotor/esp32-09/motor_info', '{"device_id":"esp32-09","current_a":99}');
+    service.emit('iotmotor/esp32-08/history/${hoje % 7}',
+        '{"device_id":"esp32-08","day":$hoje,"v":1,"hours":[[1,1,1,1,1,1,1,1,1],[2,1,1,1,1,1,1,1,1]]}');
+    expect(controller.motorInfo?.currentA, 12.6);
+    expect(controller.boardHistory, isEmpty, reason: 'duas placas de sensores e nenhuma escolhida pelos alarmes');
+    service.emit('iotmotor/esp32-02/alarms', '{"device_id":"esp32-02","alarms":[],"max":8}');
+    expect(controller.boardHistory, hasLength(1));
+
+    // Desconectado, o uso some: não fica um "Ligado há" congelado na tela.
+    await controller.disconnect();
+    expect(controller.motorUsage, isNull);
+    expect(controller.motorInfo, isNull);
+    expect(controller.boardHistory, isEmpty);
+
     controller.dispose();
   });
 }

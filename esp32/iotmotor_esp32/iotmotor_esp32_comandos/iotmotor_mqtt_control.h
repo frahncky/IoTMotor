@@ -256,9 +256,10 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     publicarMotorInfo();
     return;
   }
-  // Zera horimetro e partidas (troca de motor); so com as saidas paradas.
+  // Zera horimetro e partidas (troca de motor); so com as saidas paradas e o
+  // motor parado (em modo instrumentacao ele gira sem rele: vale a corrente).
   if (!strcmp(acao, "motor_counters_reset")) {
-    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva || motorinfo::girando) {
       publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de zerar");
       return;
     }

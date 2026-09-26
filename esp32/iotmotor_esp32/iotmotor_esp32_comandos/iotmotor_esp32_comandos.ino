@@ -410,7 +410,7 @@ void publicarCapacidades() {
 
 void publicarTelemetriaMqtt() {
   if (!mqttClient.connected()) return;
-  StaticJsonDocument<1024> doc;
+  DynamicJsonDocument doc(1536);
   doc["device_id"] = DEVICE_ID;
   doc["seq"] = ++sequenciaMqtt;
   doc["boot"] = sessaoControle;
@@ -446,6 +446,9 @@ void publicarTelemetriaMqtt() {
   if (motorinfo::diaDasPartidas) doc["starts_today"] = motorinfo::partidasHoje;
   if (motorinfo::girando) doc["session_s"] = motorinfo::segundosDaSessao(millis());
   doc["starts_hour"] = motorinfo::partidasNaUltimaHora(millis());
+  // Motor girando pela mesma regra do horimetro: com acionamento, algum rele;
+  // em modo instrumentacao, corrente medida. A placa de sensores usa no historico.
+  doc["motor_running"] = motorinfo::girando;
   if (partidaAtiva) {  // Painel e app mostram o andamento da partida.
     doc["profile"] = perfilEmExecucao.id;
     doc["profile_ms"] = tempoDePartidaMs(millis());
@@ -466,7 +469,7 @@ void publicarTelemetriaMqtt() {
   }
   JsonArray lines = doc.createNestedArray("lcd");
   for (uint8_t i = 0; i < LCD_LINHAS; ++i) lines.add(lcdCache[i]);
-  char payload[1024];
+  char payload[1400];
   size_t len = serializeJson(doc, payload, sizeof(payload));
   if (!len || !mqttClient.publish(topicoTelemetria, reinterpret_cast<const uint8_t*>(payload),
                                    static_cast<unsigned int>(len), false))

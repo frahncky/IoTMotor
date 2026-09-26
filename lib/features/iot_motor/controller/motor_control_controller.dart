@@ -96,11 +96,25 @@ class MotorControlController extends ChangeNotifier {
 
   bool get hasBoardAlarms => alarmsDeviceId != null;
 
-  /// Dados de placa do motor, gravados no quadro de comando pelo painel.
-  MotorInfo? motorInfo;
+  /// Dados de placa do motor e horímetro/partidas, por quadro de comando: com
+  /// mais de um quadro no mesmo prefixo, cada um guarda os seus.
+  final Map<String, MotorInfo> _motorInfoByDevice = <String, MotorInfo>{};
+  final Map<String, MotorUsage> _motorUsageByDevice = <String, MotorUsage>{};
 
-  /// Horímetro e partidas da última telemetria do quadro de comando.
-  MotorUsage? motorUsage;
+  /// Quadro de comando em uso: o que aciona os contatores ou, sem telemetria
+  /// ainda, o único que publicou dados do motor.
+  String? get _motorDeviceId {
+    final String? bancada = _benchDeviceId;
+    if (bancada != null) return bancada;
+    final Set<String> placas = <String>{..._motorInfoByDevice.keys, ..._motorUsageByDevice.keys};
+    return placas.length == 1 ? placas.first : null;
+  }
+
+  /// Dados de placa do motor do quadro de comando em uso.
+  MotorInfo? get motorInfo => _motorDeviceId == null ? null : _motorInfoByDevice[_motorDeviceId];
+
+  /// Horímetro e partidas da última telemetria do quadro de comando em uso.
+  MotorUsage? get motorUsage => _motorDeviceId == null ? null : _motorUsageByDevice[_motorDeviceId];
 
   /// Última telemetria do quadro de comando com a corrente medida.
   double? get benchCurrent => _benchDeviceId == null ? null : _latestByDevice[_benchDeviceId]?.current;
@@ -116,14 +130,23 @@ class MotorControlController extends ChangeNotifier {
   /// Versão do firmware informada por cada placa.
   final Map<String, String> firmwareByDevice = <String, String>{};
 
-  /// Histórico por hora guardado na placa de sensores, por dia (0 a 6).
-  final Map<int, List<BoardHistoryHour>> _boardHistoryByDay = <int, List<BoardHistoryHour>>{};
+  /// Histórico por hora guardado em cada placa de sensores, por dia (0 a 6).
+  final Map<String, Map<int, List<BoardHistoryHour>>> _boardHistoryByDevice =
+      <String, Map<int, List<BoardHistoryHour>>>{};
 
-  /// Horas dos últimos 7 dias, em ordem.
+  /// Horas dos últimos 7 dias da placa de sensores em uso (a dos alarmes ou,
+  /// sem ela, a única que publicou histórico), em ordem.
   List<BoardHistoryHour> get boardHistory {
+    final String? placa =
+        _boardHistoryByDevice.containsKey(alarmsDeviceId)
+            ? alarmsDeviceId
+            : _boardHistoryByDevice.length == 1
+            ? _boardHistoryByDevice.keys.first
+            : null;
+    if (placa == null) return const <BoardHistoryHour>[];
     final DateTime inicio = DateTime.now().subtract(const Duration(days: 7, hours: 1));
     final List<BoardHistoryHour> horas = <BoardHistoryHour>[
-      for (final List<BoardHistoryHour> dia in _boardHistoryByDay.values)
+      for (final List<BoardHistoryHour> dia in _boardHistoryByDevice[placa]!.values)
         for (final BoardHistoryHour hora in dia)
           if (hora.time.isAfter(inicio)) hora,
     ];
@@ -143,8 +166,10 @@ class MotorControlController extends ChangeNotifier {
     return firmwareSituation(instalado, firmwarePublicado[indice]);
   }
 
-  /// Manutenção vencida entra na lista de alertas uma vez por vencimento.
+  /// Manutenção vencida entra na lista de alertas uma vez por vencimento, só
+  /// para o quadro de comando em uso.
   void _conferirManutencao(String deviceId) {
+    if (deviceId != _motorDeviceId) return;
     final MaintenanceStatus? status = maintenanceStatus;
     const String chave = 'manutencao';
     final String alertKey = '$deviceId:$chave';
@@ -850,6 +875,11 @@ class MotorControlController extends ChangeNotifier {
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
+    // Uso, dados do motor, versões e histórico voltam (retidos) na próxima conexão.
+    _motorUsageByDevice.clear();
+    _motorInfoByDevice.clear();
+    firmwareByDevice.clear();
+    _boardHistoryByDevice.clear();
     _recebeuDadoAtual = false; // Garante que a UI não mostre valores antigos
     connectionMessage = 'Desconectado';
     statusMessage = 'Conexão encerrada pelo usuário.';
@@ -1756,13 +1786,20 @@ class MotorControlController extends ChangeNotifier {
     if (partes.length >= 3 && partes[partes.length - 2] == 'history') {
       final int? dia = int.tryParse(partes.last);
       if (dia != null && dia >= 0 && dia < 7) {
-        _boardHistoryByDay[dia] = BoardHistoryHour.parseDay(payload);
+        final String placa = partes[partes.length - 3];
+        (_boardHistoryByDevice[placa] ??= <int, List<BoardHistoryHour>>{})[dia] =
+            BoardHistoryHour.parseDay(payload);
         _notify();
       }
       return;
     }
     if (topic.endsWith('/motor_info')) {
-      motorInfo = MotorInfo.tryParse(payload);
+      final MotorInfo? info = MotorInfo.tryParse(payload);
+      if (info == null) {
+        _motorInfoByDevice.remove(deviceIdDoTopico);
+      } else {
+        _motorInfoByDevice[deviceIdDoTopico] = info;
+      }
       _conferirManutencao(deviceIdDoTopico);
       _notify();
       return;
@@ -2294,7 +2331,7 @@ class MotorControlController extends ChangeNotifier {
     runningProfileId = emExecucao is String && emExecucao.isNotEmpty ? emExecucao : null;
     final MotorUsage? uso = MotorUsage.fromMap(dados);
     if (uso != null) {
-      motorUsage = uso;
+      _motorUsageByDevice[deviceId] = uso;
       _conferirManutencao(deviceId);
     }
     final Object? relays = dados['relays'];

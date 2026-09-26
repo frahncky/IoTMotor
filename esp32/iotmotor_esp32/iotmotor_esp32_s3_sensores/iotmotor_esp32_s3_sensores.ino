@@ -131,6 +131,7 @@ float picoAtual=0.0f,rmsAtual=0.0f;
 uint32_t amostrasAtuais=0;
 // Estado do motor vem da telemetria do quadro de comando (esp32-01).
 bool motorLigado=false;
+bool motorGirandoQuadro=false;  // Horimetro do quadro: girando (inclui instrumentacao).
 uint32_t ultimaTelemetriaQuadro=0;
 static const uint32_t QUADRO_STALE_MS=6000UL;
 // Sensores e sinalizacao continuam durante reconexao Wi-Fi, portal e MQTT.
@@ -265,7 +266,7 @@ void publishHistory(uint8_t slot) {
 void amostrarHistorico() {
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   const bool quadroFresco=ultimaTelemetriaQuadro&&(uint32_t)(millis()-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
-  const bool ligado=quadroFresco&&motorLigado;
+  const bool ligado=quadroFresco&&motorGirandoQuadro;
   auto doQuadro=[&](const char* campo){
     return quadroFresco&&alarmes::medidasDoQuadro[campo].is<float>()?alarmes::medidasDoQuadro[campo].as<float>():NAN;
   };
@@ -622,9 +623,11 @@ void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo)
 void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(!topic || !length)return;
   if(!strcmp(topic,quadroTelemetryTopic)) {  // Medidas eletricas e estado do motor.
-    if(length<=900) {
-      StaticJsonDocument<1024> quadro;
-      if(!deserializeJson(quadro,payload,length) &&
+    // A telemetria do quadro passa de 900 bytes com horimetro e partidas: le
+    // no heap, uma vez so, e repassa o documento aos alarmes.
+    if(length<=1800) {
+      DynamicJsonDocument quadro(3072);
+      if(!deserializeJson(quadro,(const char*)payload,length) &&
          !strcmp(quadro["device_id"] | "","esp32-01")) {
         // Estado do motor: use a informacao da partida ativa publicada pelo esp32-01.
         // Nao trate "qualquer rele ligado" como motor ligado, pois ha estados/manobras
@@ -637,10 +640,14 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
         // Compatibilidade: algumas versoes antigas nao publicam profile.
         else if(fase[0] && strcmp(fase,"Parado / comando manual") &&
                      strcmp(fase,"parado") && strcmp(fase,"stopped")) ligado=true;
+        // Para o historico vale a mesma regra do horimetro do quadro (inclui o
+        // modo instrumentacao, em que o motor gira sem partida ativa).
+        const bool girando=quadro["motor_running"].is<bool>()?quadro["motor_running"].as<bool>():ligado;
         xSemaphoreTake(sensoresMutex,portMAX_DELAY);
         motorLigado=ligado;
+        motorGirandoQuadro=girando;
         ultimaTelemetriaQuadro=millis();
-        alarmes::receberMedidasDoQuadro(payload,length,ultimaTelemetriaQuadro);
+        alarmes::receberMedidasDoQuadro(quadro.as<JsonVariantConst>(),ultimaTelemetriaQuadro);
         xSemaphoreGive(sensoresMutex);
       }
     }
