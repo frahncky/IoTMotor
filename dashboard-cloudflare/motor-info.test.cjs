@@ -56,6 +56,26 @@ test('dados retidos da placa preenchem o formulário e ficam disponíveis para o
   assert.equal(h.no('motorInfoCargaDica').hidden, true, 'com corrente nominal a dica some');
 });
 
+test('resíduos de float recebidos da placa são normalizados em todos os campos decimais', () => {
+  const h = secao();
+  h.receber('motor_info', {
+    power_cv: 1.500000024,
+    voltage_v: 220.000000119,
+    current_a: 4.200000286,
+    service_factor: 1.350000024,
+    voltage_y_v: 380.000000119,
+    current_y_a: 7.300000191,
+    phases: 3,
+    connection: 'delta'
+  });
+  assert.equal(h.no('motorInfoCv').value, '1,5');
+  assert.equal(h.no('motorInfoV').value, '220/380');
+  assert.equal(h.no('motorInfoA').value, '4,2/7,3');
+  assert.equal(h.no('motorInfoFs').value, '1,35');
+  assert.equal(h.api.dados().service_factor, 1.35);
+  assert.equal(h.api.dados().current_a, 4.2);
+});
+
 test('gravar envia só os campos preenchidos, aceita vírgula e recusa valor fora da faixa', () => {
   const h = secao();
   h.no('motorInfoA').value = '4,2';
