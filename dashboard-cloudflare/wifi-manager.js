@@ -240,7 +240,7 @@ if (typeof document !== 'undefined') (() => {
     if (impede) { aviso(impede); return false; }
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
     const ativo = client;
-    pendente = {seq, dev, acao};
+    pendente = {seq, dev, acao, fase: 'enviado', timer: null};
     // O comando sai cifrado quando a placa exige senha (command-seal.js).
     const comando = {v: 1, device_id: dev, seq, action: acao, boot: '', mode: 'none',
       mask: 0, main: 0, star: 0, delta: 0, seconds: 0, ...extras};
@@ -253,10 +253,13 @@ if (typeof document !== 'undefined') (() => {
     if (aberto !== null) enviar(aberto);
     else selo.empacotar(dev, comando).then(enviar).catch(erro => {
       if (client !== ativo || pendente?.seq !== seq) return;
-      pendente = null; aviso('Não deu para selar o comando: ' + (erro.message || erro)); renderizar();
+      limparPendente(); aviso('Não deu para selar o comando: ' + (erro.message || erro)); renderizar();
     });
-    setTimeout(() => {
-      if (pendente?.seq === seq) { pendente = null; aviso(`Sem resposta de ${nomeDaPlaca().toLowerCase()}. A placa está online?`); renderizar(); }
+    pendente.timer = setTimeout(() => {
+      if (pendente?.seq !== seq || pendente.fase !== 'enviado') return;
+      limparPendente();
+      aviso(`Sem resposta de ${nomeDaPlaca().toLowerCase()}. A placa está online?`);
+      renderizar();
     }, 8000);
     renderizar();
     return true;
@@ -396,6 +399,13 @@ if (typeof document !== 'undefined') (() => {
       if (!dev || dados?.device_id !== dev) return;
       if (nome === topico(dev, 'capabilities')) {  // Retido; volta a cada conexão da placa.
         versoes[dev] = typeof dados.firmware_version === 'string' ? dados.firmware_version : '';
+        const indice = dispositivos.indexOf(dev);
+        if (pendente?.acao === 'update' && pendente.dev === dev && indice >= 0 &&
+            versoes[dev] === FIRMWARE_PUBLICADO[indice]) {
+          const instalada = versoes[dev];
+          limparPendente();
+          aviso(`Atualização concluída · firmware ${instalada} instalado.`);
+        }
         renderizar();
         return;
       }
@@ -417,9 +427,25 @@ if (typeof document !== 'undefined') (() => {
         };
         if (dev === dispositivos[selecionado] && !pendente) ordemEditada = null;
       } else if (pendente && dados.seq === pendente.seq) {
-        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (window.iotmotorSelo?.motivo?.(dados.reason) || dados.reason || dados.action));
-        if (dados.accepted) ordemEditada = null;
-        pendente = null;
+        const motivo = window.iotmotorSelo?.motivo?.(dados.reason) || dados.reason || dados.action;
+        if (pendente.acao === 'update' && dados.accepted) {
+          // "baixando firmware" é só o início da OTA. A conclusão real é a
+          // placa reiniciar e publicar capabilities com a versão esperada.
+          if (pendente.timer) clearTimeout(pendente.timer);
+          pendente.fase = 'instalando';
+          const seqAtual = pendente.seq;
+          aviso('Placa confirmou o download. Aguardando reinício e confirmação da nova versão…');
+          pendente.timer = setTimeout(() => {
+            if (pendente?.seq !== seqAtual || pendente.fase !== 'instalando') return;
+            limparPendente();
+            aviso('A atualização não foi confirmada pela placa. Verifique a versão informada e tente novamente.');
+            renderizar();
+          }, 120000);
+        } else {
+          aviso((dados.accepted ? 'Placa confirmou: ' : 'Falha na atualização/comando: ') + motivo);
+          if (dados.accepted) ordemEditada = null;
+          limparPendente();
+        }
       }
       renderizar();
     });
@@ -448,7 +474,7 @@ if (typeof document !== 'undefined') (() => {
     if (client) client.end(true);
     client = null;
     connected = false;
-    pendente = null;
+    limparPendente();
     window.iotmotorSelo?.esquecer();
     renderizar();
   }
