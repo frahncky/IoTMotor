@@ -165,7 +165,7 @@
     alvo.replaceChildren();
     if (!lista) {
       $('alarmeResumo').textContent = conectado
-        ? 'A placa ainda não publicou a lista de alarmes. Se estiver online, está com firmware antigo: atualize na aba Wi-Fi.'
+        ? 'A placa ainda não publicou a lista de alarmes. Se estiver online, está com firmware antigo: atualize na aba Dispositivos.'
         : 'Conecte ao MQTT para ver os alarmes gravados na placa.';
       return;
     }
