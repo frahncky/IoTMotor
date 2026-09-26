@@ -189,9 +189,7 @@ if (typeof document !== 'undefined') (() => {
     $('apOpenNow').disabled = !livre;
     // Disponivel mesmo sem lista: e assim que uma placa com firmware antigo a recebe.
     $('wifiUpdateFw').disabled = !connected || Boolean(pendente) || !noAr();
-    // So a placa de sensores reinicia a pedido: reiniciar o quadro derrubaria os contatores.
-    $('wifiRestart').hidden = selecionado !== 1;
-    $('wifiRestart').disabled = selecionado !== 1 || !connected || Boolean(pendente) || !noAr();
+    $('wifiRestart').disabled = !connected || Boolean(pendente) || !noAr();
   }
   let apMostrada = '';
 
@@ -289,10 +287,14 @@ if (typeof document !== 'undefined') (() => {
     if (publicar('update', {})) aviso(`Pedindo atualização de firmware para ${nomeDaPlaca().toLowerCase()}…`);
   });
   $('wifiRestart').addEventListener('click', () => {
-    if (selecionado !== 1) return;
-    if (!confirm('A placa de sensores vai reiniciar (alguns segundos sem leituras).\n\n' +
-                 'O motor não é afetado: esta placa só mede.\n\nContinuar?')) return;
-    if (publicar('restart', {})) aviso('Pedindo para os sensores do motor reiniciarem…');
+    // O quadro recusa com contatores ligados: reiniciar desliga os relés.
+    const texto = selecionado === 0
+      ? 'O quadro de comando vai reiniciar (alguns segundos fora do ar).\n\n' +
+        'Ele recusa se houver contatores ligados: pare o motor antes.\n\nContinuar?'
+      : 'A placa de sensores vai reiniciar (alguns segundos sem leituras).\n\n' +
+        'O motor não é afetado: esta placa só mede.\n\nContinuar?';
+    if (!confirm(texto)) return;
+    if (publicar('restart', {})) aviso(`Pedindo para ${nomeDaPlaca().toLowerCase()} reiniciar…`);
   });
   $('apOpen').addEventListener('change', renderizar);
   $('apForm').addEventListener('submit', async evento => {

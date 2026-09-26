@@ -108,6 +108,8 @@ uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
+// Pedido de reinicio remoto (0 = nenhum); o loop() espera a resposta sair.
+uint32_t reiniciarEm=0;
 // Sem DS18B20 no boot (mau contato, fio solto), procura de novo sem reiniciar.
 static const uint32_t DS18B20_RETRY_MS = 30000UL;
 uint32_t lastDs18b20Retry=0;
@@ -732,11 +734,10 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   }
   // Reinicio remoto: mesmo efeito do botao de reset. Esta placa so mede,
   // entao reiniciar nao mexe no motor; volta em poucos segundos.
+  // O loop() reinicia logo depois, para a resposta sair antes.
   if(!strcmp(acao,"restart")) {
     publishAck(seq,acao,true,"reiniciando");
-    mqtt.loop();
-    delay(300);
-    ESP.restart();
+    reiniciarEm=millis()|1U;
     return;
   }
   if(strcmp(acao,"update"))return;
@@ -828,6 +829,10 @@ void setup() {
 
 void loop() {
   uint32_t now=millis();
+  if(reiniciarEm && (uint32_t)(now-reiniciarEm)>=300UL) {
+    Serial.println("[S3] reiniciando a pedido do painel");
+    ESP.restart();
+  }
 
   if(WiFi.status()!=WL_CONNECTED) {
     if(!wifiCaiuEm) {

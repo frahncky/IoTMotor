@@ -42,6 +42,9 @@ void publicarAuth() {
                               static_cast<unsigned int>(len), true);
 }
 
+// Pedido de reinicio remoto (0 = nenhum); atendido no loop() do sketch.
+unsigned long reinicioPedidoEm = 0;
+
 void publicarRespostaControle(const char* seq, bool aceito, const char* acao, const char* motivo) {
   if (!mqttClient.connected()) return;
   StaticJsonDocument<256> resposta;
@@ -182,6 +185,18 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     delay(200);  // Tempo de a resposta sair antes de o Wi-Fi virar ponto de acesso.
     abrirPortalDeRede(PORTAL_SEGUNDOS);
     ESP.restart();  // Volta ao funcionamento normal ja com a rede nova.
+    return;
+  }
+
+  // Reinicio remoto, como o botao de reset. Reiniciar desliga os reles, entao
+  // so com as saidas paradas; o loop() reinicia depois de a resposta sair.
+  if (!strcmp(acao, "restart")) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva) {
+      publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de reiniciar");
+      return;
+    }
+    publicarRespostaControle(seq, true, acao, "reiniciando");
+    reinicioPedidoEm = millis() | 1UL;
     return;
   }
 
