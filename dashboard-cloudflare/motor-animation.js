@@ -9,9 +9,9 @@
   let last = performance.now();
   let raf = 0;
 
-  // Aproximadamente 2,6 voltas/s: rápido o bastante para parecer um motor,
-  // mas lento o suficiente para o marcador âmbar deixar o giro visível.
-  const DEGREES_PER_SECOND = 936;
+  // Rotação visual deliberadamente mais lenta que a rotação física do motor,
+  // para as pás permanecerem perceptíveis na interface.
+  const DEGREES_PER_SECOND = 720;
 
   function frame(now) {
     const dt = Math.min(64, Math.max(0, now - last));
@@ -19,17 +19,16 @@
 
     if (visual.dataset.state === 'running') {
       angle = (angle + (DEGREES_PER_SECOND * dt / 1000)) % 360;
-      fan.setAttribute('transform', `rotate(${angle.toFixed(2)} 118 240)`);
+      // O grupo da ventoinha agora é centrado em (0,0). Isso impede que
+      // qualquer parte do SVG descreva órbitas pelo restante do desenho.
+      fan.setAttribute('transform', `rotate(${angle.toFixed(2)})`);
     }
 
     raf = requestAnimationFrame(frame);
   }
 
   function syncState() {
-    if (visual.dataset.state !== 'running') {
-      // Mantém a posição onde parou; ao religar o giro continua sem "salto".
-      last = performance.now();
-    }
+    last = performance.now();
   }
 
   new MutationObserver(syncState).observe(visual, {
