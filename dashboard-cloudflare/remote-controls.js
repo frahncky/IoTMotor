@@ -258,11 +258,9 @@
           return;
         }
         // O som acompanha exclusivamente um comando enviado pelos botões.
-        // Queda/reconexão e mudanças de telemetria nunca disparam estes efeitos.
-        if (!error) {
-          if (action === 'start') window.iotmotorMotorSound?.startFromCommand?.();
-          if (action === 'stop') window.iotmotorMotorSound?.stopFromCommand?.();
-        }
+        // O som é sincronizado pela telemetria confirmada do quadro. Assim,
+        // comandos vindos do app e da web produzem exatamente o mesmo estado
+        // sonoro, e uma publicação MQTT não é confundida com motor realmente ligado.
       });
     };
     const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
