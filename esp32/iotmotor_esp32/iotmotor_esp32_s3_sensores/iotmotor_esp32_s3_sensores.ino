@@ -108,6 +108,9 @@ uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
 uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
+// Sem DS18B20 no boot (mau contato, fio solto), procura de novo sem reiniciar.
+static const uint32_t DS18B20_RETRY_MS = 30000UL;
+uint32_t lastDs18b20Retry=0;
 uint32_t sampleCount=0;
 float vibrationSquares=0.0f,vibrationPeak=0.0f;
 float gravityX=0.0f,gravityY=0.0f,gravityZ=1.0f;
@@ -382,7 +385,8 @@ void testarSinalizacao(uint32_t now,uint16_t frequencia) {
 }
 
 // Procura um DS18B20 nos pinos candidatos; so aceita ROM lida com CRC valido.
-void procurarDs18b20() {
+// Retorna true se encontrou. avisarFalha=false evita repetir o aviso a cada nova tentativa.
+bool procurarDs18b20(bool avisarFalha) {
   for (uint8_t pino : DS18B20_CANDIDATOS) {
     OneWire barramento(pino);
     DallasTemperature sensor(&barramento);
@@ -397,10 +401,13 @@ void procurarDs18b20() {
     ds18b20->setWaitForConversion(false);
     Serial.printf("[S3/DS18B20] encontrado no GPIO%u\n",pino);
     if (pino!=DS18B20_PIN) Serial.printf("[S3/DS18B20] atencao: esperado no GPIO%u\n",DS18B20_PIN);
-    return;
+    return true;
   }
+  if (!avisarFalha) return false;
   Serial.printf("[S3/DS18B20] nenhum sensor no GPIO%u nem nos demais pinos livres;"
-                " confira DQ, GND, 3V3 e o resistor de 4k7 entre DQ e 3V3\n",DS18B20_PIN);
+                " confira DQ, GND, 3V3 e o resistor de 4k7 entre DQ e 3V3;"
+                " nova procura a cada %lu s\n",DS18B20_PIN,(unsigned long)(DS18B20_RETRY_MS/1000UL));
+  return false;
 }
 
 void publishStatus(const char* msg) {
@@ -487,6 +494,11 @@ void tarefaSensores(void*) {
     if(!mpuReady&&(uint32_t)(now-lastMpuRetry)>=MPU_RETRY_MS) {
       lastMpuRetry=now;
       mpuReady=initMpu(false);
+    }
+    // Nao varre os pinos enquanto a procura do buzzer pode estar acionando algum deles.
+    if(!ds18b20&&!probeAtivo&&(uint32_t)(now-lastDs18b20Retry)>=DS18B20_RETRY_MS) {
+      lastDs18b20Retry=now;
+      procurarDs18b20(false);
     }
     pollTemperature(now);
     if((uint32_t)(now-ultimaJanela)>=PUBLISH_MS) {
@@ -768,7 +780,8 @@ void setup() {
   aplicarLed(true,false,false);  // Azul durante a inicializacao/conexao.
   mpuReady=initMpu(true);
   lastMpuRetry=millis();
-  procurarDs18b20();
+  procurarDs18b20(true);
+  lastDs18b20Retry=millis();
   sensoresMutex=xSemaphoreCreateMutex();
   if(!sensoresMutex||xTaskCreate(tarefaSensores,"sensores",4096,nullptr,1,nullptr)!=pdPASS) {
     Serial.println("[S3/alarme] falha ao iniciar tarefa de sensores");
