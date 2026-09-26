@@ -40,12 +40,14 @@ function field(source,keys){for(const key of keys){const n=numeric(source[key]);
 function parseTelemetry(json){
  if(!json||typeof json!=='object'||Array.isArray(json))return null;
  const source=json.data&&typeof json.data==='object'&&!Array.isArray(json.data)?json.data:json;
+ const relays=Array.isArray(source.relays)&&source.relays.length===4&&source.relays.every(v=>typeof v==='boolean')?source.relays:null;
+ const motorOn=typeof source.motor_on==='boolean'?source.motor_on:relays?relays.some(Boolean):null;
  const result={deviceId:String(json.device_id||source.device_id||''),demo:json.demo===true||source.demo===true||source.data_source==='simulated',
   dataSource:String(json.data_source||source.data_source||'não informada'),seq:numeric(source.seq),
   measuredAt:Number.isFinite(source.ts)&&source.ts>1700000000?source.ts*1000:null,
-  benchArmed:source.bench_armed===true,motorOn:typeof source.motor_on==='boolean'?source.motor_on:null,
+  benchArmed:source.bench_armed===true,motorOn,
   mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak),
-  relays:Array.isArray(source.relays)&&source.relays.length===4&&source.relays.every(v=>typeof v==='boolean')?source.relays:null};
+  relays};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
  result.reactive=result.apparent===null?null:result.power!==null?
