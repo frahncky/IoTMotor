@@ -22,6 +22,7 @@
   // esperar a gravação carregar, só o pedido mais recente segue.
   let ultimoPedido = 0;
   let unlocked = false;
+  let resumeAfterReconnectPending = false;
 
   function clampVolume(value) {
     const n = Number(value);
@@ -371,7 +372,7 @@
     };
   }
 
-  function buildSampleSound(audioCtx, destination, targetGain, parts) {
+  function buildSampleSound(audioCtx, destination, targetGain, parts, { startup = true } = {}) {
     const now = audioCtx.currentTime;
     const master = audioCtx.createGain();
     master.gain.value = Math.max(targetGain, 0.0001);
@@ -387,7 +388,7 @@
     source.loopEnd = parts.loopEnd;
     const running = audioCtx.createGain();
     source.connect(running).connect(level);
-    source.start(now);  // Começa pelo estalo de ligar.
+    source.start(now, startup ? 0 : parts.loopStart);  // Reconexão entra direto no trecho estável.
     const sources = [source];
 
     function stop({ fade = true } = {}) {
@@ -418,7 +419,7 @@
     silenceCoasting();
     const target = gainForVolume(settings.volume);
     return sample
-      ? buildSampleSound(ctx, ctx.destination, target, sample)
+      ? buildSampleSound(ctx, ctx.destination, target, sample, { startup })
       : buildMotorSound(ctx, ctx.destination, target, { startup });
   }
 
@@ -464,6 +465,7 @@
   }
 
   async function startFromCommand() {
+    resumeAfterReconnectPending = false;
     if (!settings.enabled || active?.mode === 'auto') return;
     const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
@@ -476,6 +478,7 @@
   }
 
   function stopFromCommand() {
+    resumeAfterReconnectPending = false;
     ++ultimoPedido; // Cancela uma partida sonora ainda carregando.
     if (active?.mode === 'auto') {
       stopActive({ fade: true });
@@ -483,6 +486,37 @@
         ? 'Som habilitado. Aguardando novo comando Ligar.'
         : 'Som automático desativado.');
     }
+  }
+
+  function stopForDisconnect() {
+    ++ultimoPedido;
+    resumeAfterReconnectPending = active?.mode === 'auto';
+    if (active?.mode === 'auto') stopActive({ fade: false });
+    if (settings.enabled && resumeAfterReconnectPending) {
+      setFeedback('Som pausado pela desconexão. Será retomado se o motor continuar ligado.');
+    }
+  }
+
+  async function resumeAfterReconnect(motorOn) {
+    if (!resumeAfterReconnectPending) return;
+    if (motorOn === false) {
+      resumeAfterReconnectPending = false;
+      setFeedback(settings.enabled
+        ? 'Som habilitado. Motor confirmado como desligado.'
+        : 'Som automático desativado.');
+      return;
+    }
+    if (motorOn !== true || !settings.enabled || active?.mode === 'auto') return;
+
+    const pedido = ++ultimoPedido;
+    if (!(await ensureAudio())) return;
+    await loadSample(ctx);
+    if (pedido !== ultimoPedido || !settings.enabled || !resumeAfterReconnectPending) return;
+
+    stopActive({ fade: false });
+    active = { mode: 'auto', ...createMotorSound({ startup: false }) };
+    resumeAfterReconnectPending = false;
+    setFeedback(`Som retomado após reconexão · volume ${settings.volume}%.`);
   }
 
   async function toggleTest() {
@@ -532,6 +566,7 @@
       await ensureAudio();
       setFeedback('Som habilitado. Toca somente ao usar Ligar ou Desligar.');
     } else {
+      resumeAfterReconnectPending = false;
       ++ultimoPedido;
       if (active?.mode === 'auto') stopActive({ fade: false });
       setFeedback('Som automático desativado.');
@@ -566,6 +601,8 @@
   window.iotmotorMotorSound = {
     startFromCommand,
     stopFromCommand,
+    stopForDisconnect,
+    resumeAfterReconnect,
     stopSilently: () => stopActive({ fade: false }),
     settings: () => ({ ...settings }),
   };
