@@ -483,7 +483,7 @@
         }
         // Gravou: o rascunho some e a lista retida traz o valor confirmado.
         if (dados.accepted && pendente.alvo) rascunhos.delete(pendente.alvo);
-        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
+        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (window.iotmotorSelo?.motivo?.(dados.reason) || dados.reason || dados.action));
         limparPendente();
 
       }

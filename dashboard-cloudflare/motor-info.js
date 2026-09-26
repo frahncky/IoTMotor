@@ -135,7 +135,7 @@
         return;
       }
       if (nome === topico('command_ack') && pendente && dados.seq === pendente.seq) {
-        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (dados.reason || dados.action));
+        aviso((dados.accepted ? 'Placa confirmou: ' : 'Placa recusou: ') + (window.iotmotorSelo?.motivo?.(dados.reason) || dados.reason || dados.action));
         if (dados.accepted) editando = false;
         limparPendente();
         preencher();

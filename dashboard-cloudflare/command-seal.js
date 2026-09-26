@@ -94,8 +94,14 @@
     return JSON.stringify({v: 1, device_id: placa, sealed: btoa(bruto)});
   }
 
+  // Traduz os códigos de recusa da placa para uma frase que diga o que fazer.
+  const MOTIVOS = {
+    unknown_action: 'esta função precisa do firmware novo no quadro — atualize a placa (com o motor parado).'
+  };
+  const motivo = codigo => MOTIVOS[codigo] || codigo;
+
   window.iotmotorSelo = {
     definirSenha, senhaAtual: () => senha, temSenha,
-    registrarAuth, esquecer, exigeSelo, algumaExige, impedimento, empacotarAberto, empacotar
+    registrarAuth, esquecer, exigeSelo, algumaExige, impedimento, empacotarAberto, empacotar, motivo
   };
 })();
