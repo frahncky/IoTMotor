@@ -120,6 +120,42 @@ function heatColor(heat){
  const from=[245,165,36],to=[229,72,77];
  return `rgb(${from.map((c,i)=>Math.round(c+(to[i]-c)*heat)).join(',')})`;
 }
+// Limites de fábrica da placa de sensores, usados enquanto a lista não chega.
+const LIMITES_PADRAO=[{field:'vibration_peak',above:true,limit:0.5},{field:'temperature',above:true,limit:60}];
+const GRANDEZA_AVISO={vibration_peak:{label:'Vibração (pico)',unit:'g',digits:2,read:s=>s.vibrationPeak}};
+// Avisos do quadro do motor: grandezas sem leitura e valores perto (90%) ou além do limite dos alarmes.
+function motorWarnings({brokerReady,command,sensor,alarms}){
+ if(!brokerReady)return [];
+ const out=[];
+ if(!sensor)out.push({level:'warn',text:'Sensores do motor sem dados'});
+ else for(const key of ['vibration','temperature'])if(sensor[key]===null||sensor[key]===undefined)
+  out.push({level:'warn',text:`${METRICS.find(m=>m.key===key).label} sem leitura`});
+ if(!command)out.push({level:'warn',text:'Quadro de comando sem dados'});
+ else if(METRICS.filter(m=>m.source==='command'&&!['apparent','reactive'].includes(m.key)).every(m=>command[m.key]===null||command[m.key]===undefined))
+  out.push({level:'warn',text:'Medições elétricas (PZEM) sem leitura'});
+ // Com o monitoramento desligado a placa não alarma; aqui também só ficam os avisos de leitura.
+ if(sensor?.alarmEnabled===false)return out;
+ // Vários alarmes para a mesma grandeza e sentido: vale o mais grave.
+ const porGrandeza=new Map();
+ for(const a of (alarms||LIMITES_PADRAO)){
+  if(a.on===false||!Number.isFinite(a.limit))continue;
+  const metric=METRICS.find(m=>m.key===a.field),extra=GRANDEZA_AVISO[a.field];
+  if(!metric&&!extra)continue;
+  const sample=(metric?.source??'sensor')==='command'?command:sensor;
+  const value=sample?(extra?extra.read(sample):sample[a.field]):null;
+  if(!Number.isFinite(value))continue;
+  // Mesma comparação estrita do firmware (alarm_list.h); 90% do limite já avisa.
+  const above=a.above!==false,passou=above?value>a.limit:value<a.limit;
+  const perto=above?value>=a.limit*0.9:value<=a.limit*1.1;
+  if(!passou&&!perto)continue;
+  const chave=`${a.field}:${above}`,anterior=porGrandeza.get(chave);
+  if(anterior&&(anterior.passou||!passou))continue;
+  const label=extra?.label??metric.label,unit=extra?.unit??metric.unit,digits=extra?.digits??metric.digits;
+  porGrandeza.set(chave,{passou,level:passou?'alarm':'warn',text:`${label} ${above?'alta':'baixa'}: ${value.toFixed(digits)}${unit?` ${unit}`:''} (limite ${a.limit}${unit?` ${unit}`:''})`});
+ }
+ for(const {level,text} of porGrandeza.values())out.push({level,text});
+ return out;
+}
 function renderMotorVisual(){
  const root=$('motorVisual');if(!root)return;
  const commandFresh=freshness('command'),sensorFresh=freshness('sensor');
@@ -128,7 +164,6 @@ function renderMotorVisual(){
  root.dataset.state=visual.state;text('motorVisualStatus',visual.label);text('motorVisualBadge',visual.badge);
  const alarms=window.iotmotorAlarme?.lista?.()||null;
  const heat=motorHeat(sensor?.temperature,temperatureLimit(alarms));
- root.dataset.temp=heat!==null?'ok':sensorFresh?'unknown':'none';
  const heatLayer=root.querySelector('.motor-heat');
  if(heatLayer){heatLayer.style.fill=heat?heatColor(heat):'';heatLayer.style.opacity=heat?String(0.18+0.6*heat):'0';}
  const parts=sensor&&sensor.alarmEnabled!==false?alarmParts(sensor.alarmsFiring,alarms):new Set();
@@ -141,8 +176,12 @@ function renderMotorVisual(){
  if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${sensor.temperature.toFixed(1)} °C`);
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
+ const warnings=motorWarnings({brokerReady:state.connected&&state.subscribed,command:cmd,sensor,alarms});
+ const lista=$('motorWarnings');
+ if(lista){const atual=warnings.map(w=>`${w.level}:${w.text}`).join('|');
+  if(lista.dataset.sig!==atual){lista.dataset.sig=atual;lista.replaceChildren(...warnings.map(w=>{const li=document.createElement('li');li.className=w.level;li.textContent=w.text;return li;}));}}
  const avisos=[parts.has('temperature')&&'alarme de temperatura',parts.has('vibration')&&'alarme de vibração',
-  parts.has('other')&&'alarme ativo'].filter(Boolean);
+  parts.has('other')&&'alarme ativo',...warnings.map(w=>w.text)].filter(Boolean);
  root.setAttribute('aria-label',`${visual.label}. ${dados.length?dados.join(', '):'Sem grandezas recentes.'}${avisos.length?` Atenção: ${avisos.join(', ')}.`:''}`);
 }
 function updateControl(){
@@ -352,4 +391,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
