@@ -393,7 +393,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v13-dupla-tensao";
+  doc["firmware_version"] = "v14-manutencao";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -445,6 +445,7 @@ void publicarTelemetriaMqtt() {
   doc["starts_total"] = motorinfo::partidas;
   if (motorinfo::diaDasPartidas) doc["starts_today"] = motorinfo::partidasHoje;
   if (motorinfo::girando) doc["session_s"] = motorinfo::segundosDaSessao(millis());
+  doc["starts_hour"] = motorinfo::partidasNaUltimaHora(millis());
   if (partidaAtiva) {  // Painel e app mostram o andamento da partida.
     doc["profile"] = perfilEmExecucao.id;
     doc["profile_ms"] = tempoDePartidaMs(millis());

@@ -201,7 +201,7 @@ inline void receberMedidasDoQuadro(const uint8_t* payload, unsigned int tamanho,
   StaticJsonDocument<1024> entrada;
   if (deserializeJson(entrada, payload, tamanho)) return;
   medidasDoQuadro.clear();
-  for (const char* campo : {"voltage", "current", "power", "energy", "frequency", "pf"})
+  for (const char* campo : {"voltage", "current", "power", "energy", "frequency", "pf", "starts_hour"})
     if (entrada[campo].is<float>()) medidasDoQuadro[campo] = entrada[campo].as<float>();
   medidasDoQuadroEm = agora;
 }
