@@ -198,16 +198,24 @@ inline void zerarContadores() {
   gravarContadores();
 }
 
+// O NVS guarda estes campos como float de 32 bits. Valores decimais como
+// 1,35 podem existir internamente como 1,350000024; antes de publicar, convertemos
+// para double arredondado para que MQTT/painel/app recebam o valor humano esperado.
+inline double decimalPublicado(float valor, uint8_t casas) {
+  const double escala = casas == 2 ? 100.0 : 1000.0;
+  return round(static_cast<double>(valor) * escala) / escala;
+}
+
 // Dados de placa para o topico retido "motor_info" (0 = nao cadastrado).
 inline void descrever(JsonDocument& doc) {
-  if (dados.potenciaCv > 0) doc["power_cv"] = dados.potenciaCv;
-  if (dados.tensaoV > 0) doc["voltage_v"] = dados.tensaoV;
-  if (dados.correnteA > 0) doc["current_a"] = dados.correnteA;
+  if (dados.potenciaCv > 0) doc["power_cv"] = decimalPublicado(dados.potenciaCv, 3);
+  if (dados.tensaoV > 0) doc["voltage_v"] = decimalPublicado(dados.tensaoV, 3);
+  if (dados.correnteA > 0) doc["current_a"] = decimalPublicado(dados.correnteA, 3);
   if (dados.rpm > 0) doc["rpm"] = dados.rpm;
-  if (dados.fatorServico > 0) doc["service_factor"] = dados.fatorServico;
+  if (dados.fatorServico > 0) doc["service_factor"] = decimalPublicado(dados.fatorServico, 2);
   if (dados.fases) doc["phases"] = dados.fases;
-  if (dados.tensaoEstrelaV > 0) doc["voltage_y_v"] = dados.tensaoEstrelaV;
-  if (dados.correnteEstrelaA > 0) doc["current_y_a"] = dados.correnteEstrelaA;
+  if (dados.tensaoEstrelaV > 0) doc["voltage_y_v"] = decimalPublicado(dados.tensaoEstrelaV, 3);
+  if (dados.correnteEstrelaA > 0) doc["current_y_a"] = decimalPublicado(dados.correnteEstrelaA, 3);
   if (dados.tensaoEstrelaV > 0 || dados.correnteEstrelaA > 0)
     doc["connection"] = dados.emEstrela ? "star" : "delta";
 }
