@@ -18,7 +18,7 @@ test('indicador de conexao combina telemetria recente e status online/offline',(
 });
 
 test('animação do diagnóstico segue o estado do motor sem exibir sentido de rotação',()=>{
- assert.deepEqual(motorVisualState({brokerReady:false,commandFresh:false,motorOn:null}),{state:'offline',label:'Desconectado',badge:'SEM DADOS'});
+ assert.deepEqual(motorVisualState({brokerReady:false,commandFresh:false,motorOn:null}),{state:'offline',label:'Desconectado'});
  assert.equal(motorVisualState({brokerReady:true,commandFresh:false,motorOn:null}).state,'waiting');
  assert.equal(motorVisualState({brokerReady:true,commandFresh:true,motorOn:false}).state,'stopped');
  const ligado=motorVisualState({brokerReady:true,commandFresh:true,motorOn:true});

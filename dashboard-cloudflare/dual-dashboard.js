@@ -89,11 +89,11 @@ function renderDevice(id,which,name){
 }
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
 function motorVisualState({brokerReady,commandFresh,motorOn}){
- if(!brokerReady)return {state:'offline',label:'Desconectado',badge:'SEM DADOS'};
- if(!commandFresh)return {state:'waiting',label:'Aguardando quadro de comando',badge:'AGUARDANDO'};
- if(motorOn===true)return {state:'running',label:'Motor ligado',badge:'EM OPERAÇÃO'};
- if(motorOn===false)return {state:'stopped',label:'Motor desligado',badge:'PARADO'};
- return {state:'waiting',label:'Estado do motor não informado',badge:'AGUARDANDO'};
+ if(!brokerReady)return {state:'offline',label:'Desconectado'};
+ if(!commandFresh)return {state:'waiting',label:'Aguardando quadro de comando'};
+ if(motorOn===true)return {state:'running',label:'Motor ligado'};
+ if(motorOn===false)return {state:'stopped',label:'Motor desligado'};
+ return {state:'waiting',label:'Estado do motor não informado'};
 }
 // Aquecimento da carcaça de 0 (frio) a 1 (no limite do alarme de temperatura).
 function motorHeat(temperature,limit){
@@ -169,7 +169,7 @@ function renderMotorVisual(){
  const commandFresh=freshness('command'),sensorFresh=freshness('sensor');
  const cmd=commandFresh?state.command.sample:null,sensor=sensorFresh?state.sensor.sample:null;
  const visual=motorVisualState({brokerReady:state.connected&&state.subscribed,commandFresh,motorOn:cmd?.motorOn});
- root.dataset.state=visual.state;text('motorVisualStatus',visual.label);text('motorVisualBadge',visual.badge);
+ root.dataset.state=visual.state;text('motorVisualStatus',visual.label);
  const alarms=window.iotmotorAlarme?.lista?.()||null;
  const heat=motorHeat(sensor?.temperature,temperatureLimit(alarms));
  const heatLayer=root.querySelector('.motor-heat');
