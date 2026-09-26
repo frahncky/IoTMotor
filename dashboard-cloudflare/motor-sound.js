@@ -5,6 +5,7 @@
   const DEFAULTS = { enabled: false, volume: 70 };
   const motorVisual = document.getElementById('motorVisual');
   const enabledInput = document.getElementById('motorSoundEnabled');
+  const enabledText = document.getElementById('motorSoundEnabledText');
   const volumeInput = document.getElementById('motorSoundVolume');
   const volumeValue = document.getElementById('motorSoundVolumeValue');
   const testBtn = document.getElementById('motorSoundTestBtn');
@@ -80,6 +81,12 @@
 
   function updateVolumeDisplay() {
     if (volumeValue) volumeValue.textContent = `${settings.volume}%`;
+  }
+
+  function updateEnabledText() {
+    if (!enabledText) return;
+    enabledText.textContent = settings.enabled ? 'Ativado' : 'Desativado';
+    enabledText.dataset.state = settings.enabled ? 'on' : 'off';
   }
 
   function createMotorSound({ startup = true } = {}) {
@@ -243,11 +250,13 @@
   enabledInput.checked = settings.enabled;
   volumeInput.value = String(settings.volume);
   updateVolumeDisplay();
+  updateEnabledText();
   testBtn.setAttribute('aria-pressed', 'false');
 
   enabledInput.addEventListener('change', async () => {
     settings.enabled = enabledInput.checked;
     saveSettings();
+    updateEnabledText();
 
     if (settings.enabled) {
       await ensureAudio();
