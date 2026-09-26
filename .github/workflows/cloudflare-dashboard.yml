@@ -82,6 +82,10 @@ jobs:
           for versao, ino in zip(publicado.groups(), (root / 'iotmotor_esp32_comandos.ino', s3 / 'iotmotor_esp32_s3_sensores.ino')):
               assert re.search(r'doc\["firmware_version"\]\s*=\s*"%s"' % re.escape(versao), ino.read_text()), \
                   'FIRMWARE_PUBLICADO (%s) diferente do firmware_version de %s' % (versao, ino.name)
+          # O app mostra o mesmo aviso de firmware novo (lib/.../motor_info.dart).
+          app_dart = Path('lib/features/iot_motor/models/motor_info.dart').read_text()
+          no_app = re.search(r"firmwarePublicado = <String>\['([^']+)', '([^']+)'\]", app_dart)
+          assert no_app and no_app.groups() == publicado.groups(), 'firmwarePublicado do app diferente do painel'
           # Lista de alarmes: a placa guarda, o painel edita, o S3 ouve o quadro.
           sensores = (s3 / 'iotmotor_esp32_s3_sensores.ino').read_text()
           lista = (s3 / 'alarm_list.h').read_text()

@@ -6,6 +6,7 @@ import '../../models/motor_command_type.dart';
 import '../../models/telemetry_history_entry.dart';
 import '../../models/telemetry_sample.dart';
 import '../../services/telemetry_history_export.dart';
+import '../widgets/board_history_panel.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
 
@@ -33,6 +34,11 @@ class HistoricoTab extends StatelessWidget {
               DelayedReveal(
                 delay: const Duration(milliseconds: 200),
                 child: _buildHeaderPanel(context, timeline),
+              ),
+              const SizedBox(height: 12),
+              DelayedReveal(
+                delay: const Duration(milliseconds: 225),
+                child: BoardHistoryPanel(horas: controller.boardHistory),
               ),
               const SizedBox(height: 12),
               DelayedReveal(

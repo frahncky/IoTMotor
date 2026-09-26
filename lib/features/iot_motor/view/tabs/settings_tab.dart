@@ -457,6 +457,19 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
           'Manutenção do ESP32',
           style: Theme.of(context).textTheme.titleSmall,
         ),
+        const SizedBox(height: 4),
+        // Versão de cada placa frente à publicada para OTA.
+        for (final String placa in widget.controller.firmwareByDevice.keys)
+          if (widget.controller.firmwareOf(placa) case final ({String texto, bool atualizar}) firmware)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '${nomeDaPlaca(placa)}: firmware ${firmware.texto}${firmware.atualizar ? ' — use "Atualizar firmware" com a placa selecionada' : ''}.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: firmware.atualizar ? AppTheme.brandOrange : AppTheme.bodySoft,
+                ),
+              ),
+            ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 10,
