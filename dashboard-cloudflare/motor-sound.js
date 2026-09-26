@@ -172,9 +172,11 @@
     } else {
       humGain.gain.linearRampToValueAtTime(HUM_LEVEL, now + 0.05);
     }
+    // "Energia": corta o zumbido inteiro (inclusive a modulação do rotor).
+    const humPower = audioCtx.createGain();
     hum.connect(humGain);
     hum60.connect(hum60Gain).connect(humGain);
-    humGain.connect(bus);
+    humGain.connect(humPower).connect(bus);
 
     // Rotor: leve desbalanceamento que modula o zumbido e um ronco grave.
     const rotor = audioCtx.createOscillator();
@@ -262,8 +264,8 @@
         return 0.05;
       }
       // Sem energia o zumbido some na hora; a parte mecânica desacelera.
-      holdParam(humGain.gain, time);
-      humGain.gain.setTargetAtTime(0, time, 0.03);
+      holdParam(humPower.gain, time);
+      humPower.gain.setTargetAtTime(0, time, 0.03);
       const coast = COAST_S * Math.max(0.25, speedAt(time));
       rampSpeed(0, coast, easeCoast, time);
       holdParam(master.gain, time);
