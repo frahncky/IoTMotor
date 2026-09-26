@@ -85,6 +85,18 @@ void publicarPerfis() {
                               static_cast<unsigned int>(len), true);
 }
 
+// Dados de placa do motor, retidos: o painel e o app abrem ja preenchidos.
+void publicarMotorInfo() {
+  if (!mqttClient.connected()) return;
+  StaticJsonDocument<256> doc;
+  doc["device_id"] = DEVICE_ID;
+  motorinfo::descrever(doc);
+  char payload[256];
+  const size_t len = serializeJson(doc, payload, sizeof(payload));
+  if (len) mqttClient.publish(topicoMotorInfo, reinterpret_cast<const uint8_t*>(payload),
+                              static_cast<unsigned int>(len), true);
+}
+
 // Converte os comandos antigos (mode direct/sequence) em um perfil temporario,
 // para o painel e o app anteriores continuarem funcionando.
 bool perfilDeComandoAntigo(JsonVariantConst doc, PerfilDePartida& perfil) {
@@ -226,6 +238,25 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     else if (segundos < 0) snprintf(motivo, sizeof(motivo), "o ensaio nao cai mais por tempo");
     else snprintf(motivo, sizeof(motivo), "o ensaio cai apos %ld s", segundos);
     publicarRespostaControle(seq, ok, acao, motivo);
+    return;
+  }
+
+  // Dados de placa do motor (corrente nominal etc.), gravados nesta placa.
+  if (!strcmp(acao, "motor_info_set")) {
+    const char* motivo = "";
+    const bool ok = motorinfo::salvar(doc["motor"], motivo);
+    publicarRespostaControle(seq, ok, acao, motivo);
+    if (ok) publicarMotorInfo();
+    return;
+  }
+  // Zera horimetro e partidas (troca de motor); so com as saidas paradas.
+  if (!strcmp(acao, "motor_counters_reset")) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva) {
+      publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de zerar");
+      return;
+    }
+    motorinfo::zerarContadores();
+    publicarRespostaControle(seq, true, acao, "horimetro e partidas zerados");
     return;
   }
 

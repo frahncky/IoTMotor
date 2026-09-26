@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -167,4 +167,33 @@ test('avisos de limite seguem o firmware: estrito, o mais grave vale e nada com 
  // Monitoramento desligado: sem avisos de limite, mas a falta de leitura continua.
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{alarmEnabled:false,vibration:null,temperature:95},alarms:dois})),
   ['warn|Vibração RMS sem leitura']);
+});
+
+test('carga do motor usa a corrente nominal cadastrada e some sem ela',()=>{
+ assert.equal(motorLoad(3.9,5),78);
+ assert.equal(motorLoad(3.9,null),null);
+ assert.equal(motorLoad(3.9,0),null);
+ assert.equal(motorLoad(null,5),null);
+});
+
+test('linha de uso: sessão, horímetro e partidas do quadro de comando',()=>{
+ assert.equal(formatDuration(42),'42 s');
+ assert.equal(formatDuration(725),'12 min');
+ assert.equal(formatDuration(3900),'1 h 05 min');
+ assert.equal(usageLine({sessionS:725,runSTotal:124200,startsToday:3,startsTotal:120}),
+  'Ligado há 12 min · Horímetro 34,5 h · 3 partidas hoje');
+ // Sem relógio na placa não há "hoje": mostra o total.
+ assert.equal(usageLine({sessionS:null,runSTotal:3600,startsToday:null,startsTotal:1}),'Horímetro 1,0 h · 1 partida no total');
+ // Firmware antigo, sem os campos: nada a mostrar.
+ assert.equal(usageLine({}),'');
+ const s=parseTelemetry({device_id:'esp32-01',run_s_total:100,starts_total:4,starts_today:2,session_s:30});
+ assert.deepEqual([s.runSTotal,s.startsTotal,s.startsToday,s.sessionS],[100,4,2,30]);
+});
+
+test('comando enviado mostra "aguardando o quadro" até o estado mudar',()=>{
+ assert.equal(commandPendingLabel(null,false),null);
+ assert.equal(commandPendingLabel({action:'start'},false),'Ligando…');
+ assert.equal(commandPendingLabel({action:'start'},true),null);
+ assert.equal(commandPendingLabel({action:'stop'},true),'Desligando…');
+ assert.equal(commandPendingLabel({action:'stop'},false),null);
 });

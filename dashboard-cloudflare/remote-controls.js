@@ -132,6 +132,7 @@
     const paradas = Array.isArray(relays) && relays.every(v => !v);
     for (const id of ['updateBtn'])
       if ($(id)) $(id).disabled = !connected || !recent() || !paradas;
+    window.iotmotorPainel?.atualizarMotor?.();  // Mostra/tira o "aguardando o quadro".
   }
   function configuration() {
     const url = new URL(String($('broker').value || 'wss://test.mosquitto.org:8081').trim());
@@ -285,7 +286,10 @@
     feedback('Desconectado do broker; comandos indisponíveis.');
     refresh();
   }
-  window.iotmotorRemoteControls = {connect, disconnect: desconectar};
+  // pendente: comando Ligar/Desligar enviado e ainda não confirmado (o desenho
+  // do motor mostra "aguardando o quadro" enquanto isso).
+  window.iotmotorRemoteControls = {connect, disconnect: desconectar,
+    pendente: () => (pending ? {action: pending.action} : null)};
 
   // Manutencao do firmware. As redes Wi-Fi ficam na aba "Wi-Fi" (wifi-manager.js).
   function manutencao(action, aviso, extras) {

@@ -95,6 +95,7 @@ MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
 char topicoComandos[80], topicoResposta[80], topicoWifi[80], topicoPerfis[80], topicoAuth[80];
+char topicoMotorInfo[80];
 constexpr unsigned long MQTT_RETRY_MS = 6000UL;
 constexpr unsigned long MQTT_PUBLISH_MS = 1000UL;
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
@@ -138,6 +139,7 @@ bool salvarToleranciaSemLink(long segundos);
 
 #include "comando_seguro.h"
 #include "relogio.h"
+#include "iotmotor_motor_info.h"
 #include "iotmotor_profiles.h"
 #include "iotmotor_mqtt_control.h"
 
@@ -391,7 +393,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v11-wifi-list";
+  doc["firmware_version"] = "v12-motor-info";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -438,6 +440,11 @@ void publicarTelemetriaMqtt() {
   doc["relay_commanded_only"] = true;
   doc["state"] = "manual_relays";
   doc["mode"] = partidaAtiva ? "profile_bench" : "manual_relays";
+  // Horimetro e partidas (contados nesta placa, gravados na flash).
+  doc["run_s_total"] = motorinfo::segundosLigado;
+  doc["starts_total"] = motorinfo::partidas;
+  if (motorinfo::diaDasPartidas) doc["starts_today"] = motorinfo::partidasHoje;
+  if (motorinfo::girando) doc["session_s"] = motorinfo::segundosDaSessao(millis());
   if (partidaAtiva) {  // Painel e app mostram o andamento da partida.
     doc["profile"] = perfilEmExecucao.id;
     doc["profile_ms"] = tempoDePartidaMs(millis());
@@ -479,6 +486,7 @@ void manterMqtt(unsigned long agora) {
     publicarAuth();
     publicarRedes();
     publicarPerfis();
+    publicarMotorInfo();
     Serial.println("[MQTT] conectado: comandos e telemetria ativos");
   } else Serial.printf("[MQTT] falha rc=%d\n", mqttClient.state());
 }
@@ -536,9 +544,11 @@ void setup() {
   snprintf(topicoWifi, sizeof(topicoWifi), "iotmotor/%s/wifi", DEVICE_ID);
   snprintf(topicoPerfis, sizeof(topicoPerfis), "iotmotor/%s/profiles", DEVICE_ID);
   snprintf(topicoAuth, sizeof(topicoAuth), "iotmotor/%s/auth", DEVICE_ID);
+  snprintf(topicoMotorInfo, sizeof(topicoMotorInfo), "iotmotor/%s/motor_info", DEVICE_ID);
   carregarAcionamento();
   carregarToleranciaSemLink();
   carregarLimiteDoEnsaio();
+  motorinfo::carregar();
   comandoseguro::iniciar(DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setBufferSize(1536);
@@ -569,6 +579,12 @@ void loop() {
                   toleranciaSemLinkMs / 1000UL);
   }
   manterPartidaBancada(agora);
+  // Motor girando: algum contator fechado ou, em modo instrumentacao (motor
+  // comandado por fora), corrente medida acima de 0,3 A.
+  const bool motorGirando = acionamentoLigado
+      ? (estadoReles[0] || estadoReles[1] || estadoReles[2] || estadoReles[3])
+      : (pzemOk && ultimaCorrente > 0.3f);
+  motorinfo::manter(agora, motorGirando, relogio::agoraUtc());
   // Reinicio pedido pelo painel: desiste se alguma saida ligou nesse meio tempo.
   if (reinicioPedidoEm && saidasAtivas) reinicioPedidoEm = 0;
   if (reinicioPedidoEm && agora - reinicioPedidoEm >= 300UL) {
