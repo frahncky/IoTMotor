@@ -105,6 +105,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pump(const Duration(milliseconds: 900));
     expect(find.widgetWithText(Tab, 'Conexão'), findsOneWidget);
+    expect(find.widgetWithText(Tab, 'Motor'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Perfis'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Armazenamento'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Alertas'), findsOneWidget);
@@ -112,6 +113,15 @@ void main() {
     expect(find.text('Conexão MQTT'), findsOneWidget);
     expect(find.text('Broker host'), findsOneWidget);
 
+    await tester.tap(find.widgetWithText(Tab, 'Motor'));
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(find.text('Dados do motor'), findsOneWidget);
+    expect(find.text('Editar dados do motor'), findsOneWidget);
+    expect(find.text('Manutenção feita'), findsOneWidget);
+    expect(find.text('Zerar horímetro e partidas'), findsOneWidget);
+
+    await tester.ensureVisible(find.widgetWithText(Tab, 'Armazenamento'));
+    await tester.pump(const Duration(milliseconds: 200));
     await tester.tap(find.byIcon(Icons.storage_rounded));
     await tester.pump(const Duration(milliseconds: 900));
     expect(find.text('Local do app'), findsOneWidget);
