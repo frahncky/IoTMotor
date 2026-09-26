@@ -250,7 +250,18 @@
     const enviar = texto => {
       if (pending?.seq !== comando.seq) return;
       client.publish(topic('command'), texto, {qos: 1, retain: false}, error => {
-        if (error && pending?.seq === comando.seq) { feedback('Falha no envio: ' + error.message); pending = null;refresh(); }
+        if (error && pending?.seq === comando.seq) {
+          feedback('Falha no envio: ' + error.message);
+          pending = null;
+          refresh();
+          return;
+        }
+        // O som acompanha exclusivamente um comando enviado pelos botões.
+        // Queda/reconexão e mudanças de telemetria nunca disparam estes efeitos.
+        if (!error) {
+          if (action === 'start') window.iotmotorMotorSound?.startFromCommand?.();
+          if (action === 'stop') window.iotmotorMotorSound?.stopFromCommand?.();
+        }
       });
     };
     const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
