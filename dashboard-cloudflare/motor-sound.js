@@ -21,6 +21,7 @@
   // Cada pedido de som (automático ou teste) ganha um número; depois de
   // esperar a gravação carregar, só o pedido mais recente segue.
   let ultimoPedido = 0;
+  let testePendente = 0;  // Número do pedido de teste ainda carregando.
   let unlocked = false;
   let resumeAfterReconnectPending = false;
   // Ao reabrir a página, a preferência de som persiste, mas o navegador
@@ -546,11 +547,20 @@
       stopActive({ fade: true });
       return;
     }
+    // Segundo clique enquanto a gravação carrega: cancela o teste pedido.
+    if (testePendente && testePendente === ultimoPedido) {
+      testePendente = 0;
+      ultimoPedido += 1;
+      setFeedback('Teste de som cancelado.');
+      return;
+    }
 
     const pedido = ++ultimoPedido;
-    if (!(await ensureAudio())) return;
-    await loadSample(ctx);
-    if (pedido !== ultimoPedido || active?.mode === 'test') return;
+    testePendente = pedido;
+    const pronto = await ensureAudio() && (await loadSample(ctx), true);
+    if (pedido !== ultimoPedido) return;  // Cancelado ou outro pedido chegou.
+    testePendente = 0;
+    if (!pronto || active?.mode === 'test') return;
     stopActive({ fade: false });
 
     active = { mode: 'test', ...createMotorSound({ startup: true }) };

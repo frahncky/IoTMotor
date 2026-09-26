@@ -48,6 +48,8 @@ function parseTelemetry(json){
   benchArmed:source.bench_armed===true,motorOn,
   mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak),
   relays,alarmEnabled:typeof source.alarm_enabled==='boolean'?source.alarm_enabled:null,
+  runSTotal:numeric(source.run_s_total),startsTotal:numeric(source.starts_total),
+  startsToday:numeric(source.starts_today),sessionS:numeric(source.session_s),
   alarmsFiring:Array.isArray(source.alarms_firing)?source.alarms_firing.filter(id=>typeof id==='string'&&id):[]};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
@@ -163,13 +165,43 @@ function avisosAtuais(){
  return motorWarnings({brokerReady:state.connected&&state.subscribed,command:freshness('command')?state.command.sample:null,
   sensor:freshness('sensor')?state.sensor.sample:null,alarms:window.iotmotorAlarme?.lista?.()||null});
 }
-if(typeof window!=='undefined')window.iotmotorPainel={avisos:avisosAtuais};
+if(typeof window!=='undefined')window.iotmotorPainel={avisos:avisosAtuais,atualizarMotor:()=>renderMotorVisual()};
+// Carga do motor em % da corrente nominal da placa; null sem cadastro.
+function motorLoad(current,nominal){
+ if(!Number.isFinite(current)||!Number.isFinite(nominal)||nominal<=0)return null;
+ return Math.round(current/nominal*100);
+}
+function formatDuration(segundos){
+ const s=Math.max(0,Math.floor(segundos));
+ if(s<60)return `${s} s`;
+ const m=Math.floor(s/60);
+ if(m<60)return `${m} min`;
+ return `${Math.floor(m/60)} h ${String(m%60).padStart(2,'0')} min`;
+}
+// Linha de uso do motor (horímetro e partidas) vinda do quadro de comando.
+function usageLine({sessionS,runSTotal,startsToday,startsTotal}){
+ const partes=[];
+ if(Number.isFinite(sessionS))partes.push(`Ligado há ${formatDuration(sessionS)}`);
+ if(Number.isFinite(runSTotal))partes.push(`Horímetro ${(runSTotal/3600).toFixed(1).replace('.',',')} h`);
+ if(Number.isFinite(startsToday))partes.push(`${startsToday} ${startsToday===1?'partida':'partidas'} hoje`);
+ else if(Number.isFinite(startsTotal))partes.push(`${startsTotal} ${startsTotal===1?'partida':'partidas'} no total`);
+ return partes.join(' · ');
+}
+// Comando enviado e ainda não confirmado pelo quadro (null quando já refletiu).
+function commandPendingLabel(pending,motorOn){
+ if(!pending)return null;
+ if(pending.action==='start'&&motorOn!==true)return 'Ligando…';
+ if(pending.action==='stop'&&motorOn!==false)return 'Desligando…';
+ return null;
+}
 function renderMotorVisual(){
  const root=$('motorVisual');if(!root)return;
  const commandFresh=freshness('command'),sensorFresh=freshness('sensor');
  const cmd=commandFresh?state.command.sample:null,sensor=sensorFresh?state.sensor.sample:null;
  const visual=motorVisualState({brokerReady:state.connected&&state.subscribed,commandFresh,motorOn:cmd?.motorOn});
- root.dataset.state=visual.state;text('motorVisualStatus',visual.label);
+ const pendente=commandPendingLabel(window.iotmotorRemoteControls?.pendente?.()||null,cmd?.motorOn);
+ root.dataset.state=visual.state;text('motorVisualStatus',pendente||visual.label);
+ if(pendente)root.dataset.command='pending';else delete root.dataset.command;
  const alarms=window.iotmotorAlarme?.lista?.()||null;
  const heat=motorHeat(sensor?.temperature,temperatureLimit(alarms));
  const heatLayer=root.querySelector('.motor-heat');
@@ -179,14 +211,19 @@ function renderMotorVisual(){
  root.dataset.alarmTemp=parts.has('temperature')?'on':'off';
  root.dataset.alarmVib=parts.has('vibration')?'on':'off';
  const dados=[];
- if(cmd?.current!==null&&cmd?.current!==undefined)dados.push(`Corrente ${cmd.current.toFixed(2)} A`);
+ if(cmd?.current!==null&&cmd?.current!==undefined){
+  const carga=cmd.motorOn===true?motorLoad(cmd.current,window.iotmotorMotorInfo?.dados?.()?.current_a):null;
+  dados.push(`Corrente ${cmd.current.toFixed(2)} A${carga!==null?` (carga ${carga}%)`:''}`);
+ }
  if(sensor?.vibration!==null&&sensor?.vibration!==undefined)dados.push(`Vibração ${sensor.vibration.toFixed(3)} g`);
  if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${sensor.temperature.toFixed(1)} °C`);
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
+ const uso=cmd?usageLine(cmd):'';
+ const usoEl=$('motorVisualUso');if(usoEl){usoEl.hidden=!uso;usoEl.textContent=uso;}
  const avisos=[parts.has('temperature')&&'alarme de temperatura',parts.has('vibration')&&'alarme de vibração',
   parts.has('other')&&'alarme ativo'].filter(Boolean);
- root.setAttribute('aria-label',`${visual.label}. ${dados.length?dados.join(', '):'Sem grandezas recentes.'}${avisos.length?` Atenção: ${avisos.join(', ')}.`:''}`);
+ root.setAttribute('aria-label',`${pendente||visual.label}. ${dados.length?dados.join(', '):'Sem grandezas recentes.'}${uso?` ${uso}.`:''}${avisos.length?` Atenção: ${avisos.join(', ')}.`:''}`);
 }
 function updateControl(){
  const active=freshness('command');const s=state.command.sample;
@@ -240,7 +277,7 @@ function disconnect(){const old=state.client;state.generation++;state.client=nul
  window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
  window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
- window.iotmotorAlarme?.disconnect?.();window.iotmotorPerfis?.disconnect?.();
+ window.iotmotorAlarme?.disconnect?.();window.iotmotorPerfis?.disconnect?.();window.iotmotorMotorInfo?.disconnect?.();
  reset();pill('Desconectado');diag('Desconectado.');}
 function ingest(which,raw,packet){
  if(packet?.retain===true){diag(`Telemetria retida antiga de ${which==='command'?'ESP32 PZEM':'ESP32-S3'} ignorada.`);return false;}
@@ -273,7 +310,7 @@ function connect(automatico){
  try{client=window.mqtt.connect(config.broker,{clientId:`iotmotor_dual_${Math.random().toString(36).slice(2,11)}`,clean:true,protocolVersion:4,reconnectPeriod:4000,connectTimeout:10000,keepalive:30,resubscribe:true});}
  catch(e){pill('Falha MQTT','error');diag(e.message);return;}
  state.client=client;reset();pill('Conectando…','wait');diag(`Conectando ${config.broker}; dispositivos ${config.commandDevice} e ${config.sensorDevice}.`);
- if(!automatico){window.iotmotorRemoteControls?.connect?.();window.iotmotorWifi?.connect?.();window.iotmotorAlarme?.connect?.();window.iotmotorPerfis?.connect?.();}
+ if(!automatico){window.iotmotorRemoteControls?.connect?.();window.iotmotorWifi?.connect?.();window.iotmotorAlarme?.connect?.();window.iotmotorPerfis?.connect?.();window.iotmotorMotorInfo?.connect?.();}
  const active=()=>state.client===client&&state.generation===generation;
  client.on('connect',()=>{
   if(!active())return;state.connected=true;pill('Broker conectado','live');
@@ -397,4 +434,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
