@@ -9,16 +9,34 @@
   // Campo do formulário -> campo no MQTT, com a faixa aceita pela placa.
   const CAMPOS = [
     {id: 'motorInfoCv', chave: 'power_cv', max: 3000},
-    {id: 'motorInfoV', chave: 'voltage_v', max: 1000},
-    {id: 'motorInfoA', chave: 'current_a', max: 2000},
     {id: 'motorInfoRpm', chave: 'rpm', max: 10000},
     {id: 'motorInfoFs', chave: 'service_factor', min: 1, max: 3}
   ];
+  // Tensão e corrente aceitam um valor ou dois, como na placa do trifásico de
+  // dupla tensão (220/380 V - 12,6/7,3 A): o primeiro é o do triângulo (menor
+  // tensão, maior corrente), o segundo o da estrela.
+  const PARES = [
+    {id: 'motorInfoV', chave: 'voltage_v', chaveY: 'voltage_y_v', max: 1000, nome: 'Tensão', trianguloPrimeiro: (a, b) => a - b},
+    {id: 'motorInfoA', chave: 'current_a', chaveY: 'current_y_a', max: 2000, nome: 'Corrente', trianguloPrimeiro: (a, b) => b - a}
+  ];
+  const decimal = n => String(n).replace('.', ',');
 
   let client = null, conectado = false, prefixo = '', dispositivo = 'esp32-01';
   let info = null, pendente = null, sequencia = 0, editando = false;
   const aviso = texto => { $('motorInfoFeedback').textContent = texto; };
   const topico = tipo => `${prefixo}/${dispositivo}/${tipo}`;
+
+  // "220/380" ou "220": até dois valores, na ordem triângulo/estrela.
+  function lerPar(par) {
+    const texto = String($(par.id).value || '').trim();
+    if (!texto) return {valores: []};
+    const partes = texto.split('/').map(t => t.trim().replace(',', '.'));
+    const valores = partes.map(Number);
+    if (partes.length > 2 || partes.some(t => !t) || valores.some(n => !Number.isFinite(n) || n <= 0 || n > par.max))
+      return {erro: `${par.nome}: use um valor de 0 a ${par.max}, ou dois separados por barra.`};
+    if (valores.length === 2 && valores[0] === valores[1]) return {erro: `${par.nome}: os dois valores são iguais.`};
+    return {valores: valores.sort(par.trianguloPrimeiro)};
+  }
 
   // Aceita vírgula decimal; vazio = não cadastrado.
   function lerCampo(campo) {
@@ -35,16 +53,38 @@
     if (editando || pendente) return;
     for (const campo of CAMPOS) {
       const v = info?.[campo.chave];
-      $(campo.id).value = Number.isFinite(v) ? String(v) : '';
+      $(campo.id).value = Number.isFinite(v) ? decimal(v) : '';
+    }
+    for (const par of PARES) {
+      const valores = [info?.[par.chave], info?.[par.chaveY]].filter(Number.isFinite);
+      $(par.id).value = valores.map(decimal).join('/');
     }
     $('motorInfoFases').value = info?.phases === 1 || info?.phases === 3 ? String(info.phases) : '';
+    $('motorInfoLigacao').value = info?.connection === 'star' ? 'star' : 'delta';
+    mostrarLigacao();
+  }
+
+  // A ligação só faz sentido com duas tensões ou duas correntes na placa.
+  function mostrarLigacao() {
+    const dupla = PARES.some(par => String($(par.id).value || '').includes('/'));
+    $('motorInfoLigacaoCampo').hidden = !dupla;
+  }
+
+  // Corrente e tensão da ligação em que o motor trabalha: é com elas que o
+  // painel calcula a carga e o alarme de sobrecarga.
+  function emUso(dados) {
+    if (!dados) return null;
+    const estrela = dados.connection === 'star';
+    const escolher = (chave, chaveY) => estrela && Number.isFinite(dados[chaveY]) ? dados[chaveY] : dados[chave];
+    return {...dados, current_in_use_a: escolher('current_a', 'current_y_a'),
+      voltage_in_use_v: escolher('voltage_v', 'voltage_y_v')};
   }
 
   function renderizar() {
     const pronto = conectado && !pendente;
     $('motorInfoSalvar').disabled = !pronto;
     $('motorInfoZerar').disabled = !pronto;
-    $('motorInfoCargaDica').hidden = Number.isFinite(info?.current_a);
+    $('motorInfoCargaDica').hidden = Number.isFinite(emUso(info)?.current_in_use_a);
   }
 
   function limparPendente() {
@@ -129,7 +169,10 @@
       if (nome === topico('motor_info')) {
         info = {};
         for (const campo of CAMPOS) if (Number.isFinite(dados[campo.chave])) info[campo.chave] = dados[campo.chave];
+        for (const par of PARES) for (const chave of [par.chave, par.chaveY])
+          if (Number.isFinite(dados[chave])) info[chave] = dados[chave];
         if (dados.phases === 1 || dados.phases === 3) info.phases = dados.phases;
+        if (dados.connection === 'delta' || dados.connection === 'star') info.connection = dados.connection;
         preencher();
         renderizar();
         return;
@@ -147,7 +190,8 @@
   }
 
   for (const campo of CAMPOS) $(campo.id).addEventListener('input', () => { editando = true; });
-  $('motorInfoFases').addEventListener('change', () => { editando = true; });
+  for (const par of PARES) $(par.id).addEventListener('input', () => { editando = true; mostrarLigacao(); });
+  for (const id of ['motorInfoFases', 'motorInfoLigacao']) $(id).addEventListener('change', () => { editando = true; });
   $('motorInfoForm').addEventListener('submit', evento => {
     evento.preventDefault();
     const motor = {};
@@ -158,6 +202,18 @@
     }
     const fases = Number($('motorInfoFases').value);
     if (fases === 1 || fases === 3) motor.phases = fases;  // Monofásico ou trifásico.
+    let dupla = false;
+    for (const par of PARES) {
+      const lido = lerPar(par);
+      if (lido.erro) { aviso(lido.erro); return; }
+      if (lido.valores.length) motor[par.chave] = lido.valores[0];
+      if (lido.valores.length === 2) { motor[par.chaveY] = lido.valores[1]; dupla = true; }
+    }
+    if (dupla && !PARES.every(par => Number.isFinite(motor[par.chaveY]))) {
+      aviso('Dupla tensão: informe as duas tensões e as duas correntes, como na placa do motor.'); return;
+    }
+    if (dupla && fases !== 3) { aviso('Duas tensões ou correntes só em motor trifásico: escolha o tipo "Trifásico".'); return; }
+    if (dupla) motor.connection = $('motorInfoLigacao').value === 'star' ? 'star' : 'delta';
     if (publicar('motor_info_set', {motor})) aviso('Gravando os dados do motor na placa…');
   });
   $('motorInfoZerar').addEventListener('click', () => {
@@ -170,7 +226,8 @@
     connect: conectar,
     disconnect: desconectar,
     // Cópia dos dados de placa (null enquanto a placa não publicou).
-    dados: () => (info ? {...info} : null)
+    // current_in_use_a / voltage_in_use_v: os da ligação em uso.
+    dados: () => emUso(info)
   };
   renderizar();
 })();

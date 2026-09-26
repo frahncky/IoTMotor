@@ -242,15 +242,17 @@
   // fator de serviço (1 quando não cadastrado). Sem corrente nominal, nada.
   const numero = v => String(v).replace('.', ',');
   function sugestaoSobrecarga(motor, alarmes) {
-    const nominal = motor?.current_a;
+    const nominal = motor?.current_in_use_a;
     if (!alarmes || !Number.isFinite(nominal) || nominal <= 0) return null;
     const fs = Number.isFinite(motor.service_factor) && motor.service_factor >= 1 ? motor.service_factor : 1;
     const limite = Math.round(nominal * fs * 100) / 100;
     const g = grandezaDe('current');
     if (limite < g.min || limite > g.max) return null;
+    // Placa de dupla tensão: diz de qual ligação veio a corrente.
+    const ligacao = Number.isFinite(motor.current_y_a) ? (motor.connection === 'star' ? ' em estrela' : ' em triângulo') : '';
     const origem = fs > 1
-      ? `corrente nominal ${numero(nominal)} A × fator de serviço ${numero(fs)}`
-      : `corrente nominal ${numero(nominal)} A${Number.isFinite(motor.service_factor) ? '' : ', sem fator de serviço cadastrado'}`;
+      ? `corrente nominal${ligacao} ${numero(nominal)} A × fator de serviço ${numero(fs)}`
+      : `corrente nominal${ligacao} ${numero(nominal)} A${Number.isFinite(motor.service_factor) ? '' : ', sem fator de serviço cadastrado'}`;
     const existente = alarmes.find(a => a.field === 'current' && a.above !== false);
     if (!existente) return {limite, alarme: null, botao: `Criar alarme de sobrecarga (${numero(limite)} A)`,
       texto: `Sobrecarga: pelos dados do motor, a corrente não deve passar de ${numero(limite)} A (${origem}). ` +

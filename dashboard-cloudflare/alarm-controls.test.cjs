@@ -400,7 +400,7 @@ test('dados do motor sugerem o alarme de sobrecarga: criar, ajustar e em dia', (
   h.advance(0);
   assert.equal(h.node('alarmeSugestao').hidden, true);
 
-  let motor = {current_a: 4.2, service_factor: 1.15};
+  let motor = {current_a: 4.2, current_in_use_a: 4.2, service_factor: 1.15};
   h.context.window.iotmotorMotorInfo = {dados: () => motor};
   h.advance(0);
   assert.equal(h.node('alarmeSugestao').hidden, false);
@@ -423,7 +423,12 @@ test('dados do motor sugerem o alarme de sobrecarga: criar, ajustar e em dia', (
   h.alarms(c, [{id: 'amp', field: 'current', board: 'command', above: true, limit: 4.83, on: true}]);
   assert.match(h.node('alarmeSugestaoTexto').textContent, /de acordo/);
   assert.equal(h.node('alarmeSugestaoBtn').hidden, true);
-  motor = {current_a: 4.2};
+  motor = {current_a: 4.2, current_in_use_a: 4.2};
   h.advance(0);
   assert.match(h.node('alarmeSugestaoTexto').textContent, /4,2 A \(corrente nominal 4,2 A, sem fator de serviço cadastrado\)/);
+
+  // Dupla tensão: a sugestão diz de qual ligação veio a corrente.
+  motor = {current_a: 12.6, current_y_a: 7.3, connection: 'delta', current_in_use_a: 12.6};
+  h.advance(0);
+  assert.match(h.node('alarmeSugestaoTexto').textContent, /corrente nominal em triângulo 12,6 A/);
 });
