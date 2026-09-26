@@ -59,6 +59,7 @@ function abaWifi() {
       return c;
     }}},
     URL, Date, Math, JSON, Number, Set, Map, Array, String, Boolean, Object,
+    confirm: () => true,
     setTimeout() { return 0; }, clearTimeout() {}, setInterval() { return 0; },
     localStorage: {getItem: () => null, setItem() {}, removeItem() {}},
     crypto: globalThis.crypto, TextEncoder, Uint8Array, btoa: () => ''
@@ -120,4 +121,28 @@ test('outra placa nao consegue decifrar', async () => {
   const intrusa = await parDaPlaca();
   const pacote = await cifrarSenha(placa.publica, 'Casa', 'minhasenha123', cripto);
   await assert.rejects(decifrarComoAPlaca(intrusa.privada, 'Casa', pacote));
+});
+
+test('reiniciar vale para as duas placas e envia o comando restart para a selecionada', () => {
+  const h = abaWifi();
+  h.redes('esp32-01'); h.redes('esp32-02');
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  h.enviar('iotmotor/esp32-02/status', 'online');
+  for (const [indice, placa] of [[0, 'esp32-01'], [1, 'esp32-02']]) {
+    h.no('wifiDev' + indice).fire('click');
+    assert.equal(h.no('wifiRestart').disabled, false, placa);
+    h.no('wifiRestart').fire('click');
+    const envio = h.cliente.publicados.at(-1);
+    assert.equal(envio.topico, `iotmotor/${placa}/command`);
+    const comando = JSON.parse(envio.dados);
+    assert.equal(comando.action, 'restart');
+    assert.equal(comando.device_id, placa);
+    // Aguardando a resposta, o botão fica travado.
+    assert.equal(h.no('wifiRestart').disabled, true);
+    h.enviar(`iotmotor/${placa}/command_ack`, JSON.stringify({device_id: placa, seq: comando.seq,
+      action: 'restart', accepted: true, reason: 'reiniciando'}));
+  }
+  // Placa fora do ar: nada a reiniciar.
+  h.enviar('iotmotor/esp32-02/status', 'offline');
+  assert.equal(h.no('wifiRestart').disabled, true);
 });

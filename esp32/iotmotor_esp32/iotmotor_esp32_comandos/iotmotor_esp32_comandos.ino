@@ -569,6 +569,12 @@ void loop() {
                   toleranciaSemLinkMs / 1000UL);
   }
   manterPartidaBancada(agora);
+  // Reinicio pedido pelo painel: desiste se alguma saida ligou nesse meio tempo.
+  if (reinicioPedidoEm && saidasAtivas) reinicioPedidoEm = 0;
+  if (reinicioPedidoEm && agora - reinicioPedidoEm >= 300UL) {
+    Serial.println("[QUADRO] reiniciando a pedido do painel");
+    ESP.restart();
+  }
   if (agora - ultimaLeituraPzem >= INTERVALO_PZEM_MS) {
     ultimaLeituraPzem = agora;
     lerPzem();
