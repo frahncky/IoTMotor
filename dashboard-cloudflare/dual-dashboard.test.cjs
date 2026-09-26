@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -130,4 +130,26 @@ test('alarmes disparados indicam a parte do motor afetada',()=>{
  assert.equal(s.alarmEnabled,true);
  assert.deepEqual(s.alarmsFiring,['temp']);
  assert.deepEqual(parseTelemetry({device_id:'esp32-02'}).alarmsFiring,[]);
+});
+
+test('avisos do motor: grandezas sem leitura e valores perto ou além do limite',()=>{
+ const textos=a=>a.map(w=>`${w.level}|${w.text}`);
+ const cmd={voltage:220,current:3.9,power:800,pf:0.9,frequency:60,energy:1.2};
+ assert.deepEqual(motorWarnings({brokerReady:false,command:null,sensor:null,alarms:null}),[]);
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:null,sensor:null,alarms:null})),
+  ['warn|Sensores do motor sem dados','warn|Quadro de comando sem dados']);
+ // Placa de sensores enviando, mas sem temperatura.
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.02,temperature:null,vibrationPeak:0.05},alarms:null})),
+  ['warn|Temperatura sem leitura']);
+ // Quadro sem nenhuma medição do PZEM vira um único aviso.
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{voltage:null,current:null},sensor:{vibration:0.02,temperature:30},alarms:null})),
+  ['warn|Medições elétricas (PZEM) sem leitura']);
+ // Limites de fábrica: 90% avisa, no limite vira alarme.
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.1,temperature:55,vibrationPeak:0.6},alarms:null})),
+  ['alarm|Vibração (pico) alta: 0.60 g (limite 0.5 g)','warn|Temperatura alta: 55.0 °C (limite 60 °C)']);
+ // Lista da placa: limites próprios, alarmes desligados ignorados, "abaixo de" também.
+ const alarms=[{id:'t',field:'temperature',above:true,limit:40,on:true},{id:'i',field:'current',above:true,limit:4,on:false},
+  {id:'v',field:'voltage',above:false,limit:200,on:true}];
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{...cmd,voltage:210},sensor:{vibration:0.1,temperature:41},alarms})),
+  ['alarm|Temperatura alta: 41.0 °C (limite 40 °C)','warn|Tensão baixa: 210.0 V (limite 200 V)']);
 });
