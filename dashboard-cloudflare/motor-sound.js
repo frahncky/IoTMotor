@@ -70,8 +70,8 @@
     const now = ctx.currentTime;
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.exponentialRampToValueAtTime(0.15, now + 0.65);
-    master.gain.setValueAtTime(0.15, now + 4.0);
+    master.gain.exponentialRampToValueAtTime(0.28, now + 0.65);
+    master.gain.setValueAtTime(0.28, now + 4.0);
     master.gain.exponentialRampToValueAtTime(0.0001, now + 4.8);
     master.connect(ctx.destination);
 
