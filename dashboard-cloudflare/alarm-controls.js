@@ -239,99 +239,6 @@
     }
   }
 
-  // Alarmes sugeridos pelos dados do motor (motor-info.js). Cada sugestão diz
-  // a grandeza, o sentido e o limite; se já houver alarme nesse sentido, a
-  // sugestão é ajustá-lo, e se ele já estiver no valor, só confirma.
-  const numero = v => String(v).replace('.', ',');
-  const PARTIDAS_POR_HORA = 6;  // Valor típico de catálogo para motores pequenos.
-  function sugestoesDoMotor(motor, alarmes) {
-    if (!alarmes) return [];
-    const pedidos = [];
-    // Placa de dupla tensão: diz de qual ligação vieram os valores.
-    const ligacao = Number.isFinite(motor?.current_y_a) ? (motor.connection === 'star' ? ' em estrela' : ' em triângulo') : '';
-    const corrente = motor?.current_in_use_a;
-    if (Number.isFinite(corrente) && corrente > 0) {
-      const fs = Number.isFinite(motor.service_factor) && motor.service_factor >= 1 ? motor.service_factor : 1;
-      const origem = fs > 1
-        ? `corrente nominal${ligacao} ${numero(corrente)} A × fator de serviço ${numero(fs)}`
-        : `corrente nominal${ligacao} ${numero(corrente)} A${Number.isFinite(motor.service_factor) ? '' : ', sem fator de serviço cadastrado'}`;
-      pedidos.push({chave: 'sobrecarga', nome: 'sobrecarga', campo: 'current', acima: true,
-        limite: Math.round(corrente * fs * 100) / 100, unidade: 'A', origem});
-    }
-    // Tensão fora de ±10% da nominal: o motor aquece (baixa) ou força o isolamento (alta).
-    const tensao = motor?.voltage_in_use_v;
-    if (Number.isFinite(tensao) && tensao > 0) {
-      const origem = `tensão nominal${ligacao} ${numero(tensao)} V ${'−'}/+ 10%`;
-      pedidos.push({chave: 'subtensao', nome: 'tensão baixa', campo: 'voltage', acima: false,
-        limite: Math.round(tensao * 0.9), unidade: 'V', origem});
-      pedidos.push({chave: 'sobretensao', nome: 'tensão alta', campo: 'voltage', acima: true,
-        limite: Math.round(tensao * 1.1), unidade: 'V', origem});
-    }
-    // Partidas seguidas aquecem o enrolamento; só sugere criar, nunca ajustar.
-    if (motor) pedidos.push({chave: 'partidas', nome: 'partidas em excesso', campo: 'starts_hour', acima: true,
-      limite: PARTIDAS_POR_HORA, unidade: 'por hora', soCriar: true,
-      origem: 'motores pequenos costumam tolerar até 6 por hora; confira o catálogo do fabricante'});
-
-    const sugestoes = [];
-    for (const pedido of pedidos) {
-      const g = grandezaDe(pedido.campo);
-      if (pedido.limite < g.min || pedido.limite > g.max) continue;
-      const sentido = pedido.acima ? 'acima de' : 'abaixo de';
-      const valor = `${numero(pedido.limite)} ${pedido.unidade}`;
-      const existente = alarmes.find(a => a.field === pedido.campo && (a.above !== false) === pedido.acima);
-      if (!existente) {
-        sugestoes.push({...pedido, alarme: null, botao: `Criar alarme de ${pedido.nome} (${sentido} ${valor})`,
-          texto: `${pedido.nome[0].toUpperCase()}${pedido.nome.slice(1)}: alarme ${sentido} ${valor} (${pedido.origem}).`});
-      } else if (pedido.soCriar) {
-        continue;
-      } else if (Math.abs(existente.limit - pedido.limite) < 0.005) {
-        sugestoes.push({...pedido, alarme: existente, botao: '',
-          texto: `O alarme de ${pedido.nome} está de acordo com os dados do motor: ${sentido} ${valor}.`});
-      } else {
-        sugestoes.push({...pedido, alarme: existente, botao: `Ajustar para ${valor}`,
-          texto: `O alarme de ${pedido.nome} está em ${numero(existente.limit)} ${pedido.unidade}; pelos dados ` +
-            `do motor o limite é ${valor} (${pedido.origem}).`});
-      }
-    }
-    return sugestoes;
-  }
-
-  function aplicarSugestao(sugestao) {
-    const alarme = sugestao.alarme;
-    const corpo = {id: alarme ? alarme.id : novoId(sugestao.campo), field: sugestao.campo, board: 'command',
-      above: sugestao.acima, limit: sugestao.limite, on: alarme ? alarme.on !== false : true};
-    if (publicar('alarm_save', {alarm: corpo}, corpo.id))
-      aviso(alarme ? `Ajustando o alarme de ${sugestao.nome}…` : `Criando o alarme de ${sugestao.nome}…`);
-  }
-
-  let sugestoesDesenhadas = '';
-  function desenharSugestao() {
-    const sugestoes = sugestoesDoMotor(window.iotmotorMotorInfo?.dados?.(), lista);
-    const alvo = $('alarmeSugestoes');
-    $('alarmeSugestao').hidden = !sugestoes.length;
-    const cheia = Boolean(lista) && lista.length >= maxAlarmes;
-    const assinatura = JSON.stringify([sugestoes.map(x => [x.texto, x.botao]), pronto(), cheia]);
-    if (assinatura === sugestoesDesenhadas) return;
-    sugestoesDesenhadas = assinatura;
-    alvo.replaceChildren();
-    for (const sugestao of sugestoes) {
-      const item = document.createElement('li');
-      const texto = document.createElement('p');
-      texto.textContent = sugestao.texto;
-      item.append(texto);
-      if (sugestao.botao) {
-        const botao = document.createElement('button');
-        botao.type = 'button';
-        botao.className = 'btn secondary';
-        botao.textContent = sugestao.botao;
-        botao.disabled = !pronto() || (!sugestao.alarme && cheia);
-        botao.addEventListener('click', () => aplicarSugestao(sugestao));
-        item.append(botao);
-      }
-      alvo.append(item);
-    }
-  }
-
   function limiteAceito(campo, valor, texto) {
     const g = grandezaDe(campo);
     if (texto !== undefined && String(texto).trim() === '')
@@ -395,7 +302,6 @@
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharAtivos();
     desenharLista();
-    desenharSugestao();
   }
 
   function limparPendente() {
