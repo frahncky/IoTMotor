@@ -9,6 +9,19 @@
 
 const ROTULO_KDF = 'iotmotor-wifi-v1';
 
+// Versão do firmware que está publicada para OTA (release firmware-latest,
+// compilada da main junto com este painel): [quadro de comando, sensores].
+// O CI confere que é a mesma do firmware_version de cada .ino.
+const FIRMWARE_PUBLICADO = ['v12-motor-info', 's3-sensors-1.4-alarmes'];
+
+// O que dizer sobre a versão que a placa informa. Exportada para os testes.
+function situacaoFirmware(instalado, publicado, quadro = false) {
+  if (!instalado) return {texto: 'Firmware: a placa não informou a versão (firmware antigo?).', atualizar: true};
+  if (instalado === publicado) return {texto: `Firmware: ${instalado} · em dia.`, atualizar: false};
+  return {texto: `Firmware: ${instalado} · nova versão publicada: ${publicado}. ` +
+    `Use "Atualizar firmware desta placa"${quadro ? ' com o motor parado' : ''}.`, atualizar: true};
+}
+
 function paraBase64(dados) {
   const bytes = new Uint8Array(dados);
   let texto = '';
@@ -80,6 +93,7 @@ if (typeof document !== 'undefined') (() => {
   // A lista de redes é retida: continua no broker depois que a placa cai. Sem
   // olhar o status, a aba dizia "conectada em ..." de uma placa desligada.
   const estados = {};  // device -> 'online' | 'offline'
+  const versoes = {};  // device -> firmware_version (tópico capabilities, retido)
   let ordemEditada = null;  // lista de SSIDs enquanto o usuario reordena
 
   const topico = (dev, tipo) => `${prefixo}/${dev}/${tipo}`;
@@ -107,6 +121,20 @@ if (typeof document !== 'undefined') (() => {
     $('wifiDev1').setAttribute('aria-pressed', String(selecionado === 1));
     const placa = atual();
     const lista = $('wifiList');
+    // Versão do firmware: a placa selecionada em detalhe, as duas no seletor e na aba.
+    const firmware = dispositivos.map((d, i) => versoes[d] === undefined ? null
+      : situacaoFirmware(versoes[d], FIRMWARE_PUBLICADO[i], i === 0));
+    firmware.forEach((f, i) => {
+      $('wifiDev' + i).dataset.update = String(Boolean(connected && f?.atualizar));
+      if (connected && f?.atualizar) $('wifiDev' + i).title += ' · atualização de firmware disponível';
+    });
+    const algumaDesatualizada = connected && firmware.some(f => f?.atualizar);
+    $('tabBtn-wifi').dataset.update = String(algumaDesatualizada);
+    $('tabBtn-wifi').title = algumaDesatualizada ? 'Há atualização de firmware para uma das placas' : '';
+    const minha = firmware[selecionado];
+    $('wifiFirmware').textContent = !connected ? '' : minha ? minha.texto
+      : 'Firmware: aguardando a placa informar a versão…';
+    $('wifiUpdateFw').className = `btn ${connected && minha?.atualizar ? '' : 'secondary'}`.trim();
     const noAr = () => estados[dispositivos[selecionado]] !== 'offline';
     lista.replaceChildren();
 
@@ -336,6 +364,7 @@ if (typeof document !== 'undefined') (() => {
     dispositivos = cfg.d;
     for (const k of Object.keys(placas)) delete placas[k];
     for (const k of Object.keys(estados)) delete estados[k];
+    for (const k of Object.keys(versoes)) delete versoes[k];
     ordemEditada = null;
     pendente = null;
     const ativo = window.mqtt.connect(cfg.url, {
@@ -347,7 +376,8 @@ if (typeof document !== 'undefined') (() => {
       if (client !== ativo) return;
       connected = true;
       const topicos = dispositivos.flatMap(d =>
-        [topico(d, 'wifi'), topico(d, 'command_ack'), topico(d, 'auth'), topico(d, 'status')]);
+        [topico(d, 'wifi'), topico(d, 'command_ack'), topico(d, 'auth'), topico(d, 'status'),
+         topico(d, 'capabilities')]);
       ativo.subscribe(topicos, {qos: 1});
       renderizar();
     });
@@ -362,8 +392,13 @@ if (typeof document !== 'undefined') (() => {
       let dados;
       try { dados = JSON.parse(payload.toString('utf8')); } catch { return; }
       const dev = dispositivos.find(d => nome === topico(d, 'wifi') ||
-        nome === topico(d, 'command_ack') || nome === topico(d, 'auth'));
+        nome === topico(d, 'command_ack') || nome === topico(d, 'auth') || nome === topico(d, 'capabilities'));
       if (!dev || dados?.device_id !== dev) return;
+      if (nome === topico(dev, 'capabilities')) {  // Retido; volta a cada conexão da placa.
+        versoes[dev] = typeof dados.firmware_version === 'string' ? dados.firmware_version : '';
+        renderizar();
+        return;
+      }
       if (nome === topico(dev, 'auth')) {  // Desafio da placa, retido.
         window.iotmotorSelo?.registrarAuth(dev, dados);
         renderizar();
@@ -423,4 +458,4 @@ if (typeof document !== 'undefined') (() => {
   renderizar();
 })();
 
-if (typeof module !== 'undefined' && module.exports) module.exports = {cifrarSenha, ROTULO_KDF};
+if (typeof module !== 'undefined' && module.exports) module.exports = {cifrarSenha, ROTULO_KDF, FIRMWARE_PUBLICADO, situacaoFirmware};

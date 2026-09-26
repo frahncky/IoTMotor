@@ -238,6 +238,51 @@
     }
   }
 
+  // Sobrecarga pelos dados do motor (motor-info.js): corrente nominal vezes o
+  // fator de serviço (1 quando não cadastrado). Sem corrente nominal, nada.
+  const numero = v => String(v).replace('.', ',');
+  function sugestaoSobrecarga(motor, alarmes) {
+    const nominal = motor?.current_a;
+    if (!alarmes || !Number.isFinite(nominal) || nominal <= 0) return null;
+    const fs = Number.isFinite(motor.service_factor) && motor.service_factor >= 1 ? motor.service_factor : 1;
+    const limite = Math.round(nominal * fs * 100) / 100;
+    const g = grandezaDe('current');
+    if (limite < g.min || limite > g.max) return null;
+    const origem = fs > 1
+      ? `corrente nominal ${numero(nominal)} A × fator de serviço ${numero(fs)}`
+      : `corrente nominal ${numero(nominal)} A${Number.isFinite(motor.service_factor) ? '' : ', sem fator de serviço cadastrado'}`;
+    const existente = alarmes.find(a => a.field === 'current' && a.above !== false);
+    if (!existente) return {limite, alarme: null, botao: `Criar alarme de sobrecarga (${numero(limite)} A)`,
+      texto: `Sobrecarga: pelos dados do motor, a corrente não deve passar de ${numero(limite)} A (${origem}). ` +
+        'Ainda não há alarme de corrente acima de um limite.'};
+    if (Math.abs(existente.limit - limite) < 0.005) return {limite, alarme: existente, botao: '',
+      texto: `O alarme de sobrecarga está de acordo com os dados do motor: corrente acima de ${numero(limite)} A.`};
+    return {limite, alarme: existente, botao: `Ajustar para ${numero(limite)} A`,
+      texto: `O alarme de corrente está em ${numero(existente.limit)} A; pelos dados do motor o limite de ` +
+        `sobrecarga é ${numero(limite)} A (${origem}).`};
+  }
+
+  function desenharSugestao() {
+    const sugestao = sugestaoSobrecarga(window.iotmotorMotorInfo?.dados?.(), lista);
+    $('alarmeSugestao').hidden = !sugestao;
+    if (!sugestao) return;
+    $('alarmeSugestaoTexto').textContent = sugestao.texto;
+    $('alarmeSugestaoBtn').hidden = !sugestao.botao;
+    $('alarmeSugestaoBtn').textContent = sugestao.botao;
+    $('alarmeSugestaoBtn').disabled = !pronto() || (!sugestao.alarme && lista.length >= maxAlarmes);
+  }
+
+  $('alarmeSugestaoBtn').addEventListener('click', () => {
+    const sugestao = sugestaoSobrecarga(window.iotmotorMotorInfo?.dados?.(), lista);
+    if (!sugestao?.botao) return;
+    const alarme = sugestao.alarme;
+    const corpo = alarme
+      ? {id: alarme.id, field: 'current', board: 'command', above: true, limit: sugestao.limite, on: alarme.on !== false}
+      : {id: novoId('current'), field: 'current', board: 'command', above: true, limit: sugestao.limite, on: true};
+    if (publicar('alarm_save', {alarm: corpo}, corpo.id))
+      aviso(alarme ? 'Ajustando o alarme de sobrecarga…' : 'Criando o alarme de sobrecarga…');
+  });
+
   function limiteAceito(campo, valor, texto) {
     const g = grandezaDe(campo);
     if (texto !== undefined && String(texto).trim() === '')
@@ -301,6 +346,7 @@
     $('alarmeAddBtn').disabled = !pronto() || !lista || lista.length >= maxAlarmes;
     desenharAtivos();
     desenharLista();
+    desenharSugestao();
   }
 
   function limparPendente() {
