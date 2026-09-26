@@ -110,6 +110,9 @@ class MotorControlController extends ChangeNotifier {
     return placas.length == 1 ? placas.first : null;
   }
 
+  /// Quadro ao qual os dados do motor pertencem.
+  String? get motorDeviceId => _motorDeviceId;
+
   /// Dados de placa do motor do quadro de comando em uso.
   MotorInfo? get motorInfo => _motorDeviceId == null ? null : _motorInfoByDevice[_motorDeviceId];
 
@@ -981,6 +984,73 @@ class MotorControlController extends ChangeNotifier {
     lastCommandAt = DateTime.now();
     statusMessage = 'Comando enviado a ${nomeDaPlaca(dev)}: ${type.label}.';
     _notify();
+  }
+
+  Future<bool> saveMotorInfo(Map<String, dynamic> motor) async {
+    final String? dev = _motorDeviceId;
+    if (dev == null) {
+      _pendingMessage = 'Aguardando o quadro de comando para gravar os dados do motor.';
+      _notify();
+      return false;
+    }
+    final String? seq = _service.sendRawCommand(
+      deviceId: dev,
+      action: 'motor_info_set',
+      body: <String, dynamic>{'motor': motor},
+    );
+    if (seq == null) {
+      _pendingMessage = _service.seal.impedimento(dev) ??
+          'Conecte-se ao broker antes de gravar os dados do motor.';
+      _notify();
+      return false;
+    }
+    statusMessage = 'Dados do motor enviados para ${nomeDaPlaca(dev)}.';
+    _notify();
+    return true;
+  }
+
+  Future<bool> markMotorMaintenanceDone() async {
+    final String? dev = _motorDeviceId;
+    if (dev == null) {
+      _pendingMessage = 'Aguardando o quadro de comando.';
+      _notify();
+      return false;
+    }
+    final String? seq = _service.sendRawCommand(
+      deviceId: dev,
+      action: 'maintenance_done',
+    );
+    if (seq == null) {
+      _pendingMessage = _service.seal.impedimento(dev) ??
+          'Não foi possível registrar a manutenção.';
+      _notify();
+      return false;
+    }
+    statusMessage = 'Registro de manutenção enviado para ${nomeDaPlaca(dev)}.';
+    _notify();
+    return true;
+  }
+
+  Future<bool> resetMotorCounters() async {
+    final String? dev = _motorDeviceId;
+    if (dev == null) {
+      _pendingMessage = 'Aguardando o quadro de comando.';
+      _notify();
+      return false;
+    }
+    final String? seq = _service.sendRawCommand(
+      deviceId: dev,
+      action: 'motor_counters_reset',
+    );
+    if (seq == null) {
+      _pendingMessage = _service.seal.impedimento(dev) ??
+          'Não foi possível zerar o horímetro e as partidas.';
+      _notify();
+      return false;
+    }
+    statusMessage = 'Pedido para zerar horímetro e partidas enviado.';
+    _notify();
+    return true;
   }
 
   /// Pede ao ESP32 que abra o portal de Wi-Fi (`wifi_portal`) ou que se
