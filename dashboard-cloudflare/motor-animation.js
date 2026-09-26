@@ -47,18 +47,21 @@
   let wasRunning = false;
 
   function frame(now) {
-    const dt = Math.min(0.064, Math.max(0, (now - last) / 1000));
+    // Partida e parada seguem o tempo real (a aba pode ficar em segundo plano
+    // sem quadros); só o avanço do ângulo é limitado para não dar saltos.
+    const elapsed = Math.max(0, (now - last) / 1000);
+    const dt = Math.min(0.064, elapsed);
     last = now;
     const running = visual.dataset.state === 'running';
 
     if (running) {
       if (!wasRunning) progress = progressFor(speed);
       coast = null;
-      progress = Math.min(1, progress + dt / STARTUP_S);
+      progress = Math.min(1, progress + elapsed / STARTUP_S);
       speed = smoothstep(progress);
     } else if (speed > 0) {
       if (!coast) coast = { from: speed, elapsed: 0, total: COAST_S * Math.max(0.25, speed) };
-      coast.elapsed += dt;
+      coast.elapsed += elapsed;
       const x = coast.elapsed / coast.total;
       speed = x >= 1 ? 0 : coast.from * (1 - easeCoast(x));
     }
