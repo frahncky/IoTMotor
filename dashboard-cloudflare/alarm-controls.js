@@ -37,9 +37,32 @@
   // A placa entra em alarme tambem quando falta um sensor (sem limite
   // ultrapassado); estes sao os sensores sem leitura na ultima telemetria.
   const falhasDeSensor = () => estado ? [
-    ...(estado.tempOk === false ? ['temperatura sem leitura (DS18B20)'] : []),
-    ...(estado.mpuOk === false ? ['vibração sem leitura (MPU6050)'] : [])
+    ...(estado.tempOk === false ? [{campo: 'temperature', texto: 'temperatura sem leitura (DS18B20)'}] : []),
+    ...(estado.mpuOk === false ? [{campo: 'vibration', texto: 'vibração sem leitura (MPU6050)'}] : [])
   ] : [];
+  // Avisos do painel (dual-dashboard.js) que esta lista ainda não mostra:
+  // perto do limite, quadro de comando sem dados e grandezas sem leitura sem
+  // falha já listada. Limite ultrapassado vem da placa em alarms_firing, e a
+  // falta de dados dos sensores já aparece no resumo.
+  function avisosExtras(falhas) {
+    if (!conectado) return [];
+    const avisos = window.iotmotorPainel?.avisos?.() || [];
+    return avisos.filter(a => a.kind === 'near' ||
+      (a.kind === 'no-data' && a.field === 'command') ||
+      (a.kind === 'missing' && !falhas.some(f => f.campo === a.field)));
+  }
+  function itemAtivo(texto, etiqueta, classe) {
+    const item = document.createElement('li');
+    item.className = classe;
+    const nome = document.createElement('span');
+    nome.className = 'nome';
+    nome.textContent = texto;
+    const estadoAtual = document.createElement('span');
+    estadoAtual.className = 'tag on';
+    estadoAtual.textContent = etiqueta;
+    item.append(nome, estadoAtual);
+    return item;
+  }
   const pronto = () => recente() && !pendente;
 
   function preencherGrandezas() {
@@ -85,11 +108,13 @@
 
     const disparados = recente() && estado.enabled ? [...new Set(estado.firing || [])] : [];
     const falhas = recente() && estado.enabled ? falhasDeSensor() : [];
-    if (disparados.length || falhas.length) {
+    const avisos = avisosExtras(falhas);
+    if (disparados.length || falhas.length || avisos.length) {
       mensagem = [
         disparados.length && `${disparados.length} ${disparados.length === 1 ? 'alarme ativo' : 'alarmes ativos'}`,
-        falhas.length && `${falhas.length} ${falhas.length === 1 ? 'falha de sensor' : 'falhas de sensor'}`
-      ].filter(Boolean).join(' e ') + ' neste momento.';
+        falhas.length && `${falhas.length} ${falhas.length === 1 ? 'falha de sensor' : 'falhas de sensor'}`,
+        avisos.length && `${avisos.length} ${avisos.length === 1 ? 'aviso' : 'avisos'}`
+      ].filter(Boolean).join(' e ').replace(/ e (?=.* e )/, ', ') + ' neste momento.';
       for (const id of disparados) {
         const alarme = (lista || []).find(item => item.id === id);
         const item = document.createElement('li');
@@ -105,18 +130,9 @@
         item.append(nome, estadoAtual);
         alvo.append(item);
       }
-      for (const falha of falhas) {
-        const item = document.createElement('li');
-        item.className = 'atual';
-        const nome = document.createElement('span');
-        nome.className = 'nome';
-        nome.textContent = `Falha de sensor: ${falha}`;
-        const estadoAtual = document.createElement('span');
-        estadoAtual.className = 'tag on';
-        estadoAtual.textContent = 'falha';
-        item.append(nome, estadoAtual);
-        alvo.append(item);
-      }
+      for (const falha of falhas) alvo.append(itemAtivo(`Falha de sensor: ${falha.texto}`, 'falha', 'atual'));
+      for (const aviso of avisos)
+        alvo.append(itemAtivo(aviso.text, aviso.kind === 'near' ? 'atenção' : 'sem leitura', 'aviso'));
     } else if (recente() && estado.enabled) {
       mensagem = 'Nenhum alarme ativo.';
     }
