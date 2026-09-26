@@ -18,6 +18,9 @@
   let active = null;
   let testTimer = null;
   let coasting = null;
+  // Cada pedido de som (automático ou teste) ganha um número; depois de
+  // esperar a gravação carregar, só o pedido mais recente segue.
+  let ultimoPedido = 0;
   let unlocked = false;
 
   function clampVolume(value) {
@@ -462,8 +465,10 @@
 
   async function startAutomatic() {
     if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
+    const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
     await loadSample(ctx);
+    if (pedido !== ultimoPedido) return;  // Um teste começou enquanto carregava.
     if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
 
     stopActive({ fade: false });
@@ -503,9 +508,10 @@
       return;
     }
 
+    const pedido = ++ultimoPedido;
     if (!(await ensureAudio())) return;
     await loadSample(ctx);
-    if (active?.mode === 'test') return;  // Dois cliques enquanto a gravação carregava.
+    if (pedido !== ultimoPedido || active?.mode === 'test') return;  // Pedido mais novo chegou.
     stopActive({ fade: false });
 
     active = { mode: 'test', ...createMotorSound({ startup: true }) };
