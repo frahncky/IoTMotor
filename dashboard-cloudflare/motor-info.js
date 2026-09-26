@@ -8,7 +8,7 @@
 
   // Campo do formulário -> campo no MQTT, com a faixa aceita pela placa.
   const CAMPOS = [
-    {id: 'motorInfoKw', chave: 'power_kw', max: 2000},
+    {id: 'motorInfoCv', chave: 'power_cv', max: 3000},
     {id: 'motorInfoV', chave: 'voltage_v', max: 1000},
     {id: 'motorInfoA', chave: 'current_a', max: 2000},
     {id: 'motorInfoRpm', chave: 'rpm', max: 10000},
@@ -37,6 +37,7 @@
       const v = info?.[campo.chave];
       $(campo.id).value = Number.isFinite(v) ? String(v) : '';
     }
+    $('motorInfoFases').value = info?.phases === 1 || info?.phases === 3 ? String(info.phases) : '';
   }
 
   function renderizar() {
@@ -128,6 +129,7 @@
       if (nome === topico('motor_info')) {
         info = {};
         for (const campo of CAMPOS) if (Number.isFinite(dados[campo.chave])) info[campo.chave] = dados[campo.chave];
+        if (dados.phases === 1 || dados.phases === 3) info.phases = dados.phases;
         preencher();
         renderizar();
         return;
@@ -145,6 +147,7 @@
   }
 
   for (const campo of CAMPOS) $(campo.id).addEventListener('input', () => { editando = true; });
+  $('motorInfoFases').addEventListener('change', () => { editando = true; });
   $('motorInfoForm').addEventListener('submit', evento => {
     evento.preventDefault();
     const motor = {};
@@ -153,6 +156,8 @@
       if (lido.erro) { aviso(lido.erro); return; }
       if (lido.valor !== null) motor[campo.chave] = lido.valor;
     }
+    const fases = Number($('motorInfoFases').value);
+    if (fases === 1 || fases === 3) motor.phases = fases;  // Monofásico ou trifásico.
     if (publicar('motor_info_set', {motor})) aviso('Gravando os dados do motor na placa…');
   });
   $('motorInfoZerar').addEventListener('click', () => {

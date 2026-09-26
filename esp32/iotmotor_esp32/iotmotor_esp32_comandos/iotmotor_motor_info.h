@@ -1,5 +1,5 @@
 #pragma once
-// Dados de placa do motor e contadores de uso (horimetro e partidas),
+// Dados de placa do motor (monofasico ou trifasico, potencia em cv) e contadores de uso (horimetro e partidas),
 // gravados nesta placa: o painel e o app leem os mesmos valores, e eles
 // sobrevivem a reinicio. Todos os dados de placa sao opcionais (0 = nao
 // cadastrado); sem a corrente nominal o painel apenas nao mostra a carga.
@@ -10,11 +10,12 @@
 namespace motorinfo {
 
 struct Dados {
-  float potenciaKw = 0;
+  float potenciaCv = 0;
   float tensaoV = 0;
   float correnteA = 0;
   float fatorServico = 0;
   uint16_t rpm = 0;
+  uint8_t fases = 0;  // 1 = monofasico, 3 = trifasico, 0 = nao informado.
 };
 
 inline Dados dados;
@@ -38,11 +39,12 @@ constexpr uint32_t GRAVAR_A_CADA_S = 600;
 inline void carregar() {
   Preferences memoria;
   if (!memoria.begin("iot-motor", true)) return;
-  dados.potenciaKw = memoria.getFloat("kw", 0);
+  dados.potenciaCv = memoria.getFloat("cv", 0);
   dados.tensaoV = memoria.getFloat("v", 0);
   dados.correnteA = memoria.getFloat("a", 0);
   dados.fatorServico = memoria.getFloat("fs", 0);
   dados.rpm = memoria.getUShort("rpm", 0);
+  dados.fases = memoria.getUChar("fases", 0);
   segundosLigado = memoria.getUInt("horas_s", 0);
   partidas = memoria.getUInt("partidas", 0);
   partidasHoje = memoria.getUInt("hoje", 0);
@@ -122,7 +124,7 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
   };
   Dados novo;
   float rpm = 0;
-  if (!ler("power_kw", 2000, novo.potenciaKw)) { motivo = "potencia: use de 0 a 2000 kW"; return false; }
+  if (!ler("power_cv", 3000, novo.potenciaCv)) { motivo = "potencia: use de 0 a 3000 cv"; return false; }
   if (!ler("voltage_v", 1000, novo.tensaoV)) { motivo = "tensao: use de 0 a 1000 V"; return false; }
   if (!ler("current_a", 2000, novo.correnteA)) { motivo = "corrente: use de 0 a 2000 A"; return false; }
   if (!ler("rpm", 10000, rpm)) { motivo = "rotacao: use de 0 a 10000 rpm"; return false; }
@@ -131,14 +133,21 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
     motivo = "fator de servico: use de 1 a 3 (ou vazio)";
     return false;
   }
+  float fases = 0;
+  if (!ler("phases", 3, fases) || (fases != 0 && fases != 1 && fases != 3)) {
+    motivo = "fases: use 1 (monofasico) ou 3 (trifasico)";
+    return false;
+  }
+  novo.fases = static_cast<uint8_t>(fases);
   novo.rpm = static_cast<uint16_t>(rpm + 0.5f);
   Preferences memoria;
   if (!memoria.begin("iot-motor", false)) { motivo = "falha ao gravar"; return false; }
-  memoria.putFloat("kw", novo.potenciaKw);
+  memoria.putFloat("cv", novo.potenciaCv);
   memoria.putFloat("v", novo.tensaoV);
   memoria.putFloat("a", novo.correnteA);
   memoria.putFloat("fs", novo.fatorServico);
   memoria.putUShort("rpm", novo.rpm);
+  memoria.putUChar("fases", novo.fases);
   memoria.end();
   dados = novo;
   motivo = "dados do motor gravados";
@@ -156,11 +165,12 @@ inline void zerarContadores() {
 
 // Dados de placa para o topico retido "motor_info" (0 = nao cadastrado).
 inline void descrever(JsonDocument& doc) {
-  if (dados.potenciaKw > 0) doc["power_kw"] = dados.potenciaKw;
+  if (dados.potenciaCv > 0) doc["power_cv"] = dados.potenciaCv;
   if (dados.tensaoV > 0) doc["voltage_v"] = dados.tensaoV;
   if (dados.correnteA > 0) doc["current_a"] = dados.correnteA;
   if (dados.rpm > 0) doc["rpm"] = dados.rpm;
   if (dados.fatorServico > 0) doc["service_factor"] = dados.fatorServico;
+  if (dados.fases) doc["phases"] = dados.fases;
 }
 
 }  // namespace motorinfo

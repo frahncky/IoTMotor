@@ -47,10 +47,11 @@ test('dados retidos da placa preenchem o formulário e ficam disponíveis para o
   const h = secao();
   assert.equal(h.api.dados(), null);
   assert.equal(h.no('motorInfoCargaDica').hidden, false);
-  h.receber('motor_info', {current_a: 4.2, voltage_v: 220, rpm: 1730});
+  h.receber('motor_info', {current_a: 4.2, voltage_v: 220, rpm: 1730, phases: 3});
   assert.equal(h.no('motorInfoA').value, '4.2');
   assert.equal(h.no('motorInfoV').value, '220');
-  assert.equal(h.no('motorInfoKw').value, '');
+  assert.equal(h.no('motorInfoCv').value, '');
+  assert.equal(h.no('motorInfoFases').value, '3');
   assert.equal(h.api.dados().current_a, 4.2);
   assert.equal(h.no('motorInfoCargaDica').hidden, true, 'com corrente nominal a dica some');
 });
@@ -59,11 +60,13 @@ test('gravar envia só os campos preenchidos, aceita vírgula e recusa valor for
   const h = secao();
   h.no('motorInfoA').value = '4,2';
   h.no('motorInfoFs').value = '1,15';
+  h.no('motorInfoCv').value = '1,5';
+  h.no('motorInfoFases').value = '1';
   h.no('motorInfoForm').fire('submit');
   const envio = h.cliente.publicados.at(-1);
   assert.equal(envio.topico, 'iotmotor/esp32-01/command');
   assert.equal(envio.dados.action, 'motor_info_set');
-  assert.deepEqual(envio.dados.motor, {current_a: 4.2, service_factor: 1.15});
+  assert.deepEqual(envio.dados.motor, {power_cv: 1.5, current_a: 4.2, service_factor: 1.15, phases: 1});
   h.receber('command_ack', {seq: envio.dados.seq, action: 'motor_info_set', accepted: true, reason: 'dados do motor gravados'});
   assert.match(h.no('motorInfoFeedback').textContent, /confirmou/);
 
