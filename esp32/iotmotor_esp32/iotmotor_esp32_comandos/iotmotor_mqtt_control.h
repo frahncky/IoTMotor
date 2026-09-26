@@ -249,14 +249,23 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     if (ok) publicarMotorInfo();
     return;
   }
-  // Zera horimetro e partidas (troca de motor); so com as saidas paradas.
+  // Manutencao feita: o lembrete volta a contar do horimetro atual.
+  if (!strcmp(acao, "maintenance_done")) {
+    motorinfo::registrarManutencao(relogio::agoraUtc());
+    publicarRespostaControle(seq, true, acao, "manutencao registrada");
+    publicarMotorInfo();
+    return;
+  }
+  // Zera horimetro e partidas (troca de motor); so com as saidas paradas e o
+  // motor parado (em modo instrumentacao ele gira sem rele: vale a corrente).
   if (!strcmp(acao, "motor_counters_reset")) {
-    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva) {
+    for (uint8_t i = 0; i < NUM_RELES; ++i) if (estadoReles[i] || partidaAtiva || motorinfo::girando) {
       publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de zerar");
       return;
     }
     motorinfo::zerarContadores();
     publicarRespostaControle(seq, true, acao, "horimetro e partidas zerados");
+    publicarMotorInfo();
     return;
   }
 

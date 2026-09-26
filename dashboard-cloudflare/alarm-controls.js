@@ -17,7 +17,8 @@
     {campo: 'current', placa: 'command', nome: 'Corrente', unidade: 'A', min: 0, max: 200, passo: 0.1},
     {campo: 'power', placa: 'command', nome: 'Potência', unidade: 'W', min: 0, max: 50000, passo: 10},
     {campo: 'frequency', placa: 'command', nome: 'Frequência', unidade: 'Hz', min: 0, max: 120, passo: 0.5},
-    {campo: 'pf', placa: 'command', nome: 'Fator de potência', unidade: '', min: 0, max: 1, passo: 0.01}
+    {campo: 'pf', placa: 'command', nome: 'Fator de potência', unidade: '', min: 0, max: 1, passo: 0.01},
+    {campo: 'starts_hour', placa: 'command', nome: 'Partidas na última hora', unidade: '', min: 1, max: 60, passo: 1}
   ];
   const grandezaDe = campo => GRANDEZAS.find(g => g.campo === campo);
   const rotulo = campo => {
@@ -47,7 +48,7 @@
   function avisosExtras(falhas) {
     if (!conectado) return [];
     const avisos = window.iotmotorPainel?.avisos?.() || [];
-    return avisos.filter(a => a.kind === 'near' ||
+    return avisos.filter(a => a.kind === 'near' || a.kind === 'maintenance' ||
       (a.kind === 'no-data' && a.field === 'command') ||
       (a.kind === 'missing' && !falhas.some(f => f.campo === a.field)));
   }
@@ -132,7 +133,7 @@
       }
       for (const falha of falhas) alvo.append(itemAtivo(`Falha de sensor: ${falha.texto}`, 'falha', 'atual'));
       for (const aviso of avisos)
-        alvo.append(itemAtivo(aviso.text, aviso.kind === 'near' ? 'atenção' : 'sem leitura', 'aviso'));
+        alvo.append(itemAtivo(aviso.text, aviso.kind === 'near' ? 'atenção' : aviso.kind === 'maintenance' ? 'manutenção' : 'sem leitura', 'aviso'));
     } else if (recente() && estado.enabled) {
       mensagem = 'Nenhum alarme ativo.';
     }
@@ -164,7 +165,7 @@
     alvo.replaceChildren();
     if (!lista) {
       $('alarmeResumo').textContent = conectado
-        ? 'A placa ainda não publicou a lista de alarmes. Se estiver online, está com firmware antigo: atualize na aba Wi-Fi.'
+        ? 'A placa ainda não publicou a lista de alarmes. Se estiver online, está com firmware antigo: atualize na aba Dispositivos.'
         : 'Conecte ao MQTT para ver os alarmes gravados na placa.';
       return;
     }
@@ -238,52 +239,98 @@
     }
   }
 
-  // Sobrecarga pelos dados do motor (motor-info.js): corrente nominal vezes o
-  // fator de serviço (1 quando não cadastrado). Sem corrente nominal, nada.
+  // Alarmes sugeridos pelos dados do motor (motor-info.js). Cada sugestão diz
+  // a grandeza, o sentido e o limite; se já houver alarme nesse sentido, a
+  // sugestão é ajustá-lo, e se ele já estiver no valor, só confirma.
   const numero = v => String(v).replace('.', ',');
-  function sugestaoSobrecarga(motor, alarmes) {
-    const nominal = motor?.current_in_use_a;
-    if (!alarmes || !Number.isFinite(nominal) || nominal <= 0) return null;
-    const fs = Number.isFinite(motor.service_factor) && motor.service_factor >= 1 ? motor.service_factor : 1;
-    const limite = Math.round(nominal * fs * 100) / 100;
-    const g = grandezaDe('current');
-    if (limite < g.min || limite > g.max) return null;
-    // Placa de dupla tensão: diz de qual ligação veio a corrente.
-    const ligacao = Number.isFinite(motor.current_y_a) ? (motor.connection === 'star' ? ' em estrela' : ' em triângulo') : '';
-    const origem = fs > 1
-      ? `corrente nominal${ligacao} ${numero(nominal)} A × fator de serviço ${numero(fs)}`
-      : `corrente nominal${ligacao} ${numero(nominal)} A${Number.isFinite(motor.service_factor) ? '' : ', sem fator de serviço cadastrado'}`;
-    const existente = alarmes.find(a => a.field === 'current' && a.above !== false);
-    if (!existente) return {limite, alarme: null, botao: `Criar alarme de sobrecarga (${numero(limite)} A)`,
-      texto: `Sobrecarga: pelos dados do motor, a corrente não deve passar de ${numero(limite)} A (${origem}). ` +
-        'Ainda não há alarme de corrente acima de um limite.'};
-    if (Math.abs(existente.limit - limite) < 0.005) return {limite, alarme: existente, botao: '',
-      texto: `O alarme de sobrecarga está de acordo com os dados do motor: corrente acima de ${numero(limite)} A.`};
-    return {limite, alarme: existente, botao: `Ajustar para ${numero(limite)} A`,
-      texto: `O alarme de corrente está em ${numero(existente.limit)} A; pelos dados do motor o limite de ` +
-        `sobrecarga é ${numero(limite)} A (${origem}).`};
+  const PARTIDAS_POR_HORA = 6;  // Valor típico de catálogo para motores pequenos.
+  function sugestoesDoMotor(motor, alarmes) {
+    if (!alarmes) return [];
+    const pedidos = [];
+    // Placa de dupla tensão: diz de qual ligação vieram os valores.
+    const ligacao = Number.isFinite(motor?.current_y_a) ? (motor.connection === 'star' ? ' em estrela' : ' em triângulo') : '';
+    const corrente = motor?.current_in_use_a;
+    if (Number.isFinite(corrente) && corrente > 0) {
+      const fs = Number.isFinite(motor.service_factor) && motor.service_factor >= 1 ? motor.service_factor : 1;
+      const origem = fs > 1
+        ? `corrente nominal${ligacao} ${numero(corrente)} A × fator de serviço ${numero(fs)}`
+        : `corrente nominal${ligacao} ${numero(corrente)} A${Number.isFinite(motor.service_factor) ? '' : ', sem fator de serviço cadastrado'}`;
+      pedidos.push({chave: 'sobrecarga', nome: 'sobrecarga', campo: 'current', acima: true,
+        limite: Math.round(corrente * fs * 100) / 100, unidade: 'A', origem});
+    }
+    // Tensão fora de ±10% da nominal: o motor aquece (baixa) ou força o isolamento (alta).
+    const tensao = motor?.voltage_in_use_v;
+    if (Number.isFinite(tensao) && tensao > 0) {
+      const origem = `tensão nominal${ligacao} ${numero(tensao)} V ${'−'}/+ 10%`;
+      pedidos.push({chave: 'subtensao', nome: 'tensão baixa', campo: 'voltage', acima: false,
+        limite: Math.round(tensao * 0.9), unidade: 'V', origem});
+      pedidos.push({chave: 'sobretensao', nome: 'tensão alta', campo: 'voltage', acima: true,
+        limite: Math.round(tensao * 1.1), unidade: 'V', origem});
+    }
+    // Partidas seguidas aquecem o enrolamento; só sugere criar, nunca ajustar.
+    if (motor) pedidos.push({chave: 'partidas', nome: 'partidas em excesso', campo: 'starts_hour', acima: true,
+      limite: PARTIDAS_POR_HORA, unidade: 'por hora', soCriar: true,
+      origem: 'motores pequenos costumam tolerar até 6 por hora; confira o catálogo do fabricante'});
+
+    const sugestoes = [];
+    for (const pedido of pedidos) {
+      const g = grandezaDe(pedido.campo);
+      if (pedido.limite < g.min || pedido.limite > g.max) continue;
+      const sentido = pedido.acima ? 'acima de' : 'abaixo de';
+      const valor = `${numero(pedido.limite)} ${pedido.unidade}`;
+      const existente = alarmes.find(a => a.field === pedido.campo && (a.above !== false) === pedido.acima);
+      if (!existente) {
+        sugestoes.push({...pedido, alarme: null, botao: `Criar alarme de ${pedido.nome} (${sentido} ${valor})`,
+          texto: `${pedido.nome[0].toUpperCase()}${pedido.nome.slice(1)}: alarme ${sentido} ${valor} (${pedido.origem}).`});
+      } else if (pedido.soCriar) {
+        continue;
+      } else if (Math.abs(existente.limit - pedido.limite) < 0.005) {
+        sugestoes.push({...pedido, alarme: existente, botao: '',
+          texto: `O alarme de ${pedido.nome} está de acordo com os dados do motor: ${sentido} ${valor}.`});
+      } else {
+        sugestoes.push({...pedido, alarme: existente, botao: `Ajustar para ${valor}`,
+          texto: `O alarme de ${pedido.nome} está em ${numero(existente.limit)} ${pedido.unidade}; pelos dados ` +
+            `do motor o limite é ${valor} (${pedido.origem}).`});
+      }
+    }
+    return sugestoes;
   }
 
-  function desenharSugestao() {
-    const sugestao = sugestaoSobrecarga(window.iotmotorMotorInfo?.dados?.(), lista);
-    $('alarmeSugestao').hidden = !sugestao;
-    if (!sugestao) return;
-    $('alarmeSugestaoTexto').textContent = sugestao.texto;
-    $('alarmeSugestaoBtn').hidden = !sugestao.botao;
-    $('alarmeSugestaoBtn').textContent = sugestao.botao;
-    $('alarmeSugestaoBtn').disabled = !pronto() || (!sugestao.alarme && lista.length >= maxAlarmes);
-  }
-
-  $('alarmeSugestaoBtn').addEventListener('click', () => {
-    const sugestao = sugestaoSobrecarga(window.iotmotorMotorInfo?.dados?.(), lista);
-    if (!sugestao?.botao) return;
+  function aplicarSugestao(sugestao) {
     const alarme = sugestao.alarme;
-    const corpo = alarme
-      ? {id: alarme.id, field: 'current', board: 'command', above: true, limit: sugestao.limite, on: alarme.on !== false}
-      : {id: novoId('current'), field: 'current', board: 'command', above: true, limit: sugestao.limite, on: true};
+    const corpo = {id: alarme ? alarme.id : novoId(sugestao.campo), field: sugestao.campo, board: 'command',
+      above: sugestao.acima, limit: sugestao.limite, on: alarme ? alarme.on !== false : true};
     if (publicar('alarm_save', {alarm: corpo}, corpo.id))
-      aviso(alarme ? 'Ajustando o alarme de sobrecarga…' : 'Criando o alarme de sobrecarga…');
-  });
+      aviso(alarme ? `Ajustando o alarme de ${sugestao.nome}…` : `Criando o alarme de ${sugestao.nome}…`);
+  }
+
+  let sugestoesDesenhadas = '';
+  function desenharSugestao() {
+    const sugestoes = sugestoesDoMotor(window.iotmotorMotorInfo?.dados?.(), lista);
+    const alvo = $('alarmeSugestoes');
+    $('alarmeSugestao').hidden = !sugestoes.length;
+    const cheia = Boolean(lista) && lista.length >= maxAlarmes;
+    const assinatura = JSON.stringify([sugestoes.map(x => [x.texto, x.botao]), pronto(), cheia]);
+    if (assinatura === sugestoesDesenhadas) return;
+    sugestoesDesenhadas = assinatura;
+    alvo.replaceChildren();
+    for (const sugestao of sugestoes) {
+      const item = document.createElement('li');
+      const texto = document.createElement('p');
+      texto.textContent = sugestao.texto;
+      item.append(texto);
+      if (sugestao.botao) {
+        const botao = document.createElement('button');
+        botao.type = 'button';
+        botao.className = 'btn secondary';
+        botao.textContent = sugestao.botao;
+        botao.disabled = !pronto() || (!sugestao.alarme && cheia);
+        botao.addEventListener('click', () => aplicarSugestao(sugestao));
+        item.append(botao);
+      }
+      alvo.append(item);
+    }
+  }
 
   function limiteAceito(campo, valor, texto) {
     const g = grandezaDe(campo);

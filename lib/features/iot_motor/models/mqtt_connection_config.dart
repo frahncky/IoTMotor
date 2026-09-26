@@ -40,4 +40,13 @@
   /// Desafio publicado por cada placa para os comandos cifrados.
   String get authWildcardTopic => '$topicPrefix/+/auth';
   String get commandAckWildcardTopic => '$topicPrefix/+/command_ack';
+
+  /// Dados de placa do motor, gravados no quadro de comando (retido).
+  String get motorInfoWildcardTopic => '$topicPrefix/+/motor_info';
+
+  /// Versão do firmware de cada placa (retido).
+  String get capabilitiesWildcardTopic => '$topicPrefix/+/capabilities';
+
+  /// Histórico por hora guardado na placa de sensores, um tópico por dia.
+  String get historyWildcardTopic => '$topicPrefix/+/history/+';
 }

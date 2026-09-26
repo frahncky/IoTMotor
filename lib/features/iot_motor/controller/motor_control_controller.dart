@@ -5,6 +5,7 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../models/motor_info.dart';
 import '../models/motor_app_settings.dart';
 import '../models/board_alarm.dart';
 import '../models/device_names.dart';
@@ -94,6 +95,98 @@ class MotorControlController extends ChangeNotifier {
   Set<String> firingAlarmIds = const <String>{};
 
   bool get hasBoardAlarms => alarmsDeviceId != null;
+
+  /// Dados de placa do motor e horímetro/partidas, por quadro de comando: com
+  /// mais de um quadro no mesmo prefixo, cada um guarda os seus.
+  final Map<String, MotorInfo> _motorInfoByDevice = <String, MotorInfo>{};
+  final Map<String, MotorUsage> _motorUsageByDevice = <String, MotorUsage>{};
+
+  /// Quadro de comando em uso: o que aciona os contatores ou, sem telemetria
+  /// ainda, o único que publicou dados do motor.
+  String? get _motorDeviceId {
+    final String? bancada = _benchDeviceId;
+    if (bancada != null) return bancada;
+    final Set<String> placas = <String>{..._motorInfoByDevice.keys, ..._motorUsageByDevice.keys};
+    return placas.length == 1 ? placas.first : null;
+  }
+
+  /// Dados de placa do motor do quadro de comando em uso.
+  MotorInfo? get motorInfo => _motorDeviceId == null ? null : _motorInfoByDevice[_motorDeviceId];
+
+  /// Horímetro e partidas da última telemetria do quadro de comando em uso.
+  MotorUsage? get motorUsage => _motorDeviceId == null ? null : _motorUsageByDevice[_motorDeviceId];
+
+  /// Última telemetria do quadro de comando com a corrente medida.
+  double? get benchCurrent => _benchDeviceId == null ? null : _latestByDevice[_benchDeviceId]?.current;
+
+  /// Vibração RMS (g) da placa de sensores na última telemetria.
+  double? get sensorVibration {
+    for (final TelemetrySample amostra in _latestByDevice.values) {
+      if (amostra.vibration != null) return amostra.vibration;
+    }
+    return null;
+  }
+
+  /// Versão do firmware informada por cada placa.
+  final Map<String, String> firmwareByDevice = <String, String>{};
+
+  /// Histórico por hora guardado em cada placa de sensores, por dia (0 a 6).
+  final Map<String, Map<int, List<BoardHistoryHour>>> _boardHistoryByDevice =
+      <String, Map<int, List<BoardHistoryHour>>>{};
+
+  /// Horas dos últimos 7 dias da placa de sensores em uso (a dos alarmes ou,
+  /// sem ela, a única que publicou histórico), em ordem.
+  List<BoardHistoryHour> get boardHistory {
+    final String? placa =
+        _boardHistoryByDevice.containsKey(alarmsDeviceId)
+            ? alarmsDeviceId
+            : _boardHistoryByDevice.length == 1
+            ? _boardHistoryByDevice.keys.first
+            : null;
+    if (placa == null) return const <BoardHistoryHour>[];
+    final DateTime inicio = DateTime.now().subtract(const Duration(days: 7, hours: 1));
+    final List<BoardHistoryHour> horas = <BoardHistoryHour>[
+      for (final List<BoardHistoryHour> dia in _boardHistoryByDevice[placa]!.values)
+        for (final BoardHistoryHour hora in dia)
+          if (hora.time.isAfter(inicio)) hora,
+    ];
+    horas.sort((BoardHistoryHour a, BoardHistoryHour b) => a.time.compareTo(b.time));
+    return horas;
+  }
+
+  MaintenanceStatus? get maintenanceStatus =>
+      MaintenanceStatus.of(motorInfo, motorUsage?.runSTotal);
+
+  /// Situação do firmware de uma placa frente ao publicado para OTA; null
+  /// enquanto a placa não informou nada.
+  ({String texto, bool atualizar})? firmwareOf(String deviceId) {
+    if (!firmwareByDevice.containsKey(deviceId)) return null;
+    final String instalado = firmwareByDevice[deviceId]!;
+    final int indice = instalado.startsWith('s3-') || deviceId == 'esp32-02' ? 1 : 0;
+    return firmwareSituation(instalado, firmwarePublicado[indice]);
+  }
+
+  /// Manutenção vencida entra na lista de alertas uma vez por vencimento, só
+  /// para o quadro de comando em uso.
+  void _conferirManutencao(String deviceId) {
+    if (deviceId != _motorDeviceId) return;
+    final MaintenanceStatus? status = maintenanceStatus;
+    const String chave = 'manutencao';
+    final String alertKey = '$deviceId:$chave';
+    if (status == null || !status.vencida) {
+      if (_activeAlertKeys.contains(alertKey)) _resolveTelemetryAlert(deviceId: deviceId, metricKey: chave);
+      return;
+    }
+    if (_activeAlertKeys.contains(alertKey)) return;
+    _activeAlertKeys.add(alertKey);
+    _registerAlert(
+      deviceId: deviceId,
+      metricKey: chave,
+      title: 'Manutenção do motor',
+      message: '${status.texto}. Depois do serviço, use "Manutenção feita" no painel.',
+      severity: TelemetryAlertSeverity.warning,
+    );
+  }
 
   void _aplicarAlarmesDaPlaca({
     required String deviceId,
@@ -782,6 +875,11 @@ class MotorControlController extends ChangeNotifier {
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
+    // Uso, dados do motor, versões e histórico voltam (retidos) na próxima conexão.
+    _motorUsageByDevice.clear();
+    _motorInfoByDevice.clear();
+    firmwareByDevice.clear();
+    _boardHistoryByDevice.clear();
     _recebeuDadoAtual = false; // Garante que a UI não mostre valores antigos
     connectionMessage = 'Desconectado';
     statusMessage = 'Conexão encerrada pelo usuário.';
@@ -1684,6 +1782,39 @@ class MotorControlController extends ChangeNotifier {
     // vem do próprio tópico (prefixo/dispositivo/profiles).
     final List<String> partes = topic.split('/');
     final String deviceIdDoTopico = partes.length >= 2 ? partes[partes.length - 2] : '';
+    // Histórico da placa: prefixo/dispositivo/history/<dia>.
+    if (partes.length >= 3 && partes[partes.length - 2] == 'history') {
+      final int? dia = int.tryParse(partes.last);
+      if (dia != null && dia >= 0 && dia < 7) {
+        final String placa = partes[partes.length - 3];
+        (_boardHistoryByDevice[placa] ??= <int, List<BoardHistoryHour>>{})[dia] =
+            BoardHistoryHour.parseDay(payload);
+        _notify();
+      }
+      return;
+    }
+    if (topic.endsWith('/motor_info')) {
+      final MotorInfo? info = MotorInfo.tryParse(payload);
+      if (info == null) {
+        _motorInfoByDevice.remove(deviceIdDoTopico);
+      } else {
+        _motorInfoByDevice[deviceIdDoTopico] = info;
+      }
+      _conferirManutencao(deviceIdDoTopico);
+      _notify();
+      return;
+    }
+    if (topic.endsWith('/capabilities')) {
+      try {
+        final Object? dados = jsonDecode(payload);
+        if (dados is Map<String, dynamic>) {
+          final Object? versao = dados['firmware_version'];
+          firmwareByDevice[deviceIdDoTopico] = versao is String ? versao : '';
+          _notify();
+        }
+      } catch (_) {}
+      return;
+    }
     if (topic.endsWith('/alarms')) {
       _aplicarAlarmesDaPlaca(deviceId: deviceIdDoTopico, payload: payload);
       return;
@@ -2198,6 +2329,11 @@ class MotorControlController extends ChangeNotifier {
     }
     final Object? emExecucao = dados['profile'];
     runningProfileId = emExecucao is String && emExecucao.isNotEmpty ? emExecucao : null;
+    final MotorUsage? uso = MotorUsage.fromMap(dados);
+    if (uso != null) {
+      _motorUsageByDevice[deviceId] = uso;
+      _conferirManutencao(deviceId);
+    }
     final Object? relays = dados['relays'];
     if (relays is List && relays.length == 4 && relays.every((v) => v is bool)) {
       final List<bool> estados = relays.cast<bool>();

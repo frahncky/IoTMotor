@@ -197,11 +197,10 @@ inline void carregar(float vibracaoPadrao, float temperaturaPadrao) {
 }
 
 // Guarda a telemetria do quadro de comando para os alarmes eletricos.
-inline void receberMedidasDoQuadro(const uint8_t* payload, unsigned int tamanho, uint32_t agora) {
-  StaticJsonDocument<1024> entrada;
-  if (deserializeJson(entrada, payload, tamanho)) return;
+// Recebe a telemetria ja lida (uma leitura so, feita por quem assina o topico).
+inline void receberMedidasDoQuadro(JsonVariantConst entrada, uint32_t agora) {
   medidasDoQuadro.clear();
-  for (const char* campo : {"voltage", "current", "power", "energy", "frequency", "pf"})
+  for (const char* campo : {"voltage", "current", "power", "energy", "frequency", "pf", "starts_hour"})
     if (entrada[campo].is<float>()) medidasDoQuadro[campo] = entrada[campo].as<float>();
   medidasDoQuadroEm = agora;
 }

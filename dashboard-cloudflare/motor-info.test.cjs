@@ -141,3 +141,17 @@ test('dupla tensão exige trifásico e os dois pares completos', () => {
   assert.match(h.no('motorInfoFeedback').textContent, /Corrente: use um valor/);
   assert.equal(h.cliente.publicados.length, antes);
 });
+
+test('manutenção: intervalo vai no cadastro e "Manutenção feita" pede o comando próprio', () => {
+  const h = secao();
+  h.no('motorInfoManutH').value = '2000';
+  h.no('motorInfoForm').fire('submit');
+  assert.equal(h.cliente.publicados.at(-1).dados.motor.maint_interval_h, 2000);
+  const envio = h.cliente.publicados.at(-1).dados;
+  h.receber('command_ack', {seq: envio.seq, action: envio.action, accepted: true, reason: 'ok'});
+  h.no('motorInfoManutFeita').fire('click');
+  assert.equal(h.cliente.publicados.at(-1).dados.action, 'maintenance_done');
+  h.receber('motor_info', {maint_interval_h: 2000, maint_done_run_s: 7200, maint_done_utc: 1790000000});
+  assert.equal(h.api.dados().maint_done_run_s, 7200);
+  assert.equal(h.api.dados().maint_done_utc, 1790000000);
+});

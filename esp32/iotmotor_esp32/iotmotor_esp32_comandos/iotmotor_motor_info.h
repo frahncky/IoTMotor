@@ -23,6 +23,7 @@ struct Dados {
   float tensaoEstrelaV = 0;
   float correnteEstrelaA = 0;
   bool emEstrela = false;  // Ligacao em que o motor trabalha (padrao: triangulo).
+  uint32_t manutencaoH = 0;  // Manutencao a cada tantas horas de uso (0 = sem lembrete).
 };
 
 inline Dados dados;
@@ -33,6 +34,16 @@ inline uint32_t segundosLigado = 0;
 inline uint32_t partidas = 0;
 inline uint32_t partidasHoje = 0;
 inline uint32_t diaDasPartidas = 0;
+
+// Ultima manutencao: o horimetro naquele momento e a data (0 = sem registro).
+inline uint32_t manutencaoEmS = 0;
+inline uint32_t manutencaoUtc = 0;
+
+// Instantes (millis) das ultimas partidas, para contar as da ultima hora:
+// partidas seguidas aquecem o enrolamento.
+constexpr uint8_t MAX_PARTIDAS_HORA = 60;
+inline unsigned long partidasRecentes[MAX_PARTIDAS_HORA];
+inline uint8_t totalRecentes = 0;
 
 inline bool girando = false;
 inline unsigned long inicioSessao = 0;
@@ -55,6 +66,9 @@ inline void carregar() {
   dados.tensaoEstrelaV = memoria.getFloat("vy", 0);
   dados.correnteEstrelaA = memoria.getFloat("ay", 0);
   dados.emEstrela = memoria.getBool("estrela", false);
+  dados.manutencaoH = memoria.getUInt("manut_h", 0);
+  manutencaoEmS = memoria.getUInt("manut_s", 0);
+  manutencaoUtc = memoria.getUInt("manut_utc", 0);
   segundosLigado = memoria.getUInt("horas_s", 0);
   partidas = memoria.getUInt("partidas", 0);
   partidasHoje = memoria.getUInt("hoje", 0);
@@ -96,6 +110,11 @@ inline void manter(unsigned long agora, bool ligado, uint32_t utc) {
     restoMs = 0;
     ++partidas;
     ++partidasHoje;
+    if (totalRecentes == MAX_PARTIDAS_HORA) {  // Fila cheia: a mais antiga sai.
+      for (uint8_t i = 0; i + 1 < MAX_PARTIDAS_HORA; ++i) partidasRecentes[i] = partidasRecentes[i + 1];
+      --totalRecentes;
+    }
+    partidasRecentes[totalRecentes++] = agora;
     gravarContadores();
     return;
   }
@@ -114,6 +133,14 @@ inline void manter(unsigned long agora, bool ligado, uint32_t utc) {
     ++segundosSemGravar;
   }
   if (segundosSemGravar >= GRAVAR_A_CADA_S) gravarContadores();
+}
+
+// Partidas nos ultimos 60 minutos (so desde que a placa ligou).
+inline uint8_t partidasNaUltimaHora(unsigned long agora) {
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < totalRecentes; ++i)
+    if (agora - partidasRecentes[i] < 3600000UL) ++n;
+  return n;
 }
 
 inline uint32_t segundosDaSessao(unsigned long agora) {
@@ -171,6 +198,9 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
     return false;
   }
   novo.emEstrela = duplaTensao && ligacao == "star";
+  float manutencao = 0;
+  if (!ler("maint_interval_h", 100000, manutencao)) { motivo = "manutencao: use de 0 a 100000 h"; return false; }
+  novo.manutencaoH = static_cast<uint32_t>(manutencao + 0.5f);
   novo.rpm = static_cast<uint16_t>(rpm + 0.5f);
   Preferences memoria;
   if (!memoria.begin("iot-motor", false)) { motivo = "falha ao gravar"; return false; }
@@ -183,6 +213,7 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
   memoria.putFloat("vy", novo.tensaoEstrelaV);
   memoria.putFloat("ay", novo.correnteEstrelaA);
   memoria.putBool("estrela", novo.emEstrela);
+  memoria.putUInt("manut_h", novo.manutencaoH);
   memoria.end();
   dados = novo;
   motivo = "dados do motor gravados";
@@ -190,12 +221,32 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
 }
 
 // Zera horimetro e partidas (troca de motor). So com o motor parado.
+inline void gravarManutencao() {
+  Preferences memoria;
+  if (!memoria.begin("iot-motor", false)) return;
+  memoria.putUInt("manut_s", manutencaoEmS);
+  memoria.putUInt("manut_utc", manutencaoUtc);
+  memoria.end();
+}
+
+// "Manutencao feita": o proximo lembrete conta a partir do horimetro atual.
+inline void registrarManutencao(uint32_t utc) {
+  manutencaoEmS = segundosLigado;
+  manutencaoUtc = utc;
+  gravarManutencao();
+}
+
 inline void zerarContadores() {
   segundosLigado = 0;
   partidas = 0;
   partidasHoje = 0;
   restoMs = 0;
+  totalRecentes = 0;
   gravarContadores();
+  // Motor novo: a contagem da manutencao recomeca junto com o horimetro.
+  manutencaoEmS = 0;
+  manutencaoUtc = 0;
+  gravarManutencao();
 }
 
 // O NVS guarda estes campos como float de 32 bits. Valores decimais como
@@ -218,6 +269,11 @@ inline void descrever(JsonDocument& doc) {
   if (dados.correnteEstrelaA > 0) doc["current_y_a"] = decimalPublicado(dados.correnteEstrelaA, 3);
   if (dados.tensaoEstrelaV > 0 || dados.correnteEstrelaA > 0)
     doc["connection"] = dados.emEstrela ? "star" : "delta";
+  if (dados.manutencaoH) {
+    doc["maint_interval_h"] = dados.manutencaoH;
+    doc["maint_done_run_s"] = manutencaoEmS;
+  }
+  if (manutencaoUtc) doc["maint_done_utc"] = manutencaoUtc;
 }
 
 }  // namespace motorinfo

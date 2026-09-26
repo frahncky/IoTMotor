@@ -49,7 +49,7 @@ function parseTelemetry(json){
   mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak),
   relays,alarmEnabled:typeof source.alarm_enabled==='boolean'?source.alarm_enabled:null,
   runSTotal:numeric(source.run_s_total),startsTotal:numeric(source.starts_total),
-  startsToday:numeric(source.starts_today),sessionS:numeric(source.session_s),
+  startsToday:numeric(source.starts_today),sessionS:numeric(source.session_s),startsHour:numeric(source.starts_hour),
   alarmsFiring:Array.isArray(source.alarms_firing)?source.alarms_firing.filter(id=>typeof id==='string'&&id):[]};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
@@ -124,11 +124,13 @@ function heatColor(heat){
 }
 // Limites de fábrica da placa de sensores, usados enquanto a lista não chega.
 const LIMITES_PADRAO=[{field:'vibration_peak',above:true,limit:0.5},{field:'temperature',above:true,limit:60}];
-const GRANDEZA_AVISO={vibration_peak:{label:'Vibração (pico)',unit:'g',digits:2,read:s=>s.vibrationPeak}};
+const GRANDEZA_AVISO={vibration_peak:{label:'Vibração (pico)',unit:'g',digits:2,read:s=>s.vibrationPeak},
+ starts_hour:{label:'Partidas na última hora',unit:'',digits:0,source:'command',read:s=>s.startsHour}};
 // Avisos de leitura e de limite, mostrados em "Alarmes ativos" (alarm-controls.js).
 // kind: no-data (placa sem dados), missing (grandeza sem leitura), near (a partir
-// de 90% do limite) ou over (limite ultrapassado).
-function motorWarnings({brokerReady,command,sensor,alarms}){
+// de 90% do limite), over (limite ultrapassado) ou maintenance (manutenção
+// vencida ou a menos de 10% do intervalo).
+function motorWarnings({brokerReady,command,sensor,alarms,maintenance}){
  if(!brokerReady)return [];
  const out=[];
  if(!sensor)out.push({kind:'no-data',field:'sensor',level:'warn',text:'Sensores do motor sem dados'});
@@ -137,6 +139,8 @@ function motorWarnings({brokerReady,command,sensor,alarms}){
  if(!command)out.push({kind:'no-data',field:'command',level:'warn',text:'Quadro de comando sem dados'});
  else if(METRICS.filter(m=>m.source==='command'&&!['apparent','reactive'].includes(m.key)).every(m=>command[m.key]===null||command[m.key]===undefined))
   out.push({kind:'missing',field:'pzem',level:'warn',text:'Medições elétricas (PZEM) sem leitura'});
+ if(maintenance&&(maintenance.vencida||maintenance.perto))
+  out.push({kind:'maintenance',field:'maintenance',level:'warn',text:maintenanceText(maintenance)});
  // Com o monitoramento desligado a placa não alarma; aqui também só ficam os avisos de leitura.
  if(sensor?.alarmEnabled===false)return out;
  // Vários alarmes para a mesma grandeza e sentido: vale o mais grave.
@@ -145,7 +149,7 @@ function motorWarnings({brokerReady,command,sensor,alarms}){
   if(a.on===false||!Number.isFinite(a.limit))continue;
   const metric=METRICS.find(m=>m.key===a.field),extra=GRANDEZA_AVISO[a.field];
   if(!metric&&!extra)continue;
-  const sample=(metric?.source??'sensor')==='command'?command:sensor;
+  const sample=(metric?.source??extra?.source??'sensor')==='command'?command:sensor;
   const value=sample?(extra?extra.read(sample):sample[a.field]):null;
   if(!Number.isFinite(value))continue;
   // Mesma comparação estrita do firmware (alarm_list.h); 90% do limite já avisa.
@@ -162,8 +166,10 @@ function motorWarnings({brokerReady,command,sensor,alarms}){
 }
 // Avisos atuais para a lista de "Alarmes ativos".
 function avisosAtuais(){
- return motorWarnings({brokerReady:state.connected&&state.subscribed,command:freshness('command')?state.command.sample:null,
-  sensor:freshness('sensor')?state.sensor.sample:null,alarms:window.iotmotorAlarme?.lista?.()||null});
+ const command=freshness('command')?state.command.sample:null;
+ return motorWarnings({brokerReady:state.connected&&state.subscribed,command,
+  sensor:freshness('sensor')?state.sensor.sample:null,alarms:window.iotmotorAlarme?.lista?.()||null,
+  maintenance:maintenanceStatus(window.iotmotorMotorInfo?.dados?.(),command?.runSTotal)});
 }
 if(typeof window!=='undefined')window.iotmotorPainel={avisos:avisosAtuais,atualizarMotor:()=>renderMotorVisual()};
 // Carga do motor em % da corrente nominal da placa; null sem cadastro.
@@ -186,6 +192,36 @@ function usageLine({sessionS,runSTotal,startsToday,startsTotal}){
  if(Number.isFinite(startsToday))partes.push(`${startsToday} ${startsToday===1?'partida':'partidas'} hoje`);
  else if(Number.isFinite(startsTotal))partes.push(`${startsTotal} ${startsTotal===1?'partida':'partidas'} no total`);
  return partes.join(' · ');
+}
+// Severidade da vibração pela ISO 10816: velocidade RMS em mm/s estimada da
+// aceleração RMS supondo a vibração na rotação do motor (1×), que é o caso
+// mais comum (desbalanceamento). É uma estimativa: o sensor mede aceleração e
+// sem a rotação cadastrada não há conversão. Classe pela potência: até 15 kW,
+// até 75 kW e acima disso (base rígida).
+const ISO10816=[{ateKw:15,zonas:[0.71,1.8,4.5]},{ateKw:75,zonas:[1.12,2.8,7.1]},{ateKw:Infinity,zonas:[1.8,4.5,11.2]}];
+const ZONAS_VIBRACAO=['Boa','Aceitável','Alerta','Crítica'];
+function vibrationSeverity(rmsG,rpm,powerCv){
+ if(!Number.isFinite(rmsG)||rmsG<0||!Number.isFinite(rpm)||rpm<=0)return null;
+ const mmS=rmsG*9806.65/(2*Math.PI*rpm/60);
+ const kw=Number.isFinite(powerCv)&&powerCv>0?powerCv*0.7355:0;
+ const classe=ISO10816.find(c=>kw<=c.ateKw);
+ const indice=classe.zonas.findIndex(limite=>mmS<limite);
+ const zona=indice<0?3:indice;
+ return {mmS,zona,label:ZONAS_VIBRACAO[zona]};
+}
+// Manutenção pelo horímetro: horas de uso desde a última manutenção contra o
+// intervalo cadastrado em "Dados do motor". null sem intervalo ou sem horímetro.
+function maintenanceStatus(info,runSTotal){
+ const intervaloH=info?.maint_interval_h;
+ if(!Number.isFinite(intervaloH)||intervaloH<=0||!Number.isFinite(runSTotal))return null;
+ const feitaEm=Number.isFinite(info.maint_done_run_s)?info.maint_done_run_s:0;
+ const restanteH=intervaloH-Math.max(0,runSTotal-feitaEm)/3600;
+ return {intervaloH,restanteH,vencida:restanteH<=0,perto:restanteH>0&&restanteH<=intervaloH*0.1};
+}
+function horas(h){return (h>=10?Math.round(h).toString():h.toFixed(1).replace('.',','))+' h';}
+function maintenanceText(m){
+ return m.vencida?`Manutenção vencida há ${horas(-m.restanteH)} de uso (a cada ${m.intervaloH} h)`
+  :`Próxima manutenção em ${horas(m.restanteH)} de uso (a cada ${m.intervaloH} h)`;
 }
 // Comando enviado e ainda não confirmado pelo quadro (null quando já refletiu).
 function commandPendingLabel(pending,motorOn){
@@ -215,11 +251,26 @@ function renderMotorVisual(){
   const carga=cmd.motorOn===true?motorLoad(cmd.current,window.iotmotorMotorInfo?.dados?.()?.current_in_use_a):null;
   dados.push(`Corrente ${cmd.current.toFixed(2)} A${carga!==null?` (carga ${carga}%)`:''}`);
  }
- if(sensor?.vibration!==null&&sensor?.vibration!==undefined)dados.push(`Vibração ${sensor.vibration.toFixed(3)} g`);
+ if(sensor?.vibration!==null&&sensor?.vibration!==undefined){
+  // Classificação só com o motor girando: parado, a vibração é ruído do sensor.
+  const motor=window.iotmotorMotorInfo?.dados?.();
+  const iso=cmd?.motorOn===true?vibrationSeverity(sensor.vibration,motor?.rpm,motor?.power_cv):null;
+  dados.push(`Vibração ${sensor.vibration.toFixed(3)} g${iso?` (≈${iso.mmS.toFixed(1).replace('.',',')} mm/s · ${iso.label})`:''}`);
+  if(iso)root.dataset.vibZone=String(iso.zona);else delete root.dataset.vibZone;
+ }
  if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${sensor.temperature.toFixed(1)} °C`);
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
- const uso=cmd?usageLine(cmd):'';
+ const info=window.iotmotorMotorInfo?.dados?.()||null;
+ const manutencao=maintenanceStatus(info,cmd?.runSTotal);
+ const uso=[cmd?usageLine(cmd):'',manutencao?.vencida?'Manutenção vencida':manutencao?.perto?`Manutenção em ${horas(manutencao.restanteH)}`:'']
+  .filter(Boolean).join(' · ');
+ const manutEl=$('motorInfoManutStatus');
+ if(manutEl){
+  const ultima=Number.isFinite(info?.maint_done_utc)?` Última registrada em ${new Date(info.maint_done_utc*1000).toLocaleDateString('pt-BR')}.`:'';
+  manutEl.textContent=manutencao?`${maintenanceText(manutencao)}.${ultima}`
+   :info?.maint_interval_h>0?`Aguardando o horímetro do quadro.${ultima}`:ultima.trim();
+ }
  const usoEl=$('motorVisualUso');if(usoEl){usoEl.hidden=!uso;usoEl.textContent=uso;}
  const avisos=[parts.has('temperature')&&'alarme de temperatura',parts.has('vibration')&&'alarme de vibração',
   parts.has('other')&&'alarme ativo'].filter(Boolean);
@@ -277,7 +328,7 @@ function disconnect(){const old=state.client;state.generation++;state.client=nul
  window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
  window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
- window.iotmotorAlarme?.disconnect?.();window.iotmotorPerfis?.disconnect?.();window.iotmotorMotorInfo?.disconnect?.();
+ window.iotmotorAlarme?.disconnect?.();window.iotmotorPerfis?.disconnect?.();window.iotmotorMotorInfo?.disconnect?.();window.iotmotorHistorico?.disconnect?.();
  reset();pill('Desconectado');diag('Desconectado.');}
 function ingest(which,raw,packet){
  if(packet?.retain===true){diag(`Telemetria retida antiga de ${which==='command'?'ESP32 PZEM':'ESP32-S3'} ignorada.`);return false;}
@@ -310,7 +361,7 @@ function connect(automatico){
  try{client=window.mqtt.connect(config.broker,{clientId:`iotmotor_dual_${Math.random().toString(36).slice(2,11)}`,clean:true,protocolVersion:4,reconnectPeriod:4000,connectTimeout:10000,keepalive:30,resubscribe:true});}
  catch(e){pill('Falha MQTT','error');diag(e.message);return;}
  state.client=client;reset();pill('Conectando…','wait');diag(`Conectando ${config.broker}; dispositivos ${config.commandDevice} e ${config.sensorDevice}.`);
- if(!automatico){window.iotmotorRemoteControls?.connect?.();window.iotmotorWifi?.connect?.();window.iotmotorAlarme?.connect?.();window.iotmotorPerfis?.connect?.();window.iotmotorMotorInfo?.connect?.();}
+ if(!automatico){window.iotmotorRemoteControls?.connect?.();window.iotmotorWifi?.connect?.();window.iotmotorAlarme?.connect?.();window.iotmotorPerfis?.connect?.();window.iotmotorMotorInfo?.connect?.();window.iotmotorHistorico?.connect?.();}
  const active=()=>state.client===client&&state.generation===generation;
  client.on('connect',()=>{
   if(!active())return;state.connected=true;pill('Broker conectado','live');
@@ -434,4 +485,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationSeverity,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};

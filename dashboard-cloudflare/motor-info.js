@@ -10,7 +10,8 @@
   const CAMPOS = [
     {id: 'motorInfoCv', chave: 'power_cv', max: 3000},
     {id: 'motorInfoRpm', chave: 'rpm', max: 10000},
-    {id: 'motorInfoFs', chave: 'service_factor', min: 1, max: 3}
+    {id: 'motorInfoFs', chave: 'service_factor', min: 1, max: 3},
+    {id: 'motorInfoManutH', chave: 'maint_interval_h', max: 100000}
   ];
   // Tensão e corrente aceitam um valor ou dois, como na placa do trifásico de
   // dupla tensão (220/380 V - 12,6/7,3 A): o primeiro é o do triângulo (menor
@@ -89,6 +90,7 @@
     const pronto = conectado && !pendente;
     $('motorInfoSalvar').disabled = !pronto;
     $('motorInfoZerar').disabled = !pronto;
+    $('motorInfoManutFeita').disabled = !pronto;
     $('motorInfoCargaDica').hidden = Number.isFinite(emUso(info)?.current_in_use_a);
   }
 
@@ -179,6 +181,10 @@
           if (Number.isFinite(dados[chave])) info[chave] = normalizarDecimal(chave, dados[chave]);
         if (dados.phases === 1 || dados.phases === 3) info.phases = dados.phases;
         if (dados.connection === 'delta' || dados.connection === 'star') info.connection = dados.connection;
+        // Última manutenção (horímetro e data), registrada pelo botão "Manutenção feita".
+        for (const chave of ['maint_done_run_s', 'maint_done_utc'])
+          if (Number.isFinite(dados[chave])) info[chave] = dados[chave];
+        window.iotmotorPainel?.atualizarMotor?.();
         preencher();
         renderizar();
         return;
@@ -226,6 +232,11 @@
     if (!confirm('Zerar o horímetro e o contador de partidas do quadro de comando?\n\n' +
                  'Use ao trocar de motor. O motor precisa estar parado.')) return;
     if (publicar('motor_counters_reset', {})) aviso('Zerando horímetro e partidas…');
+  });
+
+  $('motorInfoManutFeita').addEventListener('click', () => {
+    if (!confirm('Registrar a manutenção como feita agora?\n\nO próximo lembrete conta a partir do horímetro atual.')) return;
+    if (publicar('maintenance_done', {})) aviso('Registrando a manutenção…');
   });
 
   window.iotmotorMotorInfo = {

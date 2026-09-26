@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationSeverity,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -196,4 +196,46 @@ test('comando enviado mostra "aguardando o quadro" até o estado mudar',()=>{
  assert.equal(commandPendingLabel({action:'start'},true),null);
  assert.equal(commandPendingLabel({action:'stop'},true),'Desligando…');
  assert.equal(commandPendingLabel({action:'stop'},false),null);
+});
+
+test('manutenção pelo horímetro: em dia, perto e vencida, com aviso em Alarmes ativos',()=>{
+ const info={maint_interval_h:2000,maint_done_run_s:3600*100};
+ assert.equal(maintenanceStatus({},3600),null,'sem intervalo cadastrado');
+ assert.equal(maintenanceStatus(info,null),null,'sem horímetro');
+ const emDia=maintenanceStatus(info,3600*600);
+ assert.deepEqual([emDia.restanteH,emDia.vencida,emDia.perto],[1500,false,false]);
+ const perto=maintenanceStatus(info,3600*1950);
+ assert.equal(perto.perto,true);
+ assert.equal(maintenanceText(perto),'Próxima manutenção em 150 h de uso (a cada 2000 h)');
+ const vencida=maintenanceStatus(info,3600*2100+1800);
+ assert.equal(vencida.vencida,true);
+ assert.equal(maintenanceText(vencida),'Manutenção vencida há 0,5 h de uso (a cada 2000 h)');
+ const cmd={voltage:220,current:1,power:null,pf:null,frequency:null,energy:null};
+ const sensor={vibration:0.01,temperature:30,vibrationPeak:0.02};
+ const avisos=motorWarnings({brokerReady:true,command:cmd,sensor,alarms:[],maintenance:vencida});
+ assert.deepEqual(avisos.map(a=>a.kind),['maintenance']);
+ assert.equal(motorWarnings({brokerReady:true,command:cmd,sensor,alarms:[],maintenance:emDia}).length,0);
+});
+
+test('partidas na última hora: lidas da telemetria e avisadas perto do limite',()=>{
+ const cmd=parseTelemetry({device_id:'esp32-01',voltage:220,current:1,starts_hour:6});
+ assert.equal(cmd.startsHour,6);
+ const sensor={vibration:0.01,temperature:30,vibrationPeak:0.02};
+ const alarmes=[{id:'partidas',field:'starts_hour',above:true,limit:6,on:true}];
+ assert.deepEqual(motorWarnings({brokerReady:true,command:cmd,sensor,alarms:alarmes}).map(a=>a.text),
+  ['Partidas na última hora alta: 6 (limite 6)']);
+});
+
+test('vibração pela ISO 10816: mm/s estimado na rotação e faixa pela potência',()=>{
+ assert.equal(vibrationSeverity(0.01,null,5),null,'sem rotação não há conversão');
+ // 0,01 g a 1800 rpm (30 Hz): 0,52 mm/s -> Boa na classe até 15 kW.
+ const boa=vibrationSeverity(0.01,1800,5);
+ assert.equal(boa.mmS.toFixed(2),'0.52');
+ assert.equal(boa.label,'Boa');
+ assert.equal(vibrationSeverity(0.03,1800,5).label,'Aceitável');  // 1,56 mm/s
+ assert.equal(vibrationSeverity(0.06,1800,5).label,'Alerta');     // 3,1 mm/s
+ assert.equal(vibrationSeverity(0.1,1800,5).label,'Crítica');     // 5,2 mm/s
+ // Motor maior (50 cv ≈ 37 kW): os mesmos 2,6 mm/s que alertam no pequeno ainda são aceitáveis.
+ assert.equal(vibrationSeverity(0.05,1800,5).label,'Alerta');
+ assert.equal(vibrationSeverity(0.05,1800,50).label,'Aceitável');
 });
