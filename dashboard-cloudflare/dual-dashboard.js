@@ -177,9 +177,7 @@ function renderMotorVisual(){
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
  const warnings=motorWarnings({brokerReady:state.connected&&state.subscribed,command:cmd,sensor,alarms});
- const flag=$('motorFlag'),lista=$('motorWarnings');
- if(flag){flag.hidden=!warnings.length;flag.textContent=warnings.length>1?`! ${warnings.length}`:'!';
-  flag.className=`motor-flag ${warnings.some(w=>w.level==='alarm')?'alarm':'warn'}`;flag.title=warnings.map(w=>w.text).join('\n');}
+ const lista=$('motorWarnings');
  if(lista){const atual=warnings.map(w=>`${w.level}:${w.text}`).join('|');
   if(lista.dataset.sig!==atual){lista.dataset.sig=atual;lista.replaceChildren(...warnings.map(w=>{const li=document.createElement('li');li.className=w.level;li.textContent=w.text;return li;}));}}
  const avisos=[parts.has('temperature')&&'alarme de temperatura',parts.has('vibration')&&'alarme de vibração',
