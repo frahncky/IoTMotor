@@ -135,3 +135,10 @@ test('auth de outra placa e ignorado; esquecer derruba o desafio', () => {
   selo.esquecer('esp32-01');
   assert.equal(selo.exigeSelo('esp32-01'), false);
 });
+
+test('recusa por ação desconhecida vira aviso para atualizar o firmware', () => {
+  const {selo} = setup();
+  assert.match(selo.motivo('unknown_action'), /firmware novo/);
+  assert.equal(selo.motivo('already_on'), 'already_on', 'os demais motivos passam como vieram');
+  assert.equal(selo.motivo(undefined), undefined);
+});

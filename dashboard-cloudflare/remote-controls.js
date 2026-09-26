@@ -194,7 +194,7 @@
         }
       } else if (name === topic('command_ack') && pending && data.seq === pending.seq) {
         if (!data.accepted) {
-          feedback('Comando recusado pelo ESP32: ' + (data.reason || 'verifique o estado do dispositivo'));
+          feedback('Comando recusado pelo ESP32: ' + (window.iotmotorSelo?.motivo?.(data.reason) || data.reason || 'verifique o estado do dispositivo'));
           pending = null;
         } else {
           feedback(data.action === 'stop' ? 'Parada recebida; aguardando estado dos contatores.' :
