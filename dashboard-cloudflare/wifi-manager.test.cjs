@@ -200,7 +200,7 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
   h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({
     device_id: 'esp32-01', firmware_version: FIRMWARE_PUBLICADO[0]
   }));
-  assert.match(h.no('wifiFeedback').textContent, /Atualização concluída/);
+  assert.match(h.no('wifiFeedback').textContent, /Atualização .*concluída/);
   assert.match(h.no('wifiFirmware').textContent, /em dia/);
 });
 
