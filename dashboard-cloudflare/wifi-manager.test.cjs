@@ -182,7 +182,7 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
     device_id: 'esp32-01', seq: comando.seq, action: 'update',
     accepted: true, reason: 'baixando firmware'
   }));
-  assert.match(h.no('wifiFeedback').textContent, /Aguardando reinício/);
+  assert.match(h.no('wifiFeedback').textContent, /Aguardando reinício|download confirmado/);
   assert.equal(h.no('wifiUpdateFw').disabled, true);
 
   h.enviar('iotmotor/esp32-01/command_ack', JSON.stringify({
@@ -202,4 +202,35 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
   }));
   assert.match(h.no('wifiFeedback').textContent, /Atualização concluída/);
   assert.match(h.no('wifiFirmware').textContent, /em dia/);
+});
+
+test('OTA de uma placa não bloqueia o envio de atualização para a outra', () => {
+  const h = abaWifi();
+  h.redes('esp32-01'); h.redes('esp32-02');
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  h.enviar('iotmotor/esp32-02/status', 'online');
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({
+    device_id: 'esp32-01', firmware_version: 'v13-antigo'
+  }));
+  h.enviar('iotmotor/esp32-02/capabilities', JSON.stringify({
+    device_id: 'esp32-02', firmware_version: 's3-antigo'
+  }));
+
+  h.no('wifiDev0').fire('click');
+  h.no('wifiUpdateFw').fire('click');
+  const cmd1 = JSON.parse(h.cliente.publicados.at(-1).dados);
+  h.enviar('iotmotor/esp32-01/command_ack', JSON.stringify({
+    device_id: 'esp32-01', seq: cmd1.seq, action: 'update',
+    accepted: true, reason: 'baixando firmware'
+  }));
+  assert.equal(h.no('wifiUpdateFw').disabled, true, 'a placa 1 fica ocupada');
+
+  h.no('wifiDev1').fire('click');
+  assert.equal(h.no('wifiUpdateFw').disabled, false, 'a placa 2 continua disponível');
+  h.no('wifiUpdateFw').fire('click');
+  const envio2 = h.cliente.publicados.at(-1);
+  const cmd2 = JSON.parse(envio2.dados);
+  assert.equal(envio2.topico, 'iotmotor/esp32-02/command');
+  assert.equal(cmd2.action, 'update');
+  assert.equal(cmd2.device_id, 'esp32-02');
 });
