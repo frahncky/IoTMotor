@@ -82,6 +82,7 @@
     }
 
     ctx = ctx || new AudioCtx();
+    loadSample(ctx);
     if (ctx.state === 'suspended') {
       try { await ctx.resume(); } catch (_) {}
     }
@@ -112,7 +113,7 @@
   const FAN_BLADES = 5;
   const STARTUP_S = 1.8;
   const COAST_S = 3.4;
-  const HUM_LEVEL = 0.26;
+  const HUM_LEVEL = 0.14;
   const MIX_LEVEL = 0.42;
 
   const easeStartup = (x) => x * x * (3 - 2 * x);
@@ -134,6 +135,38 @@
     const real = new Float32Array(harmonics.length);
     const imag = Float32Array.from(harmonics);
     return audioCtx.createPeriodicWave(real, imag);
+  }
+
+  // Parâmetros que acompanham a rotação ("speed": 0 parado, 1 nominal).
+  // Começa parado e acelera em STARTUP_S; rampSpeed também faz a parada.
+  function speedControl(driven, now, startup) {
+    let segment = { t0: now, dur: 0, from: startup ? 0 : 1, to: startup ? 0 : 1, ease: easeStartup };
+
+    function speedAt(time) {
+      const { t0, dur, from, to, ease } = segment;
+      if (time <= t0 || dur <= 0) return time <= t0 ? from : to;
+      if (time >= t0 + dur) return to;
+      return from + (to - from) * ease((time - t0) / dur);
+    }
+
+    function rampSpeed(to, dur, ease, time) {
+      const from = speedAt(time);
+      const start = time + 0.005;
+      const points = 96;
+      for (const [param, map] of driven) {
+        holdParam(param, time);
+        const curve = new Float32Array(points);
+        for (let i = 0; i < points; i += 1) {
+          curve[i] = map(from + (to - from) * ease(i / (points - 1)));
+        }
+        param.setValueCurveAtTime(curve, start, dur);
+      }
+      segment = { t0: start, dur, from, to, ease };
+    }
+
+    for (const [param, map] of driven) param.setValueAtTime(map(segment.from), now);
+    if (startup) rampSpeed(1, STARTUP_S, easeStartup, now);
+    return { speedAt, rampSpeed };
   }
 
   function buildMotorSound(audioCtx, destination, targetGain, { startup = true } = {}) {
@@ -220,37 +253,12 @@
       [blade.frequency, (s) => Math.max(0.5, ROTOR_HZ * FAN_BLADES * s)],
       [bladeDepth.gain, (s) => 1.1 * s * s],
       [fanAmp.gain, (s) => 2.4 * s ** 1.6],
-      [fanFilter.frequency, (s) => 160 + 1900 * s],
+      [fanFilter.frequency, (s) => 160 + 1300 * s],
       [fanBody.frequency, (s) => Math.max(40, ROTOR_HZ * FAN_BLADES * s)],
-      [bearingGain.gain, (s) => 0.05 * s],
+      [bearingGain.gain, (s) => 0.02 * s],
     ];
 
-    let segment = { t0: now, dur: 0, from: startup ? 0 : 1, to: startup ? 0 : 1, ease: easeStartup };
-
-    function speedAt(time) {
-      const { t0, dur, from, to, ease } = segment;
-      if (time <= t0 || dur <= 0) return time <= t0 ? from : to;
-      if (time >= t0 + dur) return to;
-      return from + (to - from) * ease((time - t0) / dur);
-    }
-
-    function rampSpeed(to, dur, ease, time) {
-      const from = speedAt(time);
-      const start = time + 0.005;
-      const points = 96;
-      for (const [param, map] of driven) {
-        holdParam(param, time);
-        const curve = new Float32Array(points);
-        for (let i = 0; i < points; i += 1) {
-          curve[i] = map(from + (to - from) * ease(i / (points - 1)));
-        }
-        param.setValueCurveAtTime(curve, start, dur);
-      }
-      segment = { t0: start, dur, from, to, ease };
-    }
-
-    for (const [param, map] of driven) param.setValueAtTime(map(segment.from), now);
-    if (startup) rampSpeed(1, STARTUP_S, easeStartup, now);
+    const { speedAt, rampSpeed } = speedControl(driven, now, startup);
 
     const sources = [hum, hum60, rotor, blade, fanNoise, bearingNoise];
     for (const source of [hum, hum60, rotor, blade, fanNoise]) source.start(now);
@@ -277,11 +285,99 @@
     return { master, sources, stop };
   }
 
+  // Gravação real de um motor (motor-ligado.mp3). Toca em loop o trecho
+  // estável, sem os estalos do interruptor no início e perto de 3,75 s.
+  const SAMPLE_URL = './motor-ligado.mp3';
+  const LOOP_START_S = 0.6;
+  const LOOP_END_S = 3.55;
+  const LOOP_XFADE_S = 0.25;
+  const SAMPLE_RMS = 0.25;  // Nível do loop, próximo do som sintetizado.
+  let samplePromise = null;
+  let sample = null;
+
+  function loadSample(audioCtx) {
+    if (!samplePromise) {
+      samplePromise = fetch(SAMPLE_URL)
+        .then((resposta) => {
+          if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+          return resposta.arrayBuffer();
+        })
+        .then((dados) => audioCtx.decodeAudioData(dados))
+        .then((decoded) => { sample = makeLoopBuffer(audioCtx, decoded); return sample; })
+        .catch(() => null);  // Sem o arquivo, fica o som sintetizado.
+    }
+    return samplePromise;
+  }
+
+  // Emenda o fim do trecho sobre o começo (potência constante) para o loop
+  // não dar clique, e calcula o ganho que leva o trecho ao nível SAMPLE_RMS.
+  function makeLoopBuffer(audioCtx, decoded) {
+    const rate = decoded.sampleRate;
+    const start = Math.floor(LOOP_START_S * rate);
+    const end = Math.min(decoded.length, Math.floor(LOOP_END_S * rate));
+    const fade = Math.floor(LOOP_XFADE_S * rate);
+    const length = end - start - fade;
+    const buffer = audioCtx.createBuffer(decoded.numberOfChannels, length, rate);
+    let squares = 0;
+    for (let c = 0; c < decoded.numberOfChannels; c += 1) {
+      const src = decoded.getChannelData(c);
+      const dst = buffer.getChannelData(c);
+      for (let i = 0; i < length; i += 1) dst[i] = src[start + i];
+      for (let i = 0; i < fade; i += 1) {
+        const x = (i / fade) * Math.PI / 2;
+        dst[i] = src[start + i] * Math.sin(x) + src[start + length + i] * Math.cos(x);
+      }
+      for (let i = 0; i < length; i += 1) squares += dst[i] * dst[i];
+    }
+    const rms = Math.sqrt(squares / (length * decoded.numberOfChannels)) || 1;
+    return { buffer, level: SAMPLE_RMS / rms };
+  }
+
+  // Partida e parada aceleram/desaceleram a própria gravação (tom e volume
+  // sobem juntos), nas mesmas curvas da animação da ventoinha.
+  function buildSampleSound(audioCtx, destination, targetGain, loop, { startup = true } = {}) {
+    const now = audioCtx.currentTime;
+    const master = audioCtx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(Math.max(targetGain, 0.0001), now + 0.06);
+    master.connect(destination);
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = loop.buffer;
+    source.loop = true;
+    const envelope = audioCtx.createGain();
+    source.connect(envelope).connect(master);
+
+    const driven = [
+      [source.playbackRate, (s) => 0.35 + 0.65 * s],
+      [envelope.gain, (s) => loop.level * Math.min(1, s * 1.4)],
+    ];
+    const { speedAt, rampSpeed } = speedControl(driven, now, startup);
+    source.start(now, Math.random() * loop.buffer.duration);
+
+    function stop({ fade = true } = {}) {
+      const time = audioCtx.currentTime;
+      if (!fade) {
+        holdParam(master.gain, time);
+        master.gain.setTargetAtTime(0.0001, time, 0.01);
+        return 0.05;
+      }
+      const coast = COAST_S * Math.max(0.25, speedAt(time));
+      rampSpeed(0, coast, easeCoast, time);
+      return coast + 0.1;
+    }
+
+    return { master, sources: [source], stop };
+  }
+
   function createMotorSound({ startup = true } = {}) {
     if (!ctx) return null;
     // Um som anterior ainda desacelerando não pode tocar junto com o novo.
     silenceCoasting();
-    return buildMotorSound(ctx, ctx.destination, gainForVolume(settings.volume), { startup });
+    const target = gainForVolume(settings.volume);
+    return sample
+      ? buildSampleSound(ctx, ctx.destination, target, sample, { startup })
+      : buildMotorSound(ctx, ctx.destination, target, { startup });
   }
 
   function releaseSound(playing, tail) {
@@ -328,6 +424,8 @@
   async function startAutomatic() {
     if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
     if (!(await ensureAudio())) return;
+    await loadSample(ctx);
+    if (!settings.enabled || currentMotorState() !== 'running' || active?.mode === 'auto') return;
 
     stopActive({ fade: false });
     active = { mode: 'auto', ...createMotorSound({ startup: true }) };
@@ -367,6 +465,8 @@
     }
 
     if (!(await ensureAudio())) return;
+    await loadSample(ctx);
+    if (active?.mode === 'test') return;  // Dois cliques enquanto a gravação carregava.
     stopActive({ fade: false });
 
     active = { mode: 'test', ...createMotorSound({ startup: true }) };
