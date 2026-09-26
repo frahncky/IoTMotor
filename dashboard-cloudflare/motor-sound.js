@@ -17,6 +17,7 @@
   let ctx = null;
   let active = null;
   let testTimer = null;
+  let coasting = null;
   let unlocked = false;
 
   function clampVolume(value) {
@@ -50,11 +51,24 @@
     return Math.max(0.0001, 0.57 * normalized * normalized);
   }
 
-  function makeNoiseBuffer(audioCtx, seconds = 2) {
+  // Ruído rosa (filtro de Paul Kellet): mais natural que o branco para o ar
+  // empurrado pela ventoinha e para o "corpo" do motor.
+  function makeNoiseBuffer(audioCtx, seconds = 3) {
     const length = Math.max(1, Math.floor(audioCtx.sampleRate * seconds));
     const buffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
     const data = buffer.getChannelData(0);
-    for (let i = 0; i < length; i += 1) data[i] = Math.random() * 2 - 1;
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < length; i += 1) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+      b6 = white * 0.115926;
+    }
     return buffer;
   }
 
@@ -89,67 +103,206 @@
     enabledText.dataset.state = settings.enabled ? 'on' : 'off';
   }
 
+  // Motor de indução trifásico de 4 polos em rede de 60 Hz:
+  // - zumbido magnético em 120 Hz (2× a rede) com harmônicos, presente assim
+  //   que o motor é energizado e cortado na hora em que é desligado;
+  // - rotor a ~1750 rpm (29,2 Hz) e ventoinha de 5 pás (~146 Hz de passagem);
+  // - ar da ventoinha e rolamentos, que sobem e descem com a rotação.
+  const ROTOR_HZ = 29.2;
+  const FAN_BLADES = 5;
+  const STARTUP_S = 1.8;
+  const COAST_S = 3.4;
+  const HUM_LEVEL = 0.26;
+  const MIX_LEVEL = 0.42;
+
+  const easeStartup = (x) => x * x * (3 - 2 * x);
+  const easeCoast = (x) => (1 - Math.exp(-2.2 * x)) / (1 - Math.exp(-2.2));
+
+  function holdParam(param, time) {
+    if (typeof param.cancelAndHoldAtTime === 'function') {
+      param.cancelAndHoldAtTime(time);
+    } else {
+      param.cancelScheduledValues(time);
+      param.setValueAtTime(param.value, time);
+    }
+  }
+
+  function makeHumWave(audioCtx) {
+    // Fundamental de 120 Hz com harmônicos pares/ímpares decrescentes: dá o
+    // "zumbido áspero" de transformador em vez de um tom puro.
+    const harmonics = [0, 1, 0.55, 0.34, 0.22, 0.12, 0.09, 0.05, 0.03];
+    const real = new Float32Array(harmonics.length);
+    const imag = Float32Array.from(harmonics);
+    return audioCtx.createPeriodicWave(real, imag);
+  }
+
+  function buildMotorSound(audioCtx, destination, targetGain, { startup = true } = {}) {
+    const now = audioCtx.currentTime;
+    const master = audioCtx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(Math.max(targetGain, 0.0001), now + 0.06);
+    master.connect(destination);
+    // Nível da mistura: mantém o pico abaixo de 1 mesmo com volume em 100%.
+    const bus = audioCtx.createGain();
+    bus.gain.value = MIX_LEVEL;
+    bus.connect(master);
+
+    const noiseBuffer = makeNoiseBuffer(audioCtx, 3);
+    const noiseSource = () => {
+      const src = audioCtx.createBufferSource();
+      src.buffer = noiseBuffer;
+      src.loop = true;
+      return src;
+    };
+
+    // Zumbido elétrico (frequência fixa: depende da rede, não da rotação).
+    const hum = audioCtx.createOscillator();
+    hum.setPeriodicWave(makeHumWave(audioCtx));
+    hum.frequency.value = 120;
+    const hum60 = audioCtx.createOscillator();
+    hum60.type = 'sine';
+    hum60.frequency.value = 60;
+    const hum60Gain = audioCtx.createGain();
+    hum60Gain.gain.value = 0.35;
+    const humGain = audioCtx.createGain();
+    humGain.gain.setValueAtTime(0, now);
+    if (startup) {
+      // Corrente de partida alta: o zumbido começa mais forte e assenta.
+      humGain.gain.linearRampToValueAtTime(HUM_LEVEL * 1.7, now + 0.05);
+      humGain.gain.setTargetAtTime(HUM_LEVEL, now + 0.5, 0.45);
+    } else {
+      humGain.gain.linearRampToValueAtTime(HUM_LEVEL, now + 0.05);
+    }
+    // "Energia": corta o zumbido inteiro (inclusive a modulação do rotor).
+    const humPower = audioCtx.createGain();
+    hum.connect(humGain);
+    hum60.connect(hum60Gain).connect(humGain);
+    humGain.connect(humPower).connect(bus);
+
+    // Rotor: leve desbalanceamento que modula o zumbido e um ronco grave.
+    const rotor = audioCtx.createOscillator();
+    rotor.type = 'triangle';
+    const rotorOut = audioCtx.createGain();
+    rotor.connect(rotorOut).connect(bus);
+    const rotorMod = audioCtx.createGain();
+    rotor.connect(rotorMod).connect(humGain.gain);
+
+    // Ar da ventoinha: ruído rosa filtrado, pulsando na passagem das pás.
+    const fanNoise = noiseSource();
+    const fanFilter = audioCtx.createBiquadFilter();
+    fanFilter.type = 'lowpass';
+    fanFilter.Q.value = 0.6;
+    const fanBody = audioCtx.createBiquadFilter();
+    fanBody.type = 'peaking';
+    fanBody.Q.value = 1.2;
+    fanBody.gain.value = 6;
+    const fanAmp = audioCtx.createGain();
+    fanNoise.connect(fanFilter).connect(fanBody).connect(fanAmp).connect(bus);
+    const blade = audioCtx.createOscillator();
+    blade.type = 'sine';
+    const bladeDepth = audioCtx.createGain();
+    blade.connect(bladeDepth).connect(fanAmp.gain);
+
+    // Rolamentos: chiado agudo bem discreto.
+    const bearingNoise = noiseSource();
+    const bearingFilter = audioCtx.createBiquadFilter();
+    bearingFilter.type = 'bandpass';
+    bearingFilter.frequency.value = 5200;
+    bearingFilter.Q.value = 0.9;
+    const bearingGain = audioCtx.createGain();
+    bearingNoise.connect(bearingFilter).connect(bearingGain).connect(bus);
+
+    // Tudo que acompanha a rotação é derivado de "speed" (0 parado, 1 nominal).
+    const driven = [
+      [rotor.frequency, (s) => Math.max(0.5, ROTOR_HZ * s)],
+      [rotorOut.gain, (s) => 0.10 * s],
+      [rotorMod.gain, (s) => 0.05 * s],
+      [blade.frequency, (s) => Math.max(0.5, ROTOR_HZ * FAN_BLADES * s)],
+      [bladeDepth.gain, (s) => 1.1 * s * s],
+      [fanAmp.gain, (s) => 2.4 * s ** 1.6],
+      [fanFilter.frequency, (s) => 160 + 1900 * s],
+      [fanBody.frequency, (s) => Math.max(40, ROTOR_HZ * FAN_BLADES * s)],
+      [bearingGain.gain, (s) => 0.05 * s],
+    ];
+
+    let segment = { t0: now, dur: 0, from: startup ? 0 : 1, to: startup ? 0 : 1, ease: easeStartup };
+
+    function speedAt(time) {
+      const { t0, dur, from, to, ease } = segment;
+      if (time <= t0 || dur <= 0) return time <= t0 ? from : to;
+      if (time >= t0 + dur) return to;
+      return from + (to - from) * ease((time - t0) / dur);
+    }
+
+    function rampSpeed(to, dur, ease, time) {
+      const from = speedAt(time);
+      const start = time + 0.005;
+      const points = 96;
+      for (const [param, map] of driven) {
+        holdParam(param, time);
+        const curve = new Float32Array(points);
+        for (let i = 0; i < points; i += 1) {
+          curve[i] = map(from + (to - from) * ease(i / (points - 1)));
+        }
+        param.setValueCurveAtTime(curve, start, dur);
+      }
+      segment = { t0: start, dur, from, to, ease };
+    }
+
+    for (const [param, map] of driven) param.setValueAtTime(map(segment.from), now);
+    if (startup) rampSpeed(1, STARTUP_S, easeStartup, now);
+
+    const sources = [hum, hum60, rotor, blade, fanNoise, bearingNoise];
+    for (const source of [hum, hum60, rotor, blade, fanNoise]) source.start(now);
+    // Deslocado para o chiado dos rolamentos não ficar em fase com o do ar.
+    bearingNoise.start(now, 1.3);
+
+    function stop({ fade = true } = {}) {
+      const time = audioCtx.currentTime;
+      if (!fade) {
+        holdParam(master.gain, time);
+        master.gain.setTargetAtTime(0.0001, time, 0.01);
+        return 0.05;
+      }
+      // Sem energia o zumbido some na hora; a parte mecânica desacelera.
+      holdParam(humPower.gain, time);
+      humPower.gain.setTargetAtTime(0, time, 0.03);
+      const coast = COAST_S * Math.max(0.25, speedAt(time));
+      rampSpeed(0, coast, easeCoast, time);
+      holdParam(master.gain, time);
+      master.gain.setTargetAtTime(0.0001, time + coast * 0.75, coast * 0.08);
+      return coast + 0.1;
+    }
+
+    return { master, sources, stop };
+  }
+
   function createMotorSound({ startup = true } = {}) {
     if (!ctx) return null;
+    // Um som anterior ainda desacelerando não pode tocar junto com o novo.
+    silenceCoasting();
+    return buildMotorSound(ctx, ctx.destination, gainForVolume(settings.volume), { startup });
+  }
 
-    const now = ctx.currentTime;
-    const master = ctx.createGain();
-    const target = gainForVolume(settings.volume);
+  function releaseSound(playing, tail) {
+    const timer = setTimeout(() => {
+      if (coasting?.playing === playing) coasting = null;
+      for (const source of playing.sources) {
+        try { source.stop(); } catch (_) {}
+      }
+      try { playing.master.disconnect(); } catch (_) {}
+    }, Math.ceil(tail * 1000) + 30);
+    return timer;
+  }
 
-    master.gain.setValueAtTime(0.0001, now);
-    if (startup) {
-      master.gain.exponentialRampToValueAtTime(Math.max(target, 0.0001), now + 0.75);
-    } else {
-      master.gain.setValueAtTime(Math.max(target, 0.0001), now);
-    }
-    master.connect(ctx.destination);
-
-    const hum60 = ctx.createOscillator();
-    hum60.type = 'sine';
-    hum60.frequency.setValueAtTime(startup ? 40 : 60, now);
-    if (startup) hum60.frequency.exponentialRampToValueAtTime(60, now + 0.72);
-    const g60 = ctx.createGain();
-    g60.gain.value = 0.62;
-    hum60.connect(g60).connect(master);
-
-    const hum120 = ctx.createOscillator();
-    hum120.type = 'sine';
-    hum120.frequency.setValueAtTime(startup ? 80 : 120, now);
-    if (startup) hum120.frequency.exponentialRampToValueAtTime(120, now + 0.72);
-    const g120 = ctx.createGain();
-    g120.gain.value = 0.24;
-    hum120.connect(g120).connect(master);
-
-    const hum180 = ctx.createOscillator();
-    hum180.type = 'triangle';
-    hum180.frequency.setValueAtTime(startup ? 120 : 180, now);
-    if (startup) hum180.frequency.exponentialRampToValueAtTime(180, now + 0.72);
-    const g180 = ctx.createGain();
-    g180.gain.value = 0.10;
-    hum180.connect(g180).connect(master);
-
-    const wobble = ctx.createOscillator();
-    wobble.type = 'sine';
-    wobble.frequency.value = 2.2;
-    const wobbleGain = ctx.createGain();
-    wobbleGain.gain.value = Math.max(0.001, target * 0.065);
-    wobble.connect(wobbleGain).connect(master.gain);
-
-    const noise = ctx.createBufferSource();
-    noise.buffer = makeNoiseBuffer(ctx, 1.8);
-    noise.loop = true;
-    const noiseFilter = ctx.createBiquadFilter();
-    noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.value = 260;
-    noiseFilter.Q.value = 0.8;
-    const noiseGain = ctx.createGain();
-    noiseGain.gain.value = 0.045;
-    noise.connect(noiseFilter).connect(noiseGain).connect(master);
-
-    const sources = [hum60, hum120, hum180, wobble, noise];
-    for (const source of sources) source.start(now);
-
-    return { master, sources };
+  function silenceCoasting() {
+    if (!coasting) return;
+    const { playing, timer } = coasting;
+    coasting = null;
+    clearTimeout(timer);
+    let tail = 0.05;
+    try { tail = playing.stop({ fade: false }); } catch (_) {}
+    releaseSound(playing, tail);
   }
 
   function stopActive({ fade = true } = {}) {
@@ -162,21 +315,11 @@
 
     const playing = active;
     active = null;
-    const now = ctx.currentTime;
-
-    try {
-      playing.master.gain.cancelScheduledValues(now);
-      const current = Math.max(playing.master.gain.value || gainForVolume(settings.volume), 0.0001);
-      playing.master.gain.setValueAtTime(current, now);
-      if (fade) playing.master.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
-      else playing.master.gain.setValueAtTime(0.0001, now);
-    } catch (_) {}
-
-    setTimeout(() => {
-      for (const source of playing.sources) {
-        try { source.stop(); } catch (_) {}
-      }
-    }, fade ? 900 : 30);
+    silenceCoasting();
+    let tail = fade ? 0.9 : 0.05;
+    try { tail = playing.stop({ fade }); } catch (_) {}
+    const timer = releaseSound(playing, tail);
+    if (fade) coasting = { playing, timer };
 
     testBtn.textContent = '🔊 Testar som do motor';
     testBtn.setAttribute('aria-pressed', 'false');
