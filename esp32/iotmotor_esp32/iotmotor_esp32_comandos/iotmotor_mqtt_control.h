@@ -76,13 +76,15 @@ void publicarRedes() {
 // Lista de partidas gravada na placa: mesma lista para o painel e para o app.
 void publicarPerfis() {
   if (!mqttClient.connected()) return;
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(TAMANHO_DOC_PERFIS);
   doc["device_id"] = DEVICE_ID;
   descreverPerfis(doc);
-  char payload[2048];
-  const size_t len = serializeJson(doc, payload, sizeof(payload));
-  if (len) mqttClient.publish(topicoPerfis, reinterpret_cast<const uint8_t*>(payload),
-                              static_cast<unsigned int>(len), true);
+  String payload;
+  serializeJson(doc, payload);
+  if (payload.length() &&
+      !mqttClient.publish(topicoPerfis, reinterpret_cast<const uint8_t*>(payload.c_str()),
+                          static_cast<unsigned int>(payload.length()), true))
+    Serial.printf("[MQTT] falha publicando partidas (%u bytes)\n", (unsigned int)payload.length());
 }
 
 // Dados de placa do motor, retidos: o painel e o app abrem ja preenchidos.
@@ -131,10 +133,18 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
       strcmp(doc["device_id"] | "", DEVICE_ID)) return;
 
   // Com senha configurada, so passa comando cifrado e com o desafio da vez.
+  // Desligar e a excecao: parar e sempre o lado seguro, entao vale sem selo e
+  // com desafio vencido (dois clientes mandando ao mesmo tempo nao podem
+  // deixar o motor sem poder parar).
   if (comandoseguro::ligado) {
     static char aberto[comandoseguro::MAX_ABERTO];
     const char* motivo = "";
     if (!(doc["sealed"] | "")[0]) {
+      if (!strcmp(doc["action"] | "", "stop")) {
+        pararBancada();
+        publicarRespostaControle(doc["seq"] | "", true, "stop", "stopped");
+        return;
+      }
       publicarRespostaControle(doc["seq"] | "", false, doc["action"] | "sealed",
                                "comando sem selo: configure a senha de comando");
       return;
@@ -146,13 +156,16 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     doc.clear();
     if (deserializeJson(doc, aberto) || doc["v"].as<int>() != 1 ||
         strcmp(doc["device_id"] | "", DEVICE_ID)) return;
-    if (!comandoseguro::confereDesafio(doc["ch"] | "")) {
+    const bool parada = !strcmp(doc["action"] | "", "stop");
+    if (!parada && !comandoseguro::confereDesafio(doc["ch"] | "")) {
       publicarRespostaControle(doc["seq"] | "", false, doc["action"] | "sealed",
                                "desafio vencido: envie de novo");
       return;
     }
-    comandoseguro::usar();  // Comando repetido do ar nao vale mais.
-    publicarAuth();
+    if (!parada) {
+      comandoseguro::usar();  // Comando repetido do ar nao vale mais.
+      publicarAuth();
+    }
   }
 
   const char* seq = doc["seq"] | "";

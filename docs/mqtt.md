@@ -120,7 +120,7 @@ alguém assina. É por isso que o painel e o app abrem já preenchidos.
 **`capabilities`**
 
 ```json
-{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v14-manutencao","fields":["voltage","current","power","energy","frequency","pf"]}
+{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v15-partida-sem-bloqueio","fields":["voltage","current","power","energy","frequency","pf"]}
 ```
 
 **`motor_info`**: dados da placa do motor. Todos são opcionais; campo ausente é
