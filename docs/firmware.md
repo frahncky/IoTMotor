@@ -84,7 +84,8 @@ senha, só aceitam comando cifrado com AES-256-GCM ([formato](mqtt.md#comandos-c
 
 - **Firmware publicado pelo CI:** a senha vem do segredo **`IOTMOTOR_CMD_SENHA`** do repositório (*Settings → Secrets and variables → Actions*). Hoje esse segredo **não existe**, então o firmware publicado aceita comando aberto, e o build avisa isso.
 - **Gravação por cabo:** copie `comando_local.exemplo.h` como `comando_local.h` nas **duas** pastas, com a mesma senha. Esse arquivo não vai para o Git.
-- Use uma senha longa, **sem aspas duplas nem barra invertida**.
+- Use uma senha de **12 caracteres ou mais** (o firmware não compila com menos), **sem aspas duplas nem barra invertida**. A chave sai de um SHA-256 só: senha curta pode ser descoberta fora da placa por quem gravar um comando no broker.
+- **Desligar** é aceito mesmo sem selo ou com desafio vencido: parar é sempre o lado seguro.
 - O painel e o app mostram o campo **Senha de comando** sozinhos assim que uma placa passa a exigir. A telemetria traz `secure: true`.
 - Se a senha se perder, a saída é regravar as placas por cabo.
 

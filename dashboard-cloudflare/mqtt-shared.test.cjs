@@ -45,3 +45,39 @@ test('cada cliente recebe somente os topicos que assinou', () => {
   assert.equal(mensagensA, 1); assert.equal(mensagensB, 0);
   assert.equal(topicMatches('iotmotor/#', 'iotmotor/esp32-02/alarms'), true);
 });
+
+test('funciona com o MQTT.js de verdade, que exporta connect so para leitura', () => {
+  const vm = require('node:vm');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const contexto = {console, setTimeout, clearTimeout, setInterval, clearInterval, TextEncoder,
+    TextDecoder, URL, queueMicrotask, AbortController, AbortSignal, EventTarget, Event,
+    navigator: {userAgent: 'node'}};
+  contexto.globalThis = contexto;
+  contexto.window = contexto;
+  contexto.self = contexto;
+  vm.createContext(contexto);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'vendor/mqtt-5.10.4.min.js'), 'utf8'), contexto);
+  const original = contexto.mqtt;
+  assert.equal(typeof original.connect, 'function');
+  // Era este o erro da pagina: o connect da biblioteca nao aceita troca.
+  assert.throws(() => { 'use strict'; original.connect = () => {}; }, TypeError);
+  const alvo = {mqtt: original};
+  assert.equal(installSharedMqtt(alvo), true);
+  assert.notEqual(alvo.mqtt, original);
+  assert.equal(alvo.mqtt.__iotmotorShared, true);
+  assert.equal(alvo.mqtt.Client, original.Client, 'o resto da biblioteca continua igual');
+  assert.equal(installSharedMqtt(alvo), false, 'instalar de novo nao embrulha outra vez');
+});
+
+test('connect so leitura, como no MQTT.js: uma conexao fisica para varios clientes', () => {
+  let conexoes = 0;
+  const fisico = {connected: false, on() { return this; }, subscribe() {}, publish() {}, end() {}};
+  const biblioteca = {};
+  Object.defineProperty(biblioteca, 'connect', {get: () => () => { conexoes++; return fisico; }, enumerable: true});
+  const alvo = {mqtt: biblioteca};
+  assert.equal(installSharedMqtt(alvo), true);
+  alvo.mqtt.connect('wss://x/mqtt', {});
+  alvo.mqtt.connect('wss://x/mqtt', {});
+  assert.equal(conexoes, 1);
+});

@@ -16,7 +16,7 @@ class MotorUsageStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final MotorInfo? info = controller.motorInfo;
-    final bool ligado = controller.isBenchMotorOn;
+    final bool ligado = controller.isMotorRunning;
     final List<_Item> itens = <_Item>[];
 
     final int? carga = ligado ? motorLoad(controller.benchCurrent, info?.currentInUse) : null;

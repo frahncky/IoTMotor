@@ -220,7 +220,7 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
   return true;
 }
 
-// Zera horimetro e partidas (troca de motor). So com o motor parado.
+// Grava o horimetro e a data da ultima manutencao.
 inline void gravarManutencao() {
   Preferences memoria;
   if (!memoria.begin("iot-motor", false)) return;
@@ -236,6 +236,7 @@ inline void registrarManutencao(uint32_t utc) {
   gravarManutencao();
 }
 
+// Zera horimetro e partidas (troca de motor). So com o motor parado.
 inline void zerarContadores() {
   segundosLigado = 0;
   partidas = 0;

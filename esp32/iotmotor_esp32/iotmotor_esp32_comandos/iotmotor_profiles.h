@@ -85,6 +85,25 @@ uint32_t fimDoPerfil(const PerfilDePartida& perfil) {
   return fim;
 }
 
+// Ainda ha contator para ligar ou desligar nesta partida? Enquanto houver, o
+// loop nao pode parar em reconexao de Wi-Fi ou MQTT (que bloqueiam por varios
+// segundos): a troca estrela-triangulo atrasaria com o motor em estrela.
+bool trocaPendente(unsigned long agora) {
+  if (!partidaAtiva) return false;
+  const uint32_t tempo = tempoDePartidaMs(agora);
+  for (uint8_t i = 0; i < NUM_RELES; ++i) {
+    const ContatorDoPerfil& c = perfilEmExecucao.contator[i];
+    if (!c.usa) continue;
+    if (c.ligaMs > tempo || (c.desligaMs && c.desligaMs > tempo)) return true;
+  }
+  return false;
+}
+
+// Seis partidas com nomes e ids longos passam de 2 KB no ArduinoJson (cada
+// valor ocupa 16 bytes no ESP32). Com 2048, a sexta saia sem os contatores e
+// sumia no boot seguinte; 3 KB cabem o maximo com folga.
+constexpr size_t TAMANHO_DOC_PERFIS = 3072;
+
 const char* nomeEtapa() {
   return partidaAtiva ? perfilEmExecucao.nome : "Parado / comando manual";
 }
@@ -183,7 +202,7 @@ void descreverPerfis(JsonDocument& doc) {
 }
 
 void gravarPerfis() {
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(TAMANHO_DOC_PERFIS);
   descreverPerfis(doc);
   String texto;
   serializeJson(doc["profiles"], texto);
@@ -240,7 +259,7 @@ void carregarPerfis() {
   }
   totalPerfis = 0;
   if (texto.length()) {
-    StaticJsonDocument<2048> doc;
+    DynamicJsonDocument doc(TAMANHO_DOC_PERFIS);
     if (!deserializeJson(doc, texto)) {
       for (JsonVariantConst item : doc.as<JsonArrayConst>()) {
         if (totalPerfis >= MAX_PERFIS) break;

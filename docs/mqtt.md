@@ -90,7 +90,7 @@ omitidos, nunca inventados.
 | `run_s_total` | número | Horímetro, em segundos |
 | `starts_total`, `starts_today`, `starts_hour` | número | Partidas no total, hoje (horário de Brasília) e na última hora |
 | `session_s` | número | Há quanto tempo o motor está girando (só enquanto gira) |
-| `motor_running` | booleano | Motor girando: algum relé ligado ou, no modo instrumentação, corrente acima de 0,3 A |
+| `motor_running` | booleano | Motor girando: algum relé ligado ou, no modo instrumentação, corrente acima de 0,3 A. O painel, o app e a placa de sensores usam para mostrar e alarmar o motor ligado |
 | `reset_reason`, `wifi_ip` | texto | Diagnóstico |
 
 ## Telemetria dos sensores do motor
@@ -120,7 +120,7 @@ alguém assina. É por isso que o painel e o app abrem já preenchidos.
 **`capabilities`**
 
 ```json
-{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v14-manutencao","fields":["voltage","current","power","energy","frequency","pf"]}
+{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v15-partida-sem-bloqueio","fields":["voltage","current","power","energy","frequency","pf"]}
 ```
 
 **`motor_info`**: dados da placa do motor. Todos são opcionais; campo ausente é
@@ -311,6 +311,7 @@ placa só aceita comando assim:
 - **Cifra:** AES-256-GCM, com o `device_id` como dado autenticado.
 - **Conteúdo:** o comando normal (`v`, `device_id`, `seq`, `action`, …) mais `ch`, o desafio publicado em `auth`.
 - **Repetição:** a placa sorteia outro desafio a cada comando aceito e a cada reinício, então um comando copiado do ar não vale de novo.
+- **Exceção:** `stop` vale sem selo e com desafio vencido (firmware `v15` em diante). Parar é o lado seguro, e dois clientes mandando ao mesmo tempo não podem impedir a parada.
 
 Implementações de referência: [`command-seal.js`](../dashboard-cloudflare/command-seal.js)
 (painel) e [`command_seal.dart`](../lib/features/iot_motor/services/command_seal.dart) (app).

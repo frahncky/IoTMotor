@@ -105,7 +105,7 @@ uint8_t ds18b20Pin=0;
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96];
-uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0;
+uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0,lastHistorico=0;
 uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -363,16 +363,8 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
   if(atualizarTesteLed(now))return;
 
-  const bool conectado=WiFi.status()==WL_CONNECTED && mqtt.connected();
-  if(!conectado) {
-    const bool aceso=((now/500UL)&1U)==0U;
-    aplicarLed(aceso,false,false);
-    if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
-    beepsRestantes=0;beepTocando=false;
-    return;
-  }
-
-  // Quem decide os alarmes e a lista configurada na placa.
+  // Quem decide os alarmes e a lista configurada na placa. Avaliados tambem
+  // sem rede: temperatura e vibracao sao medidas aqui mesmo.
   const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
                                             temperatureC,relogio::agoraUtc());
   const bool falhaSensor=!mpuReady || !tempReady;
@@ -381,10 +373,21 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   if(testeAtivo&&(uint32_t)(now-inicioDoTeste)<1500UL)return;
   testeAtivo=false;
 
-  // Se a telemetria do quadro sumir, nao inventa que o motor continua ligado.
+  const bool conectado=WiFi.status()==WL_CONNECTED && mqtt.connected();
+  // Com rede, se a telemetria do quadro sumir, nao inventa que o motor segue
+  // ligado. Sem rede a falha e desta placa, nao do motor: vale o ultimo estado
+  // recebido, para o alarme local nao ficar mudo com o motor girando.
   const bool quadroRecente=ultimaTelemetriaQuadro &&
                            (uint32_t)(now-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
-  const bool motorAtivo=quadroRecente&&motorLigado;
+  const bool motorAtivo=conectado?quadroRecente&&motorLigado:motorLigado;
+
+  if(!conectado&&!(motorAtivo&&estadoCritico)) {  // Procurando rede: azul piscando.
+    const bool aceso=((now/500UL)&1U)==0U;
+    aplicarLed(aceso,false,false);
+    if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
+    beepsRestantes=0;beepTocando=false;
+    return;
+  }
 
   if(!motorAtivo) {
     if(estadoCritico) aplicarLed(false,false,true);  // falha parada: vermelho fixo
@@ -554,7 +557,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.6-historico";
+  doc["firmware_version"]="s3-sensors-1.7-offline";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -644,7 +647,10 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
         // modo instrumentacao, em que o motor gira sem partida ativa).
         const bool girando=quadro["motor_running"].is<bool>()?quadro["motor_running"].as<bool>():ligado;
         xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-        motorLigado=ligado;
+        // Em modo instrumentacao o motor gira sem partida pelo quadro (comando
+        // eletrico externo): girando vem da corrente medida. Os alarmes tocam
+        // do mesmo jeito.
+        motorLigado=ligado||girando;
         motorGirandoQuadro=girando;
         ultimaTelemetriaQuadro=millis();
         alarmes::receberMedidasDoQuadro(quadro.as<JsonVariantConst>(),ultimaTelemetriaQuadro);
@@ -876,6 +882,13 @@ void loop() {
     Serial.println("[S3] reiniciando a pedido do painel");
     ESP.restart();
   }
+  // O historico fica na placa justamente para nao depender da rede: amostra
+  // com ou sem broker (a hora do NTP segue valendo depois de sincronizada).
+  // Os dias fechados sem conexao saem todos ao reconectar.
+  if(lastHistorico==0 || (uint32_t)(now-lastHistorico)>=1000UL) {
+    lastHistorico=now;
+    amostrarHistorico();
+  }
 
   if(WiFi.status()!=WL_CONNECTED) {
     if(!wifiCaiuEm) {
@@ -896,6 +909,9 @@ void loop() {
     }
     delay(2);return;
   }
+  // Hora pelo NTP assim que ha Wi-Fi, mesmo com o broker fora: sem ela o
+  // historico descarta as amostras.
+  relogio::manter(now);
   if(wifiCaiuEm) {
     Serial.printf("[S3/Wi-Fi] recuperado em %lu ms, rede=%s, RSSI=%d dBm\n",
                   (unsigned long)(now-wifiCaiuEm),WiFi.SSID().c_str(),WiFi.RSSI());
@@ -919,10 +935,9 @@ void loop() {
   }
 
   mqtt.loop();
-  relogio::manter(now);  // Hora real para carimbar as medicoes.
   now=millis();
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
-    lastPublish=now;publishTelemetry();amostrarHistorico();
+    lastPublish=now;publishTelemetry();
   }
   if(alarmes::eventosMudaram)publishAlarmLog();
   delay(2);

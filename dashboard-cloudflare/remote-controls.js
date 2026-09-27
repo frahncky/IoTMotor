@@ -242,8 +242,10 @@
       comando.profile = window.iotmotorPartidaSelecionada?.() || '';
       if (!comando.profile) {feedback('Escolha uma partida.');return;}
     }
+    // Desligar nunca espera a senha: sem ela (ou sem o desafio) sai aberto, e
+    // a placa aceita parar mesmo assim (firmware v15 em diante).
     const impede = window.iotmotorSelo?.impedimento(device);
-    if (impede) { feedback(impede); return; }
+    if (impede && action !== 'stop') { feedback(impede); return; }
     pending = {seq: comando.seq, action};
     feedback('Enviando ' + (action === 'start' ? 'partida' : 'parada') + ' MQTT…');
     // O comando sai cifrado quando a placa exige senha (command-seal.js).
@@ -263,12 +265,21 @@
         // sonoro, e uma publicação MQTT não é confundida com motor realmente ligado.
       });
     };
-    const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
-    if (aberto !== null) enviar(aberto);
-    else selo.empacotar(device, comando).then(enviar).catch(erro => {
-      if (pending?.seq !== comando.seq) return;
-      feedback('Não deu para selar o comando: ' + (erro.message || erro)); pending = null; refresh();
-    });
+    // Desligar sai sempre aberto: o v15 aceita mesmo com senha errada ou
+    // desafio vencido, e um selo que a placa nao abre seria recusado antes de
+    // ela ver que era parar. Com selo possivel, sai tambem selado, para placas
+    // antigas que exigem senha (parar duas vezes nao faz mal).
+    if (action === 'stop') {
+      enviar(JSON.stringify(comando));
+      if (selo && !impede && selo.exigeSelo(device)) selo.empacotar(device, comando).then(enviar).catch(() => {});
+    } else {
+      const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
+      if (aberto !== null) enviar(aberto);
+      else selo.empacotar(device, comando).then(enviar).catch(erro => {
+        if (pending?.seq !== comando.seq) return;
+        feedback('Não deu para selar o comando: ' + (erro.message || erro)); pending = null; refresh();
+      });
+    }
     setTimeout(() => {
       if (pending?.seq === comando.seq) {feedback('Sem confirmação do ESP32. Verifique o Monitor Serial.');pending = null;refresh();}
     }, 6500);

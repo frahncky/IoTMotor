@@ -50,8 +50,8 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   @override
   void didUpdateWidget(covariant MotorAnimationCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.controller.isBenchMotorOn &&
-        widget.controller.isBenchMotorOn) {
+    if (!oldWidget.controller.isMotorRunning &&
+        widget.controller.isMotorRunning) {
       _startupElapsed = 0;
     }
   }
@@ -66,7 +66,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     if (dt < 0) dt += 1;
     dt = dt.clamp(0.0, 0.064).toDouble();
 
-    final bool running = widget.controller.isBenchMotorOn;
+    final bool running = widget.controller.isMotorRunning;
     final double startupSeconds = _startupSeconds(widget.startType);
     if (running) {
       _startupElapsed += dt;
@@ -135,7 +135,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
 
   @override
   Widget build(BuildContext context) {
-    final bool running = widget.controller.isBenchMotorOn;
+    final bool running = widget.controller.isMotorRunning;
     final MotorInfo? info = widget.controller.motorInfo;
     final double? temperature = widget.controller.latestSample?.temperature;
     final double rpm = info?.rpm ?? 1750;

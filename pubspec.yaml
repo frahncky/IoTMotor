@@ -36,7 +36,6 @@ dependencies:
   http: ^1.6.0
   mqtt_client: ^10.5.1
   path_provider: ^2.1.5
-  flutter_background_service: ^5.0.7
   flutter_secure_storage: ^9.2.2
   # Verificação de atualização do app (release app-latest no GitHub).
   package_info_plus: ^8.1.1
@@ -53,6 +52,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Usados pelos testes para simular a pasta de arquivos do aparelho.
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
   flutter_launcher_icons: ^0.14.4
   flutter_native_splash: ^2.4.6
 
@@ -77,6 +79,9 @@ flutter:
   assets:
     - assets/logo/
     - assets/audio/
+    # Manrope e Outfit embutidas (SIL OFL): o app nao baixa fonte do Google
+    # ao abrir, e funciona igual sem internet.
+    - assets/google_fonts/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

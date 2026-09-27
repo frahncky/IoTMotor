@@ -2,10 +2,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Instalar a atualizacao baixada pelo proprio app (o sistema ainda pede confirmacao). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application
         android:label="IoTMotor"
         android:name="${applicationName}"
@@ -29,10 +26,6 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <service
-            android:name="id.flutter.flutter_background_service.BackgroundService"
-            android:foregroundServiceType="dataSync"
-            tools:node="merge" />
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

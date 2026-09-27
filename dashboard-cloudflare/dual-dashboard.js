@@ -3,9 +3,13 @@
 const $=id=>document.getElementById(id);
 const STORE='iotmotor_dashboard_dual_v1';
 // Historico das amostras neste navegador: sobrevive a fechar a aba, mas nao
-// sai deste computador. Guardado por contagem e por idade, nessa ordem.
-const REGISTROS='iotmotor_registros_v1';
-const MAX_REGISTROS=3000,MAX_IDADE_MS=24*60*60*1000;
+// sai deste computador. A ultima hora, guardada so com as colunas do CSV:
+// as duas placas a 1 Hz dao 7200 linhas (~1,9 MB). Antes eram 3000 linhas
+// completas (~25 min), e o CSV oferecia 1 h e 24 h que nunca existiam. O
+// historico longo fica na placa de sensores (7 dias, por hora).
+const REGISTROS='iotmotor_registros_v2';
+const MAX_REGISTROS=7200,MAX_IDADE_MS=60*60*1000;
+const GRAVAR_REGISTROS_MS=15000;
 let gravarRegistrosTimer=null;
 // Endereço padrão: a ponte servida pela própria Cloudflare (functions/mqtt.js),
 // na porta 443. Redes que bloqueiam as portas do broker não bloqueiam essa,
@@ -41,7 +45,10 @@ function parseTelemetry(json){
  if(!json||typeof json!=='object'||Array.isArray(json))return null;
  const source=json.data&&typeof json.data==='object'&&!Array.isArray(json.data)?json.data:json;
  const relays=Array.isArray(source.relays)&&source.relays.length===4&&source.relays.every(v=>typeof v==='boolean')?source.relays:null;
- const motorOn=typeof source.motor_on==='boolean'?source.motor_on:relays?relays.some(Boolean):null;
+ // motor_running (quadro): girando pela regra do horímetro, que inclui o modo
+ // instrumentação (motor comandado por fora, sem contator da placa).
+ const motorOn=typeof source.motor_on==='boolean'?source.motor_on:
+  typeof source.motor_running==='boolean'?source.motor_running:relays?relays.some(Boolean):null;
  const result={deviceId:String(json.device_id||source.device_id||''),demo:json.demo===true||source.demo===true||source.data_source==='simulated',
   dataSource:String(json.data_source||source.data_source||'não informada'),seq:numeric(source.seq),
   measuredAt:Number.isFinite(source.ts)&&source.ts>1700000000?source.ts*1000:null,
@@ -353,8 +360,7 @@ function ingest(which,raw,packet){
   if(sample[m.key]!==null){const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
  }
  // Hora da medicao quando a placa carimba; senao, a hora em que chegou.
- state.records.push({at:new Date(sample.measuredAt??state[which].at).toISOString(),
-  clockSource:sample.measuredAt?'placa':'navegador',deviceId:expected,...sample});
+ state.records.push(registroCsv(sample,expected,state[which].at));
  if(state.records.length>MAX_REGISTROS)state.records.shift();
  guardarRegistros();
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
@@ -364,7 +370,7 @@ function connect(automatico){
 
  let config;try{config=validateConfig({broker:$('broker').value,prefix:$('prefix').value,commandDevice:$('commandDevice').value,sensorDevice:$('sensorDevice').value});}
  catch(e){diag(e.message);return;}
- if(!window.mqtt||typeof window.mqtt.connect!=='function'){pill('MQTT.js indisponível','error');diag('Biblioteca MQTT.js não carregou; confira o acesso ao CDN.');return;}
+ if(!window.mqtt||typeof window.mqtt.connect!=='function'){pill('MQTT.js indisponível','error');diag('Biblioteca MQTT.js não carregou; recarregue a página.');return;}
  if(state.client)disconnect();state.config=config;
  try{localStorage.setItem(STORE,JSON.stringify(config));}catch{}
  const generation=++state.generation;let client;
@@ -407,7 +413,13 @@ function connect(automatico){
  client.on('close',caiu);
  client.on('connect',voltou);
 }
-function command(kind,mode){ /* Retired GPIO2 prototype: never publish control on a public broker. */ }
+// Linha guardada para o CSV: so as colunas exportadas.
+function registroCsv(sample,deviceId,chegouEm){
+ const linha={at:new Date(sample.measuredAt??chegouEm).toISOString(),clockSource:sample.measuredAt?'placa':'navegador',
+  deviceId,demo:sample.demo,motorOn:sample.motorOn,benchArmed:sample.benchArmed};
+ for(const m of METRICS)if(sample[m.key]!==null&&sample[m.key]!==undefined)linha[m.key]=sample[m.key];
+ return linha;
+}
 function registrosValidos(linhas){
  if(!Array.isArray(linhas))return [];
  const limite=Date.now()-MAX_IDADE_MS;
@@ -427,7 +439,7 @@ function guardarRegistros(){
    state.records=state.records.slice(-Math.floor(MAX_REGISTROS/2));
    try{localStorage.setItem(REGISTROS,JSON.stringify(state.records));}catch{}
   }
- },5000);
+ },GRAVAR_REGISTROS_MS);
 }
 function limparRegistros(){
  state.records=[];
@@ -449,6 +461,7 @@ function exportCsv(){
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function init(){
+ try{localStorage.removeItem('iotmotor_registros_v1');}catch{}  // Formato antigo, de ate 2 MB.
  try{
   const saved=JSON.parse(localStorage.getItem(STORE)||'null');
   if(saved){
@@ -495,4 +508,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationSeverity,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationSeverity,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};

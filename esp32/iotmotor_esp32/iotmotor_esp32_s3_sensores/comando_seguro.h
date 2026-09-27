@@ -28,6 +28,11 @@
 #ifndef COMANDO_SENHA
 #define COMANDO_SENHA ""
 #endif
+// A chave sai de um SHA-256 so: quem gravar um comando selado do broker
+// publico pode testar senhas fora da placa, muito rapido. Senha curta cairia
+// em minutos; com 12 caracteres ou mais isso deixa de ser pratico.
+static_assert(sizeof(COMANDO_SENHA) == 1 || sizeof(COMANDO_SENHA) - 1 >= 12,
+              "COMANDO_SENHA: use pelo menos 12 caracteres (ou deixe vazia)");
 
 namespace comandoseguro {
 

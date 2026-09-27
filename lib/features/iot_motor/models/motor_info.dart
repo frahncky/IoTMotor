@@ -4,7 +4,7 @@ import 'dart:math' as math;
 /// Versão do firmware publicada para OTA (release firmware-latest), a mesma que
 /// o painel usa (FIRMWARE_PUBLICADO em wifi-manager.js): [quadro, sensores].
 /// O CI confere que é a mesma do firmware_version de cada .ino.
-const List<String> firmwarePublicado = <String>['v14-manutencao', 's3-sensors-1.6-historico'];
+const List<String> firmwarePublicado = <String>['v15-partida-sem-bloqueio', 's3-sensors-1.7-offline'];
 
 double? _numero(Object? valor) =>
     valor is num && valor.isFinite ? valor.toDouble() : null;

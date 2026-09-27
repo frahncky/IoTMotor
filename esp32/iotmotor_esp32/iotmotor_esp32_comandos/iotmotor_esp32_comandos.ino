@@ -356,6 +356,10 @@ void manterWifi(unsigned long agora) {
     lcdPrecisaAtualizar = true;
   }
   if (agora - ultimaTentativaWifi < WIFI_RETRY_MS) return;
+  // A varredura e as tentativas bloqueiam por ate ~30 s: com troca de contator
+  // pela frente, espera a partida chegar ao regime (o proprio ESP32 segue
+  // tentando voltar a ultima rede sozinho, sem bloquear).
+  if (trocaPendente(agora)) return;
   ultimaTentativaWifi = agora;
   wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
 }
@@ -393,7 +397,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v14-manutencao";
+  doc["firmware_version"] = "v15-partida-sem-bloqueio";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -480,6 +484,8 @@ void manterMqtt(unsigned long agora) {
   if (WiFi.status() != WL_CONNECTED) return;
   if (mqttClient.connected()) {mqttClient.loop();return;}
   if (ultimaTentativaMqtt && agora - ultimaTentativaMqtt < MQTT_RETRY_MS) return;
+  // Conectar ao broker bloqueia ate 12 s (TCP e WebSocket): nao durante uma troca.
+  if (trocaPendente(agora)) return;
   ultimaTentativaMqtt = agora;
   const String clientId = String("iotmotor_v9_") + String((uint32_t)ESP.getEfuseMac(), HEX);
   if (mqttClient.connect(clientId.c_str(), topicoStatus, 0, true, "offline")) {
@@ -555,7 +561,7 @@ void setup() {
   motorinfo::carregar();
   comandoseguro::iniciar(DEVICE_ID);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
-  mqttClient.setBufferSize(1536);
+  mqttClient.setBufferSize(2048);  // Cabem as seis partidas publicadas de uma vez.
   mqttClient.setCallback(receberComandoMqtt);
   lerPzem();
   ultimaLeituraPzem = millis();

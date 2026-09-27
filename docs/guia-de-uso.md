@@ -94,6 +94,7 @@ caminho.
 - O botão vira **Liberar acionamento** para voltar ao normal.
 - O modo fica gravado na placa e sobrevive a reinício.
 - Nesse modo, o horímetro e as partidas contam o motor como ligado quando a corrente passa de 0,3 A.
+- Com o motor girando assim, o painel e o app mostram o motor ligado (animação, som, carga e vibração ISO), e o LED e o buzzer da placa de sensores alarmam como numa partida pelo quadro. **Ligar/Desligar** não age sobre esse motor.
 
 ## Dados do motor e manutenção
 
@@ -171,10 +172,15 @@ hora, guardados na placa de sensores. O registro continua com o painel fechado.
 - Corrente e vibração só contam com o motor girando.
 - A hora em andamento entra no gráfico quando termina.
 
-Há também o **histórico do navegador**: as leituras recebidas enquanto o painel
-está aberto (até 3000 amostras ou 24 h), guardadas só naquele navegador. Use
-**Período** e **Exportar CSV** para levar os dados para uma planilha, e **Limpar**
-para apagá-los.
+Há também o **histórico do navegador**: as leituras da **última hora** recebidas
+enquanto o painel está aberto, guardadas só naquele navegador. Use **Período**
+(última hora, 15 min ou 5 min) e **Exportar CSV** para levar os dados para uma
+planilha, e **Limpar** para apagá-los. Para períodos maiores, use o histórico da
+placa acima (7 dias, por hora).
+
+A placa de sensores continua gravando o histórico mesmo sem rede (temperatura
+e vibração medidas por ela; corrente e tempo ligado dependem do quadro), e
+publica os dias guardados quando volta a se conectar.
 
 ## Placas: Wi-Fi, atualização e reinício
 
@@ -209,7 +215,8 @@ outro lugar.
 Se as placas foram gravadas com senha ([como ligar](firmware.md#senha-de-comando)),
 o campo **Senha de comando** aparece em **Configurações › Conexão MQTT**, no
 painel e no app. Digite a mesma senha: sem ela, as placas recusam todos os
-comandos. A senha fica só naquele navegador ou celular.
+comandos, **menos Desligar**, que vale sempre (parar é o lado seguro). A senha
+fica só naquele navegador ou celular.
 
 ## App Android
 
@@ -219,13 +226,17 @@ baixa o APK e o Android pede a confirmação.
 
 | Aba | O que tem |
 | --- | --- |
-| **Início** | Partida e Ligar/Desligar, animação do motor, faixa de uso (carga, vibração ISO, horímetro, manutenção, aviso de firmware) e gráficos |
+| **Início** | Partida e Ligar/Desligar, cartão do motor (animação, carga, vibração ISO, horímetro, manutenção, aviso de firmware) e gráficos |
 | **Histórico** | Histórico da placa (7 dias) e leituras recebidas pelo app, com exportação |
 | **Alertas** | Alertas de limite e de manutenção vencida; **Reconhecer** marca como visto |
 | **Configurações** | Conexão, dados do motor (**Editar dados do motor**, **Manutenção feita**), Wi-Fi, **Atualizar firmware** e **Atualizar este app** |
 
-**Conexão no app.** Em redes que bloqueiam MQTT, use `ws://test.mosquitto.org`,
-porta **8080**, com TLS desligado. É o mesmo caminho das placas.
+**Conexão no app.** O app já vem em `ws://test.mosquitto.org`, porta **8080**,
+com TLS desligado: é o mesmo caminho das placas e passa em rede que bloqueia
+MQTT. Cada celular usa um *client id* próprio; dois aparelhos com o mesmo id se
+derrubam no broker.
+O app só recebe dados enquanto está aberto: não há monitoramento em segundo
+plano.
 **Testar caminhos de conexão** mostra qual endereço passa na rede em que você
 está.
 

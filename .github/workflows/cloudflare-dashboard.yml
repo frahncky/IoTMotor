@@ -36,9 +36,11 @@ jobs:
           node --check dashboard-cloudflare/motor-info.js
           node --check dashboard-cloudflare/motor-animation.js
           node --check dashboard-cloudflare/board-history.js
+          node --check dashboard-cloudflare/mqtt-shared.js
+          node --check dashboard-cloudflare/motor-sound.js
           node --input-type=module --check < functions/mqtt.js
       - name: Run web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs dashboard-cloudflare/motor-info.test.cjs dashboard-cloudflare/motor-animation.test.cjs dashboard-cloudflare/board-history.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs dashboard-cloudflare/motor-info.test.cjs dashboard-cloudflare/motor-animation.test.cjs dashboard-cloudflare/board-history.test.cjs dashboard-cloudflare/mqtt-shared.test.cjs
       - name: Verify MQTT-only firmware and controls
         run: |
           python3 - <<'PY'
@@ -112,4 +114,10 @@ jobs:
           assert 'troque-por-uma-senha-longa' in (root / 'comando_local.exemplo.h').read_text(), 'o modelo versionado nao pode carregar senha real'
           for pasta in (root, s3):
               assert not (pasta / 'comando_local.h').exists(), 'comando_local.h nao pode ir para o Git'
+          # MQTT.js servido pelo proprio painel: nenhum script de terceiros na pagina.
+          for pagina in ('index.html', 'hardware.html'):
+              html = Path('dashboard-cloudflare/' + pagina).read_text()
+              assert './vendor/mqtt-5.10.4.min.js' in html and 'cdnjs' not in html, pagina + ' deve usar vendor/mqtt'
+          assert Path('dashboard-cloudflare/vendor/mqtt-5.10.4.min.js').exists()
+          assert "script-src 'self';" in Path('dashboard-cloudflare/_headers').read_text()
           PY

@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationSeverity,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationSeverity,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -31,16 +31,32 @@ test('animação do diagnóstico segue o estado do motor sem exibir sentido de r
 test('o historico guardado no navegador descarta o velho e o invalido',()=>{
  const agora=Date.now();
  const linha=(minutosAtras)=>({at:new Date(agora-minutosAtras*60000).toISOString(),voltage:220});
- const guardado=[linha(30*60),linha(25*60),linha(10),linha(1),null,{at:'ontem'},{voltage:1}];
+ const guardado=[linha(30*60),linha(61),linha(10),linha(1),null,{at:'ontem'},{voltage:1}];
  const mantidos=registrosValidos(guardado);
- // 30 e 25 horas atras saem; o resto fica, na ordem.
+ // Mais de uma hora atras sai; o resto fica, na ordem.
  assert.equal(mantidos.length,2);
  assert.equal(mantidos[0].at,linha(10).at);
  assert.equal(mantidos[1].at,linha(1).at);
  assert.deepEqual(registrosValidos('nao e lista'),[]);
  // Fila cheia: fica so o final, que e o mais novo.
- const muitos=Array.from({length:3200},(_,i)=>linha(i%50/60));
- assert.equal(registrosValidos(muitos).length,3000);
+ const muitos=Array.from({length:7500},(_,i)=>linha(i%50/60));
+ assert.equal(registrosValidos(muitos).length,7200);
+});
+
+test('a linha guardada tem so as colunas do CSV',()=>{
+ const x=parseTelemetry({device_id:'esp32-01',ts:1790000000,voltage:220,current:5,relays:[true,false,false,false],lcd:['a','b'],wifi_ip:'10.0.0.1'});
+ const linha=registroCsv(x,'esp32-01',0);
+ assert.equal(linha.at,new Date(1790000000*1000).toISOString());
+ assert.equal(linha.clockSource,'placa');
+ assert.equal(linha.voltage,220);
+ assert.equal(linha.motorOn,true);
+ assert.equal('lcd' in linha||'relays' in linha||'temperature' in linha,false);
+});
+
+test('modo instrumentacao: motor_running vale como motor ligado sem rele',()=>{
+ const girando=parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false],motor_running:true,current:4});
+ assert.equal(girando.motorOn,true);
+ assert.equal(parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false],motor_running:false}).motorOn,false);
 });
 
 test('a hora da placa (ts) vale mais que a hora de chegada',()=>{
