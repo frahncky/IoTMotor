@@ -112,6 +112,31 @@ if (typeof document !== 'undefined') (() => {
     for (const dev of Object.keys(pendentes)) limparPendente(dev);
   };
 
+  // Estado OTA compartilhado com o painel principal. Assim os indicadores
+  // "Quadro de comando" e "Sensores do motor" não continuam dizendo apenas
+  // "conectado" enquanto uma atualização está em andamento.
+  const OTA_CONCLUIDA_VISIVEL_MS = 30000;
+  function estadoFirmwareCompartilhado(dev) {
+    if (!connected) return null;
+    const p = pendenteDe(dev);
+    if (p?.acao === 'update') {
+      return {state: 'updating', phase: p.fase, label: 'atualizando firmware'};
+    }
+    const concluida = atualizados[dev];
+    if (concluida &&
+        estados[dev] !== 'offline' &&
+        Date.now() - concluida.em <= OTA_CONCLUIDA_VISIVEL_MS) {
+      return {
+        state: 'updated',
+        phase: 'completed',
+        label: 'atualizado · conectado',
+        version: concluida.version
+      };
+    }
+    return null;
+  }
+  window.iotmotorFirmwareStatus = estadoFirmwareCompartilhado;
+
   function lerConfiguracao() {
     const url = new URL(String($('broker').value || 'wss://test.mosquitto.org:8081').trim());
     const p = String($('prefix').value || 'iotmotor').trim().replace(/^\/+|\/+$/g, '');
