@@ -237,7 +237,7 @@ class GrandezasTab extends StatelessWidget {
         color: AppTheme.brandMint,
       ),
       _MagnitudeInfo(
-        label: 'Freq.',
+        label: 'Frequência',
         value: hasData ? sample.frequency : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.frequency) : null,
         unit: 'Hz',
@@ -246,7 +246,7 @@ class GrandezasTab extends StatelessWidget {
         color: AppTheme.brandBlue,
       ),
       _MagnitudeInfo(
-        label: 'Vibra.',
+        label: 'Vibração',
         value: hasData ? sample.vibration : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.vibration) : null,
         unit: 'mm/s',
@@ -255,7 +255,7 @@ class GrandezasTab extends StatelessWidget {
         color: AppTheme.vibrationAccent,
       ),
       _MagnitudeInfo(
-        label: 'Temp.',
+        label: 'Temperatura',
         value: hasData ? sample.temperature : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.temperature) : null,
         unit: '\u00b0C',
