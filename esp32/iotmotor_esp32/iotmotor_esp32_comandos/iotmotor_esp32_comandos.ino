@@ -19,6 +19,7 @@
 #include <ArduinoJson.h>
 #include <math.h>
 #include <esp_system.h>
+#include <Preferences.h>
 #include "mqtt_websocket_client.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
@@ -86,7 +87,7 @@ float ultimaTensao = 0, ultimaCorrente = 0, ultimaPotencia = 0;
 float ultimaEnergia = 0, ultimaFrequencia = 0, ultimoFatorPotencia = 0;
 bool pzemOk = false;
 unsigned long ultimaLeituraPzem = 0;
-constexpr unsigned long INTERVALO_PZEM_MS = 3000UL;
+unsigned long intervaloPzemMs = 1000UL;
 
 static const char* MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket (ws://)
@@ -95,9 +96,21 @@ MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
 char topicoComandos[80], topicoResposta[80], topicoWifi[80], topicoPerfis[80], topicoAuth[80];
-char topicoMotorInfo[80];
+char topicoMotorInfo[80], topicoAquisicao[80];
 constexpr unsigned long MQTT_RETRY_MS = 6000UL;
-constexpr unsigned long MQTT_PUBLISH_MS = 1000UL;
+unsigned long mqttPublishMs = 1000UL;
+
+struct ConfiguracaoAquisicao {
+  uint32_t pzemReadMs = 1000;
+  uint32_t publishMs = 1000;
+  uint32_t chartMs = 1000;
+  uint32_t recordMs = 1000;
+  uint32_t revision = 1;
+};
+ConfiguracaoAquisicao configAquisicao;
+void carregarConfiguracaoAquisicao();
+bool salvarConfiguracaoAquisicao(JsonVariantConst cfg, const char*& motivo);
+void publicarConfiguracaoAquisicao();
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
 uint32_t sequenciaMqtt = 0;
 
@@ -499,6 +512,75 @@ void publicarTelemetriaMqtt() {
     Serial.printf("[MQTT] falha telemetria, bytes=%u rc=%d\n", (unsigned int)len, mqttClient.state());
 }
 
+void carregarConfiguracaoAquisicao() {
+  Preferences memoria;
+  if (!memoria.begin("iot-acq", true)) return;
+  configAquisicao.pzemReadMs = memoria.getUInt("pzem", 1000);
+  configAquisicao.publishMs = memoria.getUInt("pub", 1000);
+  configAquisicao.chartMs = memoria.getUInt("chart", 1000);
+  configAquisicao.recordMs = memoria.getUInt("record", 1000);
+  configAquisicao.revision = memoria.getUInt("rev", 1);
+  memoria.end();
+  intervaloPzemMs = configAquisicao.pzemReadMs;
+  mqttPublishMs = configAquisicao.publishMs;
+}
+
+bool salvarConfiguracaoAquisicao(JsonVariantConst cfg, const char*& motivo) {
+  if (!cfg["pzem_read_ms"].is<uint32_t>() || !cfg["publish_ms"].is<uint32_t>() ||
+      !cfg["chart_ms"].is<uint32_t>() || !cfg["record_ms"].is<uint32_t>()) {
+    motivo = "campos de intervalo ausentes";
+    return false;
+  }
+  const uint32_t pzem = cfg["pzem_read_ms"].as<uint32_t>();
+  const uint32_t pub = cfg["publish_ms"].as<uint32_t>();
+  const uint32_t chart = cfg["chart_ms"].as<uint32_t>();
+  const uint32_t record = cfg["record_ms"].as<uint32_t>();
+  if (pzem < 1000 || pzem > 10000) { motivo = "PZEM: use 1 a 10 s"; return false; }
+  if (pub < 1000 || pub > 60000) { motivo = "MQTT: use 1 a 60 s"; return false; }
+  if (pzem > pub) { motivo = "a aquisicao eletrica nao pode ser mais lenta que a publicacao"; return false; }
+  if (chart < pub || chart > 60000) { motivo = "grafico: use valor entre o MQTT e 60 s"; return false; }
+  if (record < pub || record > 600000) { motivo = "registro: use valor entre o MQTT e 10 min"; return false; }
+
+  Preferences memoria;
+  if (!memoria.begin("iot-acq", false)) { motivo = "falha ao abrir NVS"; return false; }
+  configAquisicao.pzemReadMs = pzem;
+  configAquisicao.publishMs = pub;
+  configAquisicao.chartMs = chart;
+  configAquisicao.recordMs = record;
+  ++configAquisicao.revision;
+  memoria.putUInt("pzem", pzem);
+  memoria.putUInt("pub", pub);
+  memoria.putUInt("chart", chart);
+  memoria.putUInt("record", record);
+  memoria.putUInt("rev", configAquisicao.revision);
+  memoria.end();
+  intervaloPzemMs = pzem;
+  mqttPublishMs = pub;
+  motivo = "configuracao de aquisicao gravada";
+  return true;
+}
+
+void publicarConfiguracaoAquisicao() {
+  if (!mqttClient.connected()) return;
+  StaticJsonDocument<384> doc;
+  doc["v"] = 1;
+  doc["source"] = DEVICE_ID;
+  doc["revision"] = configAquisicao.revision;
+  doc["pzem_read_ms"] = configAquisicao.pzemReadMs;
+  doc["publish_ms"] = configAquisicao.publishMs;
+  doc["chart_ms"] = configAquisicao.chartMs;
+  doc["record_ms"] = configAquisicao.recordMs;
+  // Parametros protegidos pelo processamento fisico / formato do historico.
+  doc["vibration_hz"] = 1000;
+  doc["vibration_window_ms"] = 1000;
+  doc["history_bucket_s"] = 3600;
+  doc["history_retention_days"] = 7;
+  char payload[384];
+  const size_t len = serializeJson(doc, payload, sizeof(payload));
+  if (len) mqttClient.publish(topicoAquisicao,
+      reinterpret_cast<const uint8_t*>(payload), static_cast<unsigned int>(len), true);
+}
+
 void manterMqtt(unsigned long agora) {
   if (WiFi.status() != WL_CONNECTED) return;
   if (mqttClient.connected()) {mqttClient.loop();return;}
@@ -516,6 +598,7 @@ void manterMqtt(unsigned long agora) {
     publicarRedes();
     publicarPerfis();
     publicarMotorInfo();
+    publicarConfiguracaoAquisicao();
     Serial.println("[MQTT] conectado: comandos e telemetria ativos");
   } else Serial.printf("[MQTT] falha rc=%d\n", mqttClient.state());
 }
@@ -574,6 +657,8 @@ void setup() {
   snprintf(topicoPerfis, sizeof(topicoPerfis), "iotmotor/%s/profiles", DEVICE_ID);
   snprintf(topicoAuth, sizeof(topicoAuth), "iotmotor/%s/auth", DEVICE_ID);
   snprintf(topicoMotorInfo, sizeof(topicoMotorInfo), "iotmotor/%s/motor_info", DEVICE_ID);
+  snprintf(topicoAquisicao, sizeof(topicoAquisicao), "iotmotor/system/acquisition");
+  carregarConfiguracaoAquisicao();
   carregarAcionamento();
   carregarToleranciaSemLink();
   carregarLimiteDoEnsaio();
@@ -620,7 +705,7 @@ void loop() {
     Serial.println("[QUADRO] reiniciando a pedido do painel");
     ESP.restart();
   }
-  if (agora - ultimaLeituraPzem >= INTERVALO_PZEM_MS) {
+  if (agora - ultimaLeituraPzem >= intervaloPzemMs) {
     ultimaLeituraPzem = agora;
     lerPzem();
   }
@@ -628,7 +713,7 @@ void loop() {
     ultimaAtualizacaoLcd = agora;
     atualizarLcd();
   }
-  if (mqttClient.connected() && (!ultimaPublicacaoMqtt || agora - ultimaPublicacaoMqtt >= MQTT_PUBLISH_MS)) {
+  if (mqttClient.connected() && (!ultimaPublicacaoMqtt || agora - ultimaPublicacaoMqtt >= mqttPublishMs)) {
     ultimaPublicacaoMqtt = agora;
     publicarTelemetriaMqtt();
   }

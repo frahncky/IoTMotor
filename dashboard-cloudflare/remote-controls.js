@@ -298,7 +298,8 @@
   // pendente: comando Ligar/Desligar enviado e ainda não confirmado (o desenho
   // do motor mostra "aguardando o quadro" enquanto isso).
   window.iotmotorRemoteControls = {connect, disconnect: desconectar,
-    pendente: () => (pending ? {action: pending.action} : null)};
+    pendente: () => (pending ? {action: pending.action} : null),
+    raw: (action, extras = {}) => manutencao(action, null, extras)};
 
   // Manutencao do firmware. As redes Wi-Fi ficam na aba "Wi-Fi" (wifi-manager.js).
   function manutencao(action, aviso, extras) {

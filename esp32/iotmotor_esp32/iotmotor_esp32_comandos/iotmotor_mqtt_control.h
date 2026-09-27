@@ -209,6 +209,21 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
 
+  // Configuracao unica de aquisicao/telemetria/visualizacao. O ESP32-01
+  // e a autoridade: grava em NVS e publica retido para painel, app e ESP32-S3.
+  if (!strcmp(acao, "acquisition_config_get")) {
+    publicarRespostaControle(seq, true, acao, "configuracao publicada");
+    publicarConfiguracaoAquisicao();
+    return;
+  }
+  if (!strcmp(acao, "acquisition_config_set")) {
+    const char* motivo = "";
+    const bool ok = salvarConfiguracaoAquisicao(doc["config"], motivo);
+    publicarRespostaControle(seq, ok, acao, motivo);
+    if (ok) publicarConfiguracaoAquisicao();
+    return;
+  }
+
   // Lista de redes (aba "Wi-Fi" do painel). A senha chega cifrada para a
   // chave desta placa; o broker publico nunca ve a senha em texto aberto.
   const char* motivoWifi = "";

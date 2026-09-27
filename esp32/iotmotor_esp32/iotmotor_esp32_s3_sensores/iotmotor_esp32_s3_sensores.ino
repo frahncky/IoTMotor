@@ -92,7 +92,7 @@ static const uint8_t MPU_ADDR = 0x68;
 static const uint32_t WIFI_RETRY_MS = 6000UL;
 static const uint32_t WIFI_RADIO_RESET_MS = 30000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
-static const uint32_t PUBLISH_MS = 1000UL;
+static uint32_t publishMs = 1000UL;
 static const uint32_t TEMP_REQUEST_MS = 2000UL;
 static const uint32_t TEMP_WAIT_MS = 800UL; // DS18B20 12-bit: ate 750 ms
 
@@ -106,7 +106,7 @@ uint8_t ds18b20Pin=0;
 // e dos pinos do LED/buzzer 16/17/18/42).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
-char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96];
+char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96], acquisitionTopic[96];
 char quadroCommandTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastPublish=0,lastHistorico=0;
 uint32_t wifiCaiuEm=0;
@@ -540,7 +540,7 @@ void tarefaSensores(void*) {
       procurarDs18b20(false);
     }
     pollTemperature(now);
-    if((uint32_t)(now-ultimaJanela)>=PUBLISH_MS) {
+    if((uint32_t)(now-ultimaJanela)>=1000UL) {
       ultimaJanela=now;
       vibracao::fecharJanela(mpuReady);
       amostrasAtuais=vibracao::amostras;
@@ -633,6 +633,17 @@ void publishAck(const char* seq,const char* acao,bool aceito,const char* motivo)
 // Comandos aceitos: alarme, lista de redes Wi-Fi, portal e atualizacao.
 void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(!topic || !length)return;
+  if(!strcmp(topic,acquisitionTopic)) {
+    StaticJsonDocument<384> cfg;
+    if(length<=384 && !deserializeJson(cfg,(const char*)payload,length)) {
+      const uint32_t recebido=cfg["publish_ms"] | 1000UL;
+      if(recebido>=1000UL && recebido<=60000UL) {
+        publishMs=recebido;
+        Serial.printf("[S3/CONFIG] telemetria a cada %lu ms\n",(unsigned long)publishMs);
+      }
+    }
+    return;
+  }
   if(!strcmp(topic,quadroTelemetryTopic)) {  // Medidas eletricas e estado do motor.
     // A telemetria do quadro passa de 900 bytes com horimetro e partidas: le
     // no heap, uma vez so, e repassa o documento aos alarmes.
@@ -903,6 +914,7 @@ void setup() {
   snprintf(historyTopic,sizeof(historyTopic),"%s/%s/history",TOPIC_PREFIX,DEVICE_ID);
   // Alarmes de tensao e corrente leem a telemetria do quadro de comando.
   snprintf(quadroTelemetryTopic,sizeof(quadroTelemetryTopic),"%s/esp32-01/telemetry",TOPIC_PREFIX);
+  snprintf(acquisitionTopic,sizeof(acquisitionTopic),"%s/system/acquisition",TOPIC_PREFIX);
   snprintf(quadroCommandTopic,sizeof(quadroCommandTopic),"%s/esp32-01/command",TOPIC_PREFIX);
   mqtt.setBufferSize(2048);  // Cabe um dia inteiro do historico.
   mqtt.setCallback(onCommand);
@@ -971,7 +983,7 @@ void loop() {
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
-        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();publishAlarmLog();
+        mqtt.subscribe(quadroTelemetryTopic,0);mqtt.subscribe(acquisitionTopic,1);publishAlarms();publishAuth();publishAlarmLog();
         for(uint8_t d=0;d<historico::DIAS;d++)publishHistory(d);
         pedirBeep(2,buzzerHz,70);  // Dois bipes sempre: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
@@ -983,7 +995,7 @@ void loop() {
   mqtt.loop();
   verificarDesarme(millis());
   now=millis();
-  if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
+  if(lastPublish==0 || (uint32_t)(now-lastPublish)>=publishMs) {
     lastPublish=now;publishTelemetry();
   }
   if(alarmes::eventosMudaram)publishAlarmLog();

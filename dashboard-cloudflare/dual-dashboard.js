@@ -37,9 +37,11 @@ const METRICS=[
 // Nomes mostrados na tela; o identificador tecnico fica na dica do selo.
 const NOMES={command:'Quadro de comando',sensor:'Sensores do motor'};
 const alias={voltage:['voltage','tensao','v'],current:['current','corrente','i'],power:['power','potencia','w'],pf:['pf','power_factor','fator_potencia','fp'],frequency:['frequency','frequencia','hz'],energy:['energy','energy_kwh','energia','kwh'],vibration_mms:['vibration_mms'],temperature:['temperature','temperatura','temp']};
+const ACQ_DEFAULT={revision:0,pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,record_ms:1000,vibration_hz:1000,vibration_window_ms:1000,history_bucket_s:3600,history_retention_days:7};
+const ACQ_PRESETS={realtime:{pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,record_ms:1000},monitoring:{pzem_read_ms:1000,publish_ms:2000,chart_ms:2000,record_ms:5000},economic:{pzem_read_ms:5000,publish_ms:5000,chart_ms:5000,record_ms:30000}};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
- series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
+ acquisition:{...ACQ_DEFAULT},lastChart:{},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
 function field(source,keys){for(const key of keys){const n=numeric(source[key]);if(n!==null)return n;}return null;}
 function parseTelemetry(json){
@@ -357,7 +359,7 @@ function render(){
  $('exportBtn').disabled=!state.records.length;updateControl();renderMotorVisual();renderCharts();
 }
 function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
- state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.pending=null;state.subscribed=false;
+ state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.lastChart={};state.lastRecord={};state.pending=null;state.subscribed=false;
  render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
@@ -375,12 +377,9 @@ function ingest(which,raw,packet){
  state[which].sample=sample;state[which].at=Date.now();state[which].count++;
  if(which==='command')window.iotmotorMotorSound?.syncConfirmedState?.(sample.motorOn);
  for(const m of METRICS.filter(m=>m.source===which)){
-  if(sample[m.key]!==null){const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
+  if(sample[m.key]!==null && state[which].at-(state.lastChart[m.key]||0)>=state.acquisition.chart_ms){state.lastChart[m.key]=state[which].at;const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
  }
- // Hora da medicao quando a placa carimba; senao, a hora em que chegou.
- state.records.push(registroCsv(sample,expected,state[which].at));
- if(state.records.length>MAX_REGISTROS)state.records.shift();
- guardarRegistros();
+ if(state[which].at-(state.lastRecord[which]||0)>=state.acquisition.record_ms){state.lastRecord[which]=state[which].at;state.records.push(registroCsv(sample,expected,state[which].at));if(state.records.length>MAX_REGISTROS)state.records.shift();guardarRegistros();}
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
  diag(`Recebendo ${which==='command'?'medições do quadro de comando':'vibração e temperatura dos sensores'}.`);render();return true;
 }
@@ -399,13 +398,14 @@ function connect(automatico){
  const active=()=>state.client===client&&state.generation===generation;
  client.on('connect',()=>{
   if(!active())return;state.connected=true;pill('Broker conectado','live');
-  const topics=[topic(config.commandDevice,'telemetry'),topic(config.commandDevice,'status'),topic(config.sensorDevice,'telemetry'),topic(config.sensorDevice,'status')];
+  const topics=[topic(config.commandDevice,'telemetry'),topic(config.commandDevice,'status'),topic(config.sensorDevice,'telemetry'),topic(config.sensorDevice,'status'),config.prefix+'/system/acquisition'];
   client.subscribe(topics,{qos:0},err=>{
    if(!active())return;state.subscribed=!err;diag(err?`Conectado, erro de assinatura: ${err.message}`:`Broker conectado. Aguardando ${topics[0]} e ${topics[2]}.`);updateControl();
   });
  });
  client.on('message',(destination,payload,packet)=>{
   if(!active())return;
+  if(destination===config.prefix+'/system/acquisition'){aplicarConfiguracaoAquisicao(payload.toString('utf8'));return;}
   const which=destination.startsWith(`${config.prefix}/${config.commandDevice}/`)?'command':destination.startsWith(`${config.prefix}/${config.sensorDevice}/`)?'sensor':null;
   if(!which)return;
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'status')){
@@ -478,6 +478,33 @@ function exportCsv(){
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`iotmotor-2-modulos-${new Date().toISOString().slice(0,10)}.csv`;a.click();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+function aplicarConfiguracaoAquisicao(raw){
+ let data;try{data=typeof raw==='string'?JSON.parse(raw):raw;}catch{return false;}
+ if(!data||typeof data!=='object')return false;
+ const cfg={...ACQ_DEFAULT,...data};
+ for(const k of ['pzem_read_ms','publish_ms','chart_ms','record_ms'])if(!Number.isInteger(Number(cfg[k])))return false;
+ state.acquisition={...cfg,pzem_read_ms:Number(cfg.pzem_read_ms),publish_ms:Number(cfg.publish_ms),chart_ms:Number(cfg.chart_ms),record_ms:Number(cfg.record_ms)};
+ renderAcquisitionConfig();return true;
+}
+function renderAcquisitionConfig(){
+ const cfg=state.acquisition;
+ for(const par of [['acqPzem','pzem_read_ms'],['acqPublish','publish_ms'],['acqChart','chart_ms'],['acqRecord','record_ms']]){
+  const el=$(par[0]);if(el&&document.activeElement!==el)el.value=String(cfg[par[1]]/1000);
+ }
+ text('acqFixed','Vibração: '+cfg.vibration_hz+' Hz · janela RMS '+(cfg.vibration_window_ms/1000)+' s · histórico: '+(cfg.history_bucket_s/60)+' min / '+cfg.history_retention_days+' dias');
+ text('acqRevision',cfg.revision?'Configuração sincronizada · revisão '+cfg.revision:'Aguardando configuração do ESP32-01.');
+}
+function lerConfiguracaoAquisicaoForm(){
+ const seg=id=>Number($(id)?.value)*1000;
+ const cfg={pzem_read_ms:seg('acqPzem'),publish_ms:seg('acqPublish'),chart_ms:seg('acqChart'),record_ms:seg('acqRecord')};
+ if(!Object.values(cfg).every(Number.isInteger))throw Error('Use intervalos inteiros em segundos.');
+ if(cfg.pzem_read_ms<1000||cfg.pzem_read_ms>10000)throw Error('Aquisição elétrica: 1 a 10 s.');
+ if(cfg.publish_ms<1000||cfg.publish_ms>60000)throw Error('Publicação MQTT: 1 a 60 s.');
+ if(cfg.pzem_read_ms>cfg.publish_ms)throw Error('A aquisição elétrica deve ser igual ou mais rápida que a publicação.');
+ if(cfg.chart_ms<cfg.publish_ms||cfg.chart_ms>60000)throw Error('O gráfico deve ser igual ou mais lento que a publicação MQTT.');
+ if(cfg.record_ms<cfg.publish_ms||cfg.record_ms>600000)throw Error('O registro deve ser igual ou mais lento que a publicação MQTT.');
+ return cfg;
+}
 function init(){
  try{localStorage.removeItem('iotmotor_registros_v1');}catch{}  // Formato antigo, de ate 2 MB.
  try{
@@ -506,7 +533,9 @@ function init(){
    $('cmdMostrar').setAttribute('aria-pressed',String(!mostrando));
   });
  }
- buildCards();render();
+ buildCards();render();renderAcquisitionConfig();
+ $('acqPreset')?.addEventListener('change',()=>{const p=ACQ_PRESETS[$('acqPreset').value];if(!p)return;$('acqPzem').value=String(p.pzem_read_ms/1000);$('acqPublish').value=String(p.publish_ms/1000);$('acqChart').value=String(p.chart_ms/1000);$('acqRecord').value=String(p.record_ms/1000);});
+ $('acqForm')?.addEventListener('submit',event=>{event.preventDefault();try{const cfg=lerConfiguracaoAquisicaoForm();if(!window.iotmotorRemoteControls?.raw){diag('Conecte ao MQTT antes de gravar a configuração.');return;}window.iotmotorRemoteControls.raw('acquisition_config_set',{config:cfg});diag('Enviando configuração de aquisição ao ESP32-01…');}catch(e){diag(e.message);}});
  $('connectBtn').addEventListener('click',()=>state.client?disconnect():connect());
  // A pagina abre desconectada: telemetria e comandos so comecam no botao Conectar.
  $('connectionForm').addEventListener('submit',event=>{event.preventDefault();connect();});
