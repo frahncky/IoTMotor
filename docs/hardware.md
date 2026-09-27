@@ -61,10 +61,14 @@ flowchart LR
 | LED azul / verde / vermelho | GPIO16 / GPIO17 / GPIO18 | Catodo comum |
 
 - Se o DS18B20 não responder no GPIO4, a placa procura em outros pinos livres. Os pinos do LED e do buzzer ficam fora dessa busca.
-- O MPU6050 é lido continuamente a **1000 amostras/s**. O firmware remove a componente de baixa frequência/gravitacional, integra a aceleração para velocidade e calcula a **velocidade RMS em mm/s** numa janela fixa de **1 s**, usando o pior eixo entre X, Y e Z. A faixa útil fica aproximadamente entre 10 Hz e 180 Hz.
+- O MPU6050 é lido continuamente a **1000 amostras/s**. O firmware filtra a aceleração, integra numericamente para velocidade, filtra novamente para reduzir deriva e calcula a **velocidade RMS em mm/s** numa janela fixa de **1 s**, publicando o maior RMS entre X, Y e Z.
 - A frequência de aquisição da vibração **não muda** quando o intervalo MQTT é alterado: apenas a cadência de publicação da telemetria muda.
 - A temperatura é pedida a cada ~2 s, sem travar a comunicação.
 - Sensores, LED e buzzer rodam numa tarefa separada da rede: o alarme continua funcionando sem Wi-Fi.
+
+A cadeia completa, os filtros de 8 Hz, a integração trapezoidal, os critérios de validade, a faixa útil aproximada de 10–180 Hz e as recomendações de montagem estão em [**Vibração: medição, processamento e interpretação**](vibracao.md).
+
+![Montagem recomendada do sensor](images/vibracao-montagem.svg)
 
 ### O que o LED indica
 
