@@ -338,9 +338,13 @@ if (typeof document !== 'undefined') (() => {
       const atualPendente = pendenteDe(dev);
       if (atualPendente?.seq !== seq || atualPendente.fase !== 'enviado') return;
       limparPendente(dev);
-      informar(`Sem resposta de ${dev}. A placa está online?`);
+      if (acao === 'restart') {
+        aviso(`${dev}: reinício solicitado, mas a reconexão ainda não foi confirmada.`);
+      } else {
+        informar(`Sem resposta de ${dev}. A placa está online?`);
+      }
       renderizar();
-    }, 8000);
+    }, acao === 'restart' ? 30000 : 8000);
     renderizar();
     return true;
   }
@@ -500,6 +504,14 @@ if (typeof document !== 'undefined') (() => {
         if (p?.acao === 'update' && p.fase !== 'enviado') {
           if (estado === 'offline') p.fase = 'reiniciando';
           else if (estado === 'online' && p.fase === 'reiniciando') p.fase = 'confirmando';
+        } else if (p?.acao === 'restart') {
+          if (estado === 'offline') {
+            p.fase = 'reiniciando';
+            aviso(`${placaDoStatus}: reiniciando… aguardando reconexão.`);
+          } else if (estado === 'online' && p.fase === 'reiniciando') {
+            limparPendente(placaDoStatus);
+            aviso(`${placaDoStatus}: reiniciada e conectada.`);
+          }
         }
         renderizar();
         return;
@@ -558,6 +570,18 @@ if (typeof document !== 'undefined') (() => {
               avisoFirmware(`${dev}: atualização não confirmada. Verifique a versão e tente novamente.`);
               renderizar();
             }, 120000);
+          } else if (p.acao === 'restart' && dados.accepted) {
+            if (p.timer) clearTimeout(p.timer);
+            p.fase = 'reiniciando';
+            const seqAtual = p.seq;
+            aviso(`${dev}: reinício confirmado. Aguardando reconexão…`);
+            p.timer = setTimeout(() => {
+              const atualPendente = pendenteDe(dev);
+              if (atualPendente?.seq !== seqAtual || atualPendente.fase !== 'reiniciando') return;
+              limparPendente(dev);
+              aviso(`${dev}: reinício executado, mas a reconexão ainda não foi confirmada.`);
+              renderizar();
+            }, 30000);
           } else {
             const texto = (dados.accepted ? `${dev}: placa confirmou: ` : `${dev}: falha na atualização/comando: `) + motivo;
             (p.acao === 'update' ? avisoFirmware : aviso)(texto);
