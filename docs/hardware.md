@@ -48,6 +48,7 @@ flowchart LR
 - Os relés são acionados em nível **alto**. Se o seu módulo liga em nível baixo, troque `RELE_ATIVO_EM_NIVEL_BAIXO` para `true` no sketch antes de gravar.
 - As saídas começam **desligadas** a cada energização.
 - **Estrela-triângulo:** a partida padrão usa CNT 1 como principal, CNT 2 como estrela e CNT 3 como triângulo, com 0,7 s de tempo morto entre estrela e triângulo.
+- **Intertravamento:** estrela e triângulo fechados juntos são um curto entre fases. O tempo morto do firmware não basta: ligue um contato auxiliar NF de cada um na bobina do outro. O editor de partidas do painel pede confirmação quando uma partida deixa três contatores ligados ao mesmo tempo.
 - O LCD não mostra acentos: o nome da partida sai sem acento só no display ("Estrela-triangulo"). No painel e no app o acento continua.
 
 ## Sensores do motor (ESP32-S3)
