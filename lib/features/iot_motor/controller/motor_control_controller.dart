@@ -22,6 +22,61 @@ import '../services/start_types_store.dart';
 import '../services/telemetry_alert_store.dart';
 import '../services/telemetry_history_store.dart';
 
+class _ChartBucketAccumulator {
+  _ChartBucketAccumulator(this.start, TelemetrySample sample) {
+    add(sample);
+  }
+
+  final DateTime start;
+  final Map<String, double> _sums = <String, double>{};
+  final Map<String, int> _counts = <String, int>{};
+  bool measuredByBoard = false;
+  double? energy;
+  bool? motorOn;
+  String? mode;
+
+  void _addNumber(String key, double? value) {
+    if (value == null) return;
+    _sums[key] = (_sums[key] ?? 0) + value;
+    _counts[key] = (_counts[key] ?? 0) + 1;
+  }
+
+  double? _average(String key) {
+    final int count = _counts[key] ?? 0;
+    if (count == 0) return null;
+    return _sums[key]! / count;
+  }
+
+  void add(TelemetrySample sample) {
+    measuredByBoard = measuredByBoard || sample.measuredByBoard;
+    _addNumber('voltage', sample.voltage);
+    _addNumber('current', sample.current);
+    _addNumber('power', sample.power);
+    _addNumber('powerFactor', sample.powerFactor);
+    _addNumber('frequency', sample.frequency);
+    _addNumber('vibration', sample.vibration);
+    _addNumber('temperature', sample.temperature);
+    if (sample.energy != null) energy = sample.energy;
+    if (sample.motorOn != null) motorOn = sample.motorOn;
+    if (sample.mode != null) mode = sample.mode;
+  }
+
+  TelemetrySample build() => TelemetrySample(
+        timestamp: start,
+        measuredByBoard: measuredByBoard,
+        voltage: _average('voltage'),
+        current: _average('current'),
+        power: _average('power'),
+        powerFactor: _average('powerFactor'),
+        frequency: _average('frequency'),
+        energy: energy,
+        vibration: _average('vibration'),
+        temperature: _average('temperature'),
+        motorOn: motorOn,
+        mode: mode,
+      );
+}
+
 class MotorControlController extends ChangeNotifier {
   MotorControlController({
     MqttMotorService? service,
@@ -150,7 +205,8 @@ class MotorControlController extends ChangeNotifier {
 
   /// Configuração única de aquisição publicada pelo ESP32-01.
   AcquisitionConfig acquisitionConfig = AcquisitionConfig.defaults;
-  final Map<String, DateTime> _lastChartSampleByDevice = <String, DateTime>{};
+  final Map<String, _ChartBucketAccumulator> _chartBucketsByDevice =
+      <String, _ChartBucketAccumulator>{};
 
   /// Versão do firmware informada por cada placa.
   final Map<String, String> firmwareByDevice = <String, String>{};
@@ -1903,6 +1959,9 @@ class MotorControlController extends ChangeNotifier {
         if (decoded is Map<String, dynamic>) {
           final AcquisitionConfig nova = AcquisitionConfig.fromJson(decoded);
           if (nova.validate() == null) {
+            if (nova.chartMs != acquisitionConfig.chartMs) {
+              _chartBucketsByDevice.clear();
+            }
             acquisitionConfig = nova;
             statusMessage = 'Configuração de aquisição sincronizada (revisão ${nova.revision}).';
             _notify();
@@ -2008,14 +2067,7 @@ class MotorControlController extends ChangeNotifier {
     _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
 
-    final DateTime agoraGrafico = DateTime.now();
-    final DateTime? ultimaGrafico = _lastChartSampleByDevice[deviceId];
-    if (acquisitionConfig.revision == 0 ||
-        ultimaGrafico == null ||
-        agoraGrafico.difference(ultimaGrafico).inMilliseconds >= acquisitionConfig.chartMs) {
-      _lastChartSampleByDevice[deviceId] = agoraGrafico;
-      _addSampleToHistory(deviceId: deviceId, sample: sample);
-    }
+    _upsertChartHistory(deviceId: deviceId, sample: sample);
 
     final TelemetryAlert? alert = _evaluateTelemetryAlerts(
       deviceId: deviceId,
@@ -2096,6 +2148,58 @@ class MotorControlController extends ChangeNotifier {
       _scheduleHistoryPersist();
     }
     return removed;
+  }
+
+  DateTime _chartBucketStart(DateTime timestamp) {
+    final int interval = acquisitionConfig.chartMs;
+    final int bucketMs =
+        (timestamp.millisecondsSinceEpoch ~/ interval) * interval;
+    return DateTime.fromMillisecondsSinceEpoch(
+      bucketMs,
+      isUtc: timestamp.isUtc,
+    );
+  }
+
+  void _upsertChartHistory({
+    required String deviceId,
+    required TelemetrySample sample,
+  }) {
+    // Antes de receber a configuração oficial, mantém o comportamento antigo
+    // para não descartar dados durante a conexão inicial.
+    if (acquisitionConfig.revision == 0) {
+      _addSampleToHistory(deviceId: deviceId, sample: sample);
+      return;
+    }
+
+    final DateTime inicio = _chartBucketStart(sample.timestamp);
+    final _ChartBucketAccumulator? atual = _chartBucketsByDevice[deviceId];
+
+    // Pacote atrasado de uma janela já encerrada não volta no tempo no gráfico.
+    if (atual != null && inicio.isBefore(atual.start)) return;
+
+    if (atual == null || inicio != atual.start) {
+      final _ChartBucketAccumulator novo =
+          _ChartBucketAccumulator(inicio, sample);
+      _chartBucketsByDevice[deviceId] = novo;
+      _addSampleToHistory(deviceId: deviceId, sample: novo.build());
+      return;
+    }
+
+    atual.add(sample);
+    final List<TelemetrySample>? historico = _historyByDevice[deviceId];
+    if (historico == null || historico.isEmpty) {
+      _addSampleToHistory(deviceId: deviceId, sample: atual.build());
+      return;
+    }
+
+    // Atualiza o ponto corrente pela média das amostras da mesma janela, sem
+    // criar um ponto extra. Energia/estado/modo usam o valor mais recente.
+    if (historico.last.timestamp == atual.start) {
+      historico[historico.length - 1] = atual.build();
+      _scheduleHistoryPersist();
+    } else {
+      _addSampleToHistory(deviceId: deviceId, sample: atual.build());
+    }
   }
 
   void _addSampleToHistory({
