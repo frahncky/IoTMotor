@@ -280,8 +280,11 @@ if (typeof document !== 'undefined') (() => {
     const livre = connected && Boolean(placa) && !pendenteDe(dev) && noAr();
     $('apSaveBtn').disabled = !livre || (!$('apOpen').checked && !placa.pubkey);
     $('apOpenNow').disabled = !livre;
-    // Disponivel mesmo sem lista: e assim que uma placa com firmware antigo a recebe.
-    $('wifiUpdateFw').disabled = !connected || Boolean(pendenteDe(dev)) || !noAr();
+    // Sem capabilities ainda permitimos atualizar (pode ser firmware antigo).
+    // Se a versão já é a publicada, o botão fica desativado.
+    const precisaAtualizar = minha?.atualizar ?? true;
+    $('wifiUpdateFw').disabled =
+      !connected || Boolean(pendenteDe(dev)) || !noAr() || !precisaAtualizar;
     $('wifiRestart').disabled = !connected || Boolean(pendenteDe(dev)) || !noAr();
   }
   let apMostrada = '';
