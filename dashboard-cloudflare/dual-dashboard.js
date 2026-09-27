@@ -225,7 +225,7 @@ function vibrationText(sensor,motorOn,info){
  const mms=sensor?.vibration_mms;
  if(!Number.isFinite(mms))return null;
  const iso=motorOn===true?vibrationZone(mms,info?.power_cv):null;
- return {texto:`Vibração ${mms.toFixed(2).replace('.',',')} mm/s RMS${iso?` · ${iso.label}`:''}`,iso};
+ return {texto:`Vibração ${mms.toFixed(2).replace('.',',')} mm/s${iso?` · ${iso.label}`:''}`,iso};
 }
 // Manutenção pelo horímetro: horas de uso desde a última manutenção contra o
 // intervalo cadastrado em "Dados do motor". null sem intervalo ou sem horímetro.
