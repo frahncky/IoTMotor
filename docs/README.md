@@ -22,6 +22,5 @@ flowchart LR
 
 - O **quadro de comando** mede a energia (PZEM-004T), aciona os contatores, guarda as partidas, os dados do motor e o horímetro e é a autoridade da configuração de aquisição sincronizada.
 - A **placa de sensores** mede vibração e temperatura, cuida dos alarmes (LED e buzzer) e guarda o histórico de 7 dias.
-- O **painel** e o **app** só leem e comandam pelo broker. Tudo o que precisa sobreviver fica gravado nas placas.
-
+- O **painel** e o **app** trocam telemetria e comandos pelo broker; as configurações operacionais que precisam valer para todo o sistema ficam gravadas nas placas.
 - A configuração de aquisição fica gravada no ESP32-01 e é compartilhada com web, app e ESP32-S3; a vibração permanece em 1000 Hz com janela RMS de 1 s.
