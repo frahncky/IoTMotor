@@ -383,13 +383,13 @@ class MqttMotorService {
   ///
   /// A senha do Wi-Fi nunca é enviada por aqui: `wifi_portal` só pede que a
   /// placa abra a própria rede de configuração, porque o broker é público.
-  bool sendMaintenanceCommand(String action, {String? deviceId}) {
+  String? sendMaintenanceCommand(String action, {String? deviceId}) {
     final MqttServerClient? client = _client;
     final MqttConnectionConfig? config = _activeConfig;
     if (client == null ||
         config == null ||
         client.connectionStatus?.state != MqttConnectionState.connected) {
-      return false;
+      return null;
     }
 
     final String targetDeviceId = _resolveTargetDeviceId(
@@ -397,9 +397,9 @@ class MqttMotorService {
       requestedDeviceId: deviceId,
     );
     // Cada placa só escuta o próprio tópico: "auto" não chegaria a nenhuma.
-    if (targetDeviceId.isEmpty || targetDeviceId == 'auto') return false;
-    if (seal.impedimento(targetDeviceId) != null) return false;
-    final DateTime now = DateTime.now();
+    if (targetDeviceId.isEmpty || targetDeviceId == 'auto') return null;
+    if (seal.impedimento(targetDeviceId) != null) return null;
+    final String seq = _proximaSequencia();
     _publicarComando(
       client,
       config.commandTopicForDevice(targetDeviceId),
@@ -407,8 +407,7 @@ class MqttMotorService {
       <String, dynamic>{
         'v': 1,
         'device_id': targetDeviceId,
-        'seq':
-            '${now.millisecondsSinceEpoch}${now.microsecond.toString().padLeft(3, '0')}',
+        'seq': seq,
         'action': action,
         'boot': '',
         'mode': 'none',
@@ -419,7 +418,7 @@ class MqttMotorService {
         'seconds': 0,
       },
     );
-    return true;
+    return seq;
   }
 
   String? requestCommand({

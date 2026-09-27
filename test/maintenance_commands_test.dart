@@ -24,9 +24,9 @@ class _ServicoFalso extends MqttMotorService {
   );
 
   @override
-  bool sendMaintenanceCommand(String action, {String? deviceId}) {
+  String? sendMaintenanceCommand(String action, {String? deviceId}) {
     enviados.add((action, deviceId));
-    return true;
+    return enviados.length.toString();
   }
 
   @override

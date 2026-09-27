@@ -365,7 +365,11 @@ class MotorControlController extends ChangeNotifier {
       <String, DateTime>{};
   final Map<String, _CommandClientPresence> _commandClients =
       <String, _CommandClientPresence>{};
+  final Map<String, _FirmwareUpdateProgress> _firmwareUpdatesByDevice =
+      <String, _FirmwareUpdateProgress>{};
   static const Duration _commandClientTtl = Duration(seconds: 10);
+  static const Duration _firmwareUpdateTimeout = Duration(minutes: 2);
+  static const Duration _firmwareUpdatedVisibleFor = Duration(seconds: 30);
   final List<TelemetryAlert> _alertHistory = <TelemetryAlert>[];
   final Set<String> _activeAlertKeys = <String>{};
   Set<String> _lastConnectedDevices = <String>{};
@@ -592,6 +596,7 @@ class MotorControlController extends ChangeNotifier {
     _lastSeenByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
     _commandClients.clear();
+    _firmwareUpdatesByDevice.clear();
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
@@ -973,6 +978,7 @@ class MotorControlController extends ChangeNotifier {
     _lastSeenByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
     _commandClients.clear();
+    if (manual) _firmwareUpdatesByDevice.clear();
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     connectionMessage = 'Desconectado';
@@ -1055,7 +1061,9 @@ class MotorControlController extends ChangeNotifier {
         final Object? dados = jsonDecode(payload);
         if (dados is Map<String, dynamic>) {
           final Object? versao = dados['firmware_version'];
-          firmwareByDevice[deviceIdDoTopico] = versao is String ? versao : '';
+          final String firmware = versao is String ? versao : '';
+          firmwareByDevice[deviceIdDoTopico] = firmware;
+          _tratarFirmwarePublicado(deviceIdDoTopico, firmware);
           _notify();
         }
       } catch (_) {}
@@ -1075,6 +1083,7 @@ class MotorControlController extends ChangeNotifier {
       return;
     }
     if (topic.endsWith('/command_ack')) {
+      _tratarRespostaDeAtualizacao(deviceIdDoTopico, payload);
       _tratarRespostaDeComando(payload);
       return;
     }
@@ -1098,6 +1107,7 @@ class MotorControlController extends ChangeNotifier {
 
     if (_isStatusTopic(topic)) {
       _statusByDevice[deviceId] = payload;
+      _tratarStatusDeAtualizacao(deviceId, payload);
       _syncMotorStateFromStatus(deviceId: deviceId, payload: payload);
       if (deviceId == selectedDeviceId) {
         statusMessage = _buildDeviceStateSummary(deviceId, fallback: payload);

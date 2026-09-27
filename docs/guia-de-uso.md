@@ -266,7 +266,7 @@ Na aba **Dispositivos**, escolha a placa no alto (**Quadro de comando** ou
 
 **Versão do firmware.** A linha "Firmware:" mostra a versão instalada.
 - Quando há versão nova, aparece um **ponto âmbar** na aba e no nome da placa, e o botão **Atualizar firmware desta placa** fica em destaque.
-- Ao atualizar, a placa baixa o firmware novo e reinicia, em cerca de 1 minuto. O painel acompanha até ela voltar com a versão nova e avisa "Atualização concluída".
+- Ao atualizar, a placa baixa o firmware novo e reinicia, em cerca de 1 minuto. Durante essa queda esperada, o app e o painel mostram **"Atualizando firmware…"** em vez de tratar a placa como uma falha comum. Depois da reconexão e da publicação da versão esperada, mostram **"Atualizado · Conectado"** e só então consideram a OTA concluída.
 - O quadro de comando só atualiza com o **motor parado**.
 
 **Reiniciar placa** funciona como o botão de reset. O quadro recusa com

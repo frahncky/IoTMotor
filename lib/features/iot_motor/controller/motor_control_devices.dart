@@ -62,6 +62,12 @@ extension MotorControlDevices on MotorControlController {
   }
 
   String deviceStatusLabel(String deviceId) {
+    if (isFirmwareUpdating(deviceId)) {
+      return 'atualizando firmware';
+    }
+    if (firmwareUpdateSucceeded(deviceId)) {
+      return 'atualizado · conectado';
+    }
     if (isBusy && !isConnected) {
       return 'conectando';
     }
@@ -201,9 +207,11 @@ extension MotorControlDevices on MotorControlController {
 
   void _notifyConnectionHealthIfChanged() {
     final bool clientsChanged = _pruneCommandClients();
+    final bool firmwareChanged = _pruneFirmwareUpdates();
     final Set<String> current = connectedDeviceIds.toSet();
     final bool stale = hasStaleTelemetry;
     if (!clientsChanged &&
+        !firmwareChanged &&
         _hasSameDevices(current, _lastConnectedDevices) &&
         stale == _lastTelemetryStale) {
       return;

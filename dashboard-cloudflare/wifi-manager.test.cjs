@@ -197,11 +197,18 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
     device_id: 'esp32-01', seq: comando2.seq, action: 'update',
     accepted: true, reason: 'baixando firmware'
   }));
+  assert.match(h.no('wifiFirmware').textContent, /Atualizando firmware/);
+  h.enviar('iotmotor/esp32-01/status', 'offline');
+  assert.match(h.no('wifiStatus').textContent, /Atualizando firmware.*reiniciando e reconectando/);
+  assert.doesNotMatch(h.no('wifiStatus').textContent, /desligada ou fora da rede/);
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  assert.match(h.no('wifiStatus').textContent, /confirmando a nova versão/);
   h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({
     device_id: 'esp32-01', firmware_version: FIRMWARE_PUBLICADO[0]
   }));
   assert.match(h.no('wifiFeedback').textContent, /Atualização .*concluída/);
-  assert.match(h.no('wifiFirmware').textContent, /em dia/);
+  assert.match(h.no('wifiFirmware').textContent, /Atualizado · Conectado/);
+  assert.match(h.no('wifiStatus').textContent, /Atualizado · Conectado/);
 });
 
 test('OTA de uma placa não bloqueia o envio de atualização para a outra', () => {
