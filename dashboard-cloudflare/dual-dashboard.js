@@ -19,6 +19,8 @@ const PONTE=typeof location!=='undefined'&&location.protocol==='https:'
  ?`wss://${location.host}/mqtt`:'wss://test.mosquitto.org:8081';
 const DEFAULT={broker:PONTE,prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
 const TELEMETRY_STALE_MS=6000;
+const DATA_CONFIG_DEFAULT={pzemIntervalMs:3000,mqttIntervalMs:1000,vibrationWindowMs:1000,chartIntervalMs:1000,recordIntervalMs:1000};
+let dataCommandSequence=0;
 // Quem já usava o broker direto passa para a ponte uma vez, sem perder nada.
 const BROKER_ANTIGO=['wss://test.mosquitto.org:8081','wss://test.mosquitto.org:8081/'];
 const METRICS=[
@@ -39,7 +41,8 @@ const NOMES={command:'Quadro de comando',sensor:'Sensores do motor'};
 const alias={voltage:['voltage','tensao','v'],current:['current','corrente','i'],power:['power','potencia','w'],pf:['pf','power_factor','fator_potencia','fp'],frequency:['frequency','frequencia','hz'],energy:['energy','energy_kwh','energia','kwh'],vibration_mms:['vibration_mms'],temperature:['temperature','temperatura','temp']};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
- series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
+ series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null,
+ dataConfig:{...DATA_CONFIG_DEFAULT},dataConfigByDevice:{},lastChart:{},lastRecord:{}};
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
 function field(source,keys){for(const key of keys){const n=numeric(source[key]);if(n!==null)return n;}return null;}
 function parseTelemetry(json){
@@ -82,7 +85,8 @@ function text(id,value){$(id).textContent=String(value);}
 function diag(message){text('diagnostic',message);}
 function pill(message,kind=''){text('connectionText',message);$('connection').className=`pill ${kind}`.trim();$('connectBtn').textContent=state.client?'Desconectar':'Conectar ao MQTT';}
 function topic(device,kind){return `${state.config.prefix}/${device}/${kind}`;}
-function freshness(which){return state.connected&&state.subscribed&&state[which].at>0&&Date.now()-state[which].at<TELEMETRY_STALE_MS;}
+function telemetryStaleMs(){return Math.max(TELEMETRY_STALE_MS,state.dataConfig.mqttIntervalMs*3);}
+function freshness(which){return state.connected&&state.subscribed&&state[which].at>0&&Date.now()-state[which].at<telemetryStaleMs();}
 // Conexao do dispositivo: telemetria recente prevalece; senao usa o status retido/LWT mais novo.
 function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now()}){
  if(!brokerOk)return {label:'broker desconectado',kind:''};
@@ -358,6 +362,7 @@ function render(){
 }
 function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.pending=null;state.subscribed=false;
+ state.lastChart={};state.lastRecord={};
  render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
@@ -375,15 +380,72 @@ function ingest(which,raw,packet){
  state[which].sample=sample;state[which].at=Date.now();state[which].count++;
  if(which==='command')window.iotmotorMotorSound?.syncConfirmedState?.(sample.motorOn);
  for(const m of METRICS.filter(m=>m.source===which)){
-  if(sample[m.key]!==null){const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
+  if(sample[m.key]===null)continue;
+  const ultimo=state.lastChart[m.key]||0;
+  if(!ultimo||state[which].at-ultimo>=state.dataConfig.chartIntervalMs){
+   state.lastChart[m.key]=state[which].at;
+   const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();
+  }
  }
- // Hora da medicao quando a placa carimba; senao, a hora em que chegou.
- state.records.push(registroCsv(sample,expected,state[which].at));
- if(state.records.length>MAX_REGISTROS)state.records.shift();
- guardarRegistros();
+ const ultimoRegistro=state.lastRecord[which]||0;
+ if(!ultimoRegistro||state[which].at-ultimoRegistro>=state.dataConfig.recordIntervalMs){
+  state.lastRecord[which]=state[which].at;
+  state.records.push(registroCsv(sample,expected,state[which].at));
+  if(state.records.length>MAX_REGISTROS)state.records.shift();
+  guardarRegistros();
+ }
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
  diag(`Recebendo ${which==='command'?'medições do quadro de comando':'vibração e temperatura dos sensores'}.`);render();return true;
 }
+function dataConfigNumber(data,key,fallback){const n=Number(data?.[key]);return Number.isFinite(n)?Math.round(n):fallback;}
+function ensureSelectValue(id,value){
+ const el=$(id);if(!el)return;
+ const v=String(value);
+ if(![...el.options].some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=value<1000?`${value} ms`:`${value/1000} s`;el.append(o);}
+ el.value=v;
+}
+function renderDataConfig(){
+ const d=state.dataConfig;
+ ensureSelectValue('dataPzemMs',d.pzemIntervalMs);ensureSelectValue('dataMqttMs',d.mqttIntervalMs);
+ ensureSelectValue('dataVibWindowMs',d.vibrationWindowMs);ensureSelectValue('dataChartMs',d.chartIntervalMs);ensureSelectValue('dataRecordMs',d.recordIntervalMs);
+ const sync=state.dataConfigByDevice.command&&state.dataConfigByDevice.sensor&&dataConfigNumber(state.dataConfigByDevice.command,'mqtt_interval_ms',-1)===dataConfigNumber(state.dataConfigByDevice.sensor,'mqtt_interval_ms',-2);
+ if($('dataConfigStatus'))$('dataConfigStatus').textContent=sync?'Sincronizado nas duas placas':'Aguardando sincronismo das duas placas';
+}
+function applyDataConfigMessage(which,raw){
+ let data;try{data=JSON.parse(raw);}catch{return;}if(!data||typeof data!=='object')return;
+ state.dataConfigByDevice[which]=data;const next={...state.dataConfig};
+ if(which==='command')next.pzemIntervalMs=dataConfigNumber(data,'pzem_interval_ms',next.pzemIntervalMs);
+ if(which==='sensor'){next.mqttIntervalMs=dataConfigNumber(data,'mqtt_interval_ms',next.mqttIntervalMs);next.vibrationWindowMs=dataConfigNumber(data,'vibration_window_ms',next.vibrationWindowMs);next.chartIntervalMs=dataConfigNumber(data,'chart_interval_ms',next.chartIntervalMs);next.recordIntervalMs=dataConfigNumber(data,'record_interval_ms',next.recordIntervalMs);}
+ state.dataConfig=next;renderDataConfig();
+}
+function publishDataCommand(device,extras){
+ const client=state.client;if(!client?.connected)return false;const selo=window.iotmotorSelo,impede=selo?.impedimento?.(device);
+ if(impede){if($('dataConfigFeedback'))$('dataConfigFeedback').textContent=impede;return false;}
+ const seq=String(dataCommandSequence=Math.max(Date.now()*1000+Math.floor(Math.random()*1000),dataCommandSequence+1));
+ const comando={v:1,device_id:device,seq,action:'data_config_set',...extras};const destino=`${state.config.prefix}/${device}/command`;
+ const enviar=texto=>client.publish(destino,texto,{qos:1,retain:false});const aberto=selo?selo.empacotarAberto(device,comando):JSON.stringify(comando);
+ if(aberto!==null)enviar(aberto);else selo.empacotar(device,comando).then(enviar).catch(e=>{if($('dataConfigFeedback'))$('dataConfigFeedback').textContent='Falha ao proteger comando: '+(e.message||e);});
+ return true;
+}
+function readDataConfigForm(){
+ const n=id=>Number($(id)?.value);const d={pzemIntervalMs:n('dataPzemMs'),mqttIntervalMs:n('dataMqttMs'),vibrationWindowMs:n('dataVibWindowMs'),chartIntervalMs:n('dataChartMs'),recordIntervalMs:n('dataRecordMs')};
+ if(d.pzemIntervalMs<1000||d.pzemIntervalMs>10000)throw Error('Leitura PZEM: use 1 a 10 s.');
+ if(d.mqttIntervalMs<1000||d.mqttIntervalMs>60000)throw Error('Telemetria MQTT: use 1 a 60 s.');
+ if(d.vibrationWindowMs<500||d.vibrationWindowMs>2000)throw Error('Janela RMS: use 0,5 a 2 s.');
+ if(d.chartIntervalMs<d.mqttIntervalMs)throw Error('O gráfico não pode ser mais rápido que a telemetria.');
+ if(d.recordIntervalMs<d.mqttIntervalMs)throw Error('O registro não pode ser mais rápido que a telemetria.');return d;
+}
+function applyDataPreset(name){
+ const presets={realtime:{pzemIntervalMs:1000,mqttIntervalMs:1000,vibrationWindowMs:1000,chartIntervalMs:1000,recordIntervalMs:1000},monitoring:{pzemIntervalMs:2000,mqttIntervalMs:2000,vibrationWindowMs:1000,chartIntervalMs:2000,recordIntervalMs:5000},economic:{pzemIntervalMs:5000,mqttIntervalMs:5000,vibrationWindowMs:1000,chartIntervalMs:5000,recordIntervalMs:30000}};
+ const d=presets[name];if(!d)return;for(const [id,key]of [['dataPzemMs','pzemIntervalMs'],['dataMqttMs','mqttIntervalMs'],['dataVibWindowMs','vibrationWindowMs'],['dataChartMs','chartIntervalMs'],['dataRecordMs','recordIntervalMs']])ensureSelectValue(id,d[key]);
+}
+function syncDataConfig(){
+ let d;try{d=readDataConfigForm();}catch(e){$('dataConfigFeedback').textContent=e.message;return;}
+ const ok1=publishDataCommand(state.config.commandDevice,{pzem_interval_ms:d.pzemIntervalMs,mqtt_interval_ms:d.mqttIntervalMs});
+ const ok2=publishDataCommand(state.config.sensorDevice,{mqtt_interval_ms:d.mqttIntervalMs,vibration_window_ms:d.vibrationWindowMs,chart_interval_ms:d.chartIntervalMs,record_interval_ms:d.recordIntervalMs});
+ if(ok1&&ok2){$('dataConfigFeedback').textContent='Configuração enviada. Aguardando confirmação retida das duas placas.';state.dataConfig={...d};renderDataConfig();}
+}
+
 function connect(automatico){
 
  let config;try{config=validateConfig({broker:$('broker').value,prefix:$('prefix').value,commandDevice:$('commandDevice').value,sensorDevice:$('sensorDevice').value});}
@@ -399,7 +461,7 @@ function connect(automatico){
  const active=()=>state.client===client&&state.generation===generation;
  client.on('connect',()=>{
   if(!active())return;state.connected=true;pill('Broker conectado','live');
-  const topics=[topic(config.commandDevice,'telemetry'),topic(config.commandDevice,'status'),topic(config.sensorDevice,'telemetry'),topic(config.sensorDevice,'status')];
+  const topics=[topic(config.commandDevice,'telemetry'),topic(config.commandDevice,'status'),topic(config.commandDevice,'data_config'),topic(config.commandDevice,'auth'),topic(config.sensorDevice,'telemetry'),topic(config.sensorDevice,'status'),topic(config.sensorDevice,'data_config'),topic(config.sensorDevice,'auth')];
   client.subscribe(topics,{qos:0},err=>{
    if(!active())return;state.subscribed=!err;diag(err?`Conectado, erro de assinatura: ${err.message}`:`Broker conectado. Aguardando ${topics[0]} e ${topics[2]}.`);updateControl();
   });
@@ -408,7 +470,13 @@ function connect(automatico){
   if(!active())return;
   const which=destination.startsWith(`${config.prefix}/${config.commandDevice}/`)?'command':destination.startsWith(`${config.prefix}/${config.sensorDevice}/`)?'sensor':null;
   if(!which)return;
-  if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'status')){
+  const dev=config[which==='command'?'commandDevice':'sensorDevice'];
+  if(destination===topic(dev,'auth')){
+   try{window.iotmotorSelo?.registrarAuth?.(dev,JSON.parse(payload.toString('utf8')));}catch{}
+   return;
+  }
+  if(destination===topic(dev,'data_config')){applyDataConfigMessage(which,payload.toString('utf8'));return;}
+  if(destination===topic(dev,'status')){
    state[which].status=payload.toString('utf8').slice(0,80);state[which].statusAt=Date.now();render();return;
   }
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'telemetry'))ingest(which,payload.toString('utf8'),packet);
@@ -506,7 +574,9 @@ function init(){
    $('cmdMostrar').setAttribute('aria-pressed',String(!mostrando));
   });
  }
- buildCards();render();
+ buildCards();render();renderDataConfig();
+ $('dataPreset')?.addEventListener('change',()=>applyDataPreset($('dataPreset').value));
+ $('dataConfigApply')?.addEventListener('click',syncDataConfig);
  $('connectBtn').addEventListener('click',()=>state.client?disconnect():connect());
  // A pagina abre desconectada: telemetria e comandos so comecam no botao Conectar.
  $('connectionForm').addEventListener('submit',event=>{event.preventDefault();connect();});
