@@ -364,7 +364,7 @@ function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.pending=null;state.subscribed=false;
  state.lastChart={};state.lastRecord={};
  render();}
-function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
+function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;state.dataConfigByDevice={};if(old)old.end(true);
  window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
  window.iotmotorRemoteControls?.disconnect?.();  // Botoes Ligar/Desligar param junto.
  window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
