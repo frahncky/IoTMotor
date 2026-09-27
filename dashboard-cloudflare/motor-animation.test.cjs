@@ -5,6 +5,8 @@ const {
   visualDpsForRpm,
   startupDurationForKind,
   startupSpeed,
+  coastDuration,
+  coastSpeed,
   motionAppearance,
 } = require('./motor-animation.js');
 
@@ -38,4 +40,15 @@ test('pás ficam menos definidas apenas em alta velocidade', () => {
   assert.ok(regime.blurPx > 0);
   assert.ok(regime.bladeOpacity < 1);
   assert.ok(regime.markerOpacity < regime.bladeOpacity);
+});
+
+test('parada por inércia é suave, chega a zero e dura mais em regime', () => {
+  assert.equal(coastDuration(1), 3.6);
+  assert.ok(coastDuration(0.2) < coastDuration(1));
+  assert.ok(coastDuration(0) > 0);
+  const total = coastDuration(1);
+  assert.equal(coastSpeed(1, 0, total), 1);
+  const meio = coastSpeed(1, total / 2, total);
+  assert.ok(meio > 0 && meio < 0.5);
+  assert.equal(coastSpeed(1, total, total), 0);
 });

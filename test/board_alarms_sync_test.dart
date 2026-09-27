@@ -89,6 +89,25 @@ void main() {
     expect(c.boardAlarms.every((BoardAlarm a) => !a.firing), isTrue);
   });
 
+  test('alarmes ao vivo só com broker conectado e telemetria recente', () {
+    final MotorControlController c = MotorControlController(loadSettings: false)
+      ..isConnected = true;
+    addTearDown(c.dispose);
+    c.handlePayloadForTest(
+      'iotmotor/esp32-02/telemetry',
+      jsonEncode(<String, dynamic>{
+        'device_id': 'esp32-02',
+        'alarms_firing': <String>['temp'],
+      }),
+    );
+    expect(c.liveFiringAlarmIds, <String>{'temp'});
+
+    // Broker desconectado: a lista antiga não vale mais.
+    c.isConnected = false;
+    expect(c.firingAlarmIds, <String>{'temp'});
+    expect(c.liveFiringAlarmIds, isEmpty);
+  });
+
   test('id novo não colide com o que já está na placa', () {
     final MotorControlController c = MotorControlController(loadSettings: false);
     addTearDown(c.dispose);

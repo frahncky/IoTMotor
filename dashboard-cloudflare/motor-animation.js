@@ -37,7 +37,20 @@ function startupSpeed(progress, kind) {
   const dip = profundidade * Math.exp(-(z * z));
   return motorClamp(base * (1 - dip), 0, 1);
 }
+// Parada por inércia: um pouco mais longa quando o motor estava perto do
+// regime, sem "cortar" a rotação de forma digital.
+const MOTOR_COAST_S = 3.6;
 
+function coastDuration(from) {
+  return MOTOR_COAST_S * Math.max(0.28, Math.pow(motorClamp(Number(from) || 0, 0, 1), 0.72));
+}
+
+function coastSpeed(from, elapsed, total) {
+  const x = total > 0 ? elapsed / total : 1;
+  if (x >= 1) return 0;
+  const ease = (1 - Math.exp(-2.35 * x)) / (1 - Math.exp(-2.35));
+  return from * (1 - ease);
+}
 
 function motionAppearance(speed) {
   const s = motorClamp(Number(speed) || 0, 0, 1);
@@ -54,6 +67,8 @@ if (typeof module !== 'undefined' && module.exports) {
     visualDpsForRpm,
     startupDurationForKind,
     startupSpeed,
+    coastDuration,
+    coastSpeed,
     motionAppearance,
   };
 }
@@ -76,12 +91,9 @@ if (typeof document !== 'undefined') (() => {
   let speed = 0;
   let coast = null;
   let wasRunning = false;
-  let last = performance.now();
+  let last = 0;
   let raf = 0;
   let lastAppearance = '';
-
-  const COAST_S = 3.6;
-  const easeCoast = x => (1 - Math.exp(-2.35 * x)) / (1 - Math.exp(-2.35));
 
   function progressFor(value, kind) {
     let lo = 0, hi = 1;
@@ -126,19 +138,13 @@ if (typeof document !== 'undefined') (() => {
       progress = Math.min(1, progress + elapsed / startupSeconds);
       speed = startupSpeed(progress, kind);
     } else if (speed > 0) {
-      if (!coast) {
-        coast = {
-          from: speed,
-          elapsed: 0,
-          // A inércia final fica um pouco mais longa quando o motor estava
-          // próximo do regime, sem "cortar" a rotação de forma digital.
-          total: COAST_S * Math.max(0.28, Math.pow(speed, 0.72)),
-        };
-      }
+      if (!coast) coast = { from: speed, elapsed: 0, total: coastDuration(speed) };
       coast.elapsed += elapsed;
-      const x = coast.elapsed / coast.total;
-      speed = x >= 1 ? 0 : coast.from * (1 - easeCoast(x));
-      if (speed === 0) progress = 0;
+      speed = coastSpeed(coast.from, coast.elapsed, coast.total);
+      if (speed === 0) {
+        progress = 0;
+        coast = null;
+      }
     }
 
     wasRunning = running;
@@ -151,12 +157,27 @@ if (typeof document !== 'undefined') (() => {
 
     applyMotionAppearance();
 
+    // Parado: o laço dorme até o estado do motor mudar (observer abaixo),
+    // em vez de acordar a CPU a cada quadro sem nada para desenhar.
+    // Com movimento reduzido nada gira, então o laço também dorme.
+    const moving = (running || speed > 0) && !reduceMotion?.matches;
+    raf = moving ? requestAnimationFrame(frame) : 0;
+  }
+
+  function wake() {
+    if (raf) return;
+    last = performance.now();
     raf = requestAnimationFrame(frame);
   }
 
-  raf = requestAnimationFrame(frame);
+  new MutationObserver(wake).observe(visual, { attributes: true, attributeFilter: ['data-state'] });
+  reduceMotion?.addEventListener?.('change', wake);
+  wake();
 
   window.addEventListener('pagehide', () => {
     if (raf) cancelAnimationFrame(raf);
-  }, { once: true });
+    raf = 0;
+  });
+  // Volta do cache de navegação (bfcache): retoma se o motor estiver girando.
+  window.addEventListener('pageshow', wake);
 })();
