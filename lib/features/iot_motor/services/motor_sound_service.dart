@@ -53,7 +53,7 @@ class MotorSoundService extends ChangeNotifier {
   Future<void> _load() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     _enabled = prefs.getBool(_enabledKey) ?? false;
-    _volume = (prefs.getDouble(_volumeKey) ?? 0.70).clamp(0.0, 1.0);
+    _volume = (prefs.getDouble(_volumeKey) ?? 0.70).clamp(0.0, 1.0).toDouble();
     await _player.setVolume(_volume);
     notifyListeners();
   }
@@ -75,7 +75,7 @@ class MotorSoundService extends ChangeNotifier {
   }
 
   Future<void> setVolume(double value) async {
-    _volume = value.clamp(0.0, 1.0);
+    _volume = value.clamp(0.0, 1.0).toDouble();
     await _player.setVolume(_volume);
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_volumeKey, _volume);
