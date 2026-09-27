@@ -322,6 +322,14 @@ function drawChart(target,metric){
  if(!values.length){target.append(svg('text',{x:320,y:105,'text-anchor':'middle',class:'empty'},'Sem leitura disponível'));return;}
  let min=Math.min(...values),max=Math.max(...values);const pad=Math.max((max-min)*.12,Math.abs(max)*.01,.01);min-=pad;max+=pad;
  for(let i=0;i<4;i++){const y=20+160*i/3;target.append(svg('line',{x1:53,x2:633,y1:y,y2:y,class:'gridline'}));target.append(svg('text',{x:45,y:y+4,'text-anchor':'end'},(max-(max-min)*i/3).toFixed(metric.digits>2?2:metric.digits)));}
+ // Grade vertical: 5 faixas; nas linhas do meio, a hora da amostra ali.
+ const entries=state.series[metric.key];
+ for(let k=0;k<=5;k++){
+  const x=56+570*k/5;target.append(svg('line',{x1:x,x2:x,y1:20,y2:180,class:'gridline'}));
+  const entry=entries[Math.round(k/5*(entries.length-1))];
+  if(k>0&&k<5&&entries.length>1&&Number.isFinite(entry?.t))
+   target.append(svg('text',{x,y:196,'text-anchor':'middle'},new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})));
+ }
  const points=values.map((v,i)=>`${(56+(values.length===1?280:570*i/(values.length-1))).toFixed(1)},${(180-(v-min)/(max-min)*160).toFixed(1)}`).join(' ');
  target.append(svg('polyline',{points,stroke:metric.color}));target.append(svg('text',{x:56,y:209},'Mais antigo'));target.append(svg('text',{x:631,y:209,'text-anchor':'end'},'Mais recente'));
 }
