@@ -379,17 +379,19 @@ function ingest(which,raw,packet){
  if(which==='command'&&!hasFields&&sample.motorOn===null&&!sample.relays){diag('Mensagem do módulo de comandos sem grandezas nem estado válido.');return false;}
  state[which].sample=sample;state[which].at=Date.now();state[which].count++;
  if(which==='command')window.iotmotorMotorSound?.syncConfirmedState?.(sample.motorOn);
+ const tempoAmostra=sample.measuredAt??state[which].at;
+ const politicaRemota=!!state.dataConfigByDevice.sensor;
  for(const m of METRICS.filter(m=>m.source===which)){
   if(sample[m.key]===null)continue;
   const ultimo=state.lastChart[m.key]||0;
-  if(!ultimo||state[which].at-ultimo>=state.dataConfig.chartIntervalMs){
-   state.lastChart[m.key]=state[which].at;
-   const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();
+  if(!politicaRemota||!ultimo||tempoAmostra-ultimo>=state.dataConfig.chartIntervalMs){
+   if(politicaRemota)state.lastChart[m.key]=tempoAmostra;
+   const arr=state.series[m.key];arr.push({t:tempoAmostra,v:sample[m.key]});if(arr.length>120)arr.shift();
   }
  }
  const ultimoRegistro=state.lastRecord[which]||0;
- if(!ultimoRegistro||state[which].at-ultimoRegistro>=state.dataConfig.recordIntervalMs){
-  state.lastRecord[which]=state[which].at;
+ if(!politicaRemota||!ultimoRegistro||tempoAmostra-ultimoRegistro>=state.dataConfig.recordIntervalMs){
+  if(politicaRemota)state.lastRecord[which]=tempoAmostra;
   state.records.push(registroCsv(sample,expected,state[which].at));
   if(state.records.length>MAX_REGISTROS)state.records.shift();
   guardarRegistros();
