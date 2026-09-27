@@ -308,7 +308,7 @@ if (typeof document !== 'undefined') (() => {
   }
 
   function publicar(acao, extras) {
-    const informar = acao === 'update' ? avisoFirmware : aviso;
+    const informar = acao === 'update' || acao === 'restart' ? avisoFirmware : aviso;
     if (!client?.connected) { informar('Sem conexão com o broker.'); return false; }
     const dev = dispositivos[selecionado];
     const impede = window.iotmotorSelo?.impedimento(dev);
@@ -339,7 +339,7 @@ if (typeof document !== 'undefined') (() => {
       if (atualPendente?.seq !== seq || atualPendente.fase !== 'enviado') return;
       limparPendente(dev);
       if (acao === 'restart') {
-        aviso(`${dev}: reinício solicitado, mas a reconexão ainda não foi confirmada.`);
+        avisoFirmware(`${dev}: reinício solicitado, mas a reconexão ainda não foi confirmada.`);
       } else {
         informar(`Sem resposta de ${dev}. A placa está online?`);
       }
@@ -434,7 +434,7 @@ if (typeof document !== 'undefined') (() => {
       : 'A placa de sensores vai reiniciar (alguns segundos sem leituras).\n\n' +
         'O motor não é afetado: esta placa só mede.\n\nContinuar?';
     if (!confirm(texto)) return;
-    if (publicar('restart', {})) aviso(`Pedindo para ${nomeDaPlaca().toLowerCase()} reiniciar…`);
+    if (publicar('restart', {})) avisoFirmware(`Pedindo para ${nomeDaPlaca().toLowerCase()} reiniciar…`);
   });
   $('apOpen').addEventListener('change', renderizar);
   $('apForm').addEventListener('submit', async evento => {
@@ -507,10 +507,10 @@ if (typeof document !== 'undefined') (() => {
         } else if (p?.acao === 'restart') {
           if (estado === 'offline') {
             p.fase = 'reiniciando';
-            aviso(`${placaDoStatus}: reiniciando… aguardando reconexão.`);
+            avisoFirmware(`${placaDoStatus}: reiniciando… aguardando reconexão.`);
           } else if (estado === 'online' && p.fase === 'reiniciando') {
             limparPendente(placaDoStatus);
-            aviso(`${placaDoStatus}: reiniciada e conectada.`);
+            avisoFirmware(`${placaDoStatus}: reiniciada e conectada.`);
           }
         }
         renderizar();
@@ -574,17 +574,17 @@ if (typeof document !== 'undefined') (() => {
             if (p.timer) clearTimeout(p.timer);
             p.fase = 'reiniciando';
             const seqAtual = p.seq;
-            aviso(`${dev}: reinício confirmado. Aguardando reconexão…`);
+            avisoFirmware(`${dev}: reinício confirmado. Aguardando reconexão…`);
             p.timer = setTimeout(() => {
               const atualPendente = pendenteDe(dev);
               if (atualPendente?.seq !== seqAtual || atualPendente.fase !== 'reiniciando') return;
               limparPendente(dev);
-              aviso(`${dev}: reinício executado, mas a reconexão ainda não foi confirmada.`);
+              avisoFirmware(`${dev}: reinício executado, mas a reconexão ainda não foi confirmada.`);
               renderizar();
             }, 30000);
           } else {
             const texto = (dados.accepted ? `${dev}: placa confirmou: ` : `${dev}: falha na atualização/comando: `) + motivo;
-            (p.acao === 'update' ? avisoFirmware : aviso)(texto);
+            (p.acao === 'update' || p.acao === 'restart' ? avisoFirmware : aviso)(texto);
             if (dados.accepted && dev === dispositivos[selecionado]) ordemEditada = null;
             limparPendente(dev);
           }
