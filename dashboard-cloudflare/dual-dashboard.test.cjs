@@ -17,6 +17,14 @@ test('indicador de conexao combina telemetria recente e status online/offline',(
  assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-7000,now}).kind,'error');
 });
 
+test('OTA tem prioridade visual sobre o estado normal das duas placas',()=>{
+ const now=100000;
+ assert.deepEqual(deviceConnection({brokerOk:true,status:'online',statusAt:now,at:now,now,firmwareState:'updating'}),
+  {label:'atualizando firmware',kind:'wait'});
+ assert.deepEqual(deviceConnection({brokerOk:true,status:'online',statusAt:now,at:now,now,firmwareState:'updated'}),
+  {label:'atualizado · conectado',kind:'live'});
+});
+
 test('animação do diagnóstico segue o estado do motor sem exibir sentido de rotação',()=>{
  assert.deepEqual(motorVisualState({brokerReady:false,commandFresh:false,motorOn:null}),{state:'offline',label:'Desconectado'});
  assert.equal(motorVisualState({brokerReady:true,commandFresh:false,motorOn:null}).state,'waiting');
