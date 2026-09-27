@@ -371,7 +371,6 @@ class MotorControlController extends ChangeNotifier {
   static const String dashboardTabMechanical =
       MotorAppSettings.dashboardTabMechanical;
   static const Duration telemetryStaleTimeout = Duration(minutes: 5);
-  static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
   static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
   static const Duration _historyPersistDelay = Duration(milliseconds: 700);
   static const int maxChartPoints = 120;
@@ -2938,7 +2937,11 @@ class MotorControlController extends ChangeNotifier {
     if (lastSeen == null) {
       return false;
     }
-    return DateTime.now().difference(lastSeen) <= _deviceOnlineTimeout;
+    final int adaptiveMs = dataAcquisitionConfig.mqttIntervalMs * 3;
+    final Duration onlineTimeout = Duration(
+      milliseconds: adaptiveMs < 4000 ? 4000 : adaptiveMs,
+    );
+    return DateTime.now().difference(lastSeen) <= onlineTimeout;
   }
 
   String? _latestConnectedDeviceId() {
