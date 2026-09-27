@@ -30,6 +30,7 @@
   String get telemetryWildcardTopic => '$topicPrefix/+/telemetry';
   String get statusWildcardTopic => '$topicPrefix/+/status';
   String get acquisitionConfigTopic => '$topicPrefix/system/acquisition';
+  String get clientsPresenceWildcardTopic => '$topicPrefix/clients/+/presence';
 
   /// Lista de partidas publicada (retida) pelo ESP32 de comandos, e as
   /// respostas dele: é dela que o app e o painel tiram as mesmas partidas.

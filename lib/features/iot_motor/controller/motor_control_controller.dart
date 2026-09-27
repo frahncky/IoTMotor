@@ -77,6 +77,13 @@ class _ChartBucketAccumulator {
       );
 }
 
+class _CommandClientPresence {
+  const _CommandClientPresence({required this.source, required this.seenAt});
+
+  final String source;
+  final DateTime seenAt;
+}
+
 class MotorControlController extends ChangeNotifier {
   MotorControlController({
     MqttMotorService? service,
@@ -544,6 +551,9 @@ class MotorControlController extends ChangeNotifier {
   final Map<String, DateTime> _lastSeenByDevice = <String, DateTime>{};
   final Map<String, DateTime> _lastTelemetryReceivedByDevice =
       <String, DateTime>{};
+  final Map<String, _CommandClientPresence> _commandClients =
+      <String, _CommandClientPresence>{};
+  static const Duration _commandClientTtl = Duration(seconds: 10);
   final List<TelemetryAlert> _alertHistory = <TelemetryAlert>[];
   final Set<String> _activeAlertKeys = <String>{};
   Set<String> _lastConnectedDevices = <String>{};
@@ -770,6 +780,31 @@ class MotorControlController extends ChangeNotifier {
     return connectedDeviceIds.join(', ');
   }
 
+  String get devicesPresenceSummary {
+    final UnmodifiableListView<String> conectados = connectedDeviceIds;
+    final int quadro = conectados.contains('esp32-01') ? 1 : 0;
+    final int sensores = conectados.contains('esp32-02') ? 1 : 0;
+    return '${conectados.length} · Quadro $quadro · Sensores $sensores';
+  }
+
+  List<_CommandClientPresence> get _activeCommandClients {
+    final DateTime limite = DateTime.now().subtract(_commandClientTtl);
+    return _commandClients.values
+        .where((_CommandClientPresence info) => info.seenAt.isAfter(limite))
+        .toList(growable: false);
+  }
+
+  String get commandClientsSummary {
+    final List<_CommandClientPresence> ativos = _activeCommandClients;
+    final int apps = ativos
+        .where((_CommandClientPresence info) => info.source == 'app')
+        .length;
+    final int webs = ativos
+        .where((_CommandClientPresence info) => info.source == 'web')
+        .length;
+    return '${ativos.length} · App $apps · Web $webs';
+  }
+
   UnmodifiableListView<MotorCommandType> get startTypes =>
       UnmodifiableListView<MotorCommandType>(
         _startTypes.toList(growable: false),
@@ -962,6 +997,7 @@ class MotorControlController extends ChangeNotifier {
     isConnected = false;
     _lastSeenByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
+    _commandClients.clear();
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
@@ -1904,6 +1940,8 @@ class MotorControlController extends ChangeNotifier {
     isConnected = true;
     isBusy = false;
     _recebeuDadoAtual = false;
+    // Uma conexão nova pode apontar para outro broker/prefixo.
+    _commandClients.clear();
     final MqttConnectionConfig? config = _service.activeConfig;
     if (config != null) {
       connectionMessage = 'Conectado em ${config.host}:${config.port}';
@@ -1917,6 +1955,7 @@ class MotorControlController extends ChangeNotifier {
     _recebeuDadoAtual = false;
     _lastSeenByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
+    _commandClients.clear();
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     connectionMessage = 'Desconectado';
@@ -1949,7 +1988,56 @@ class MotorControlController extends ChangeNotifier {
   void handlePayloadForTest(String topic, String payload) =>
       _handlePayload(topic, payload);
 
+  bool _handleCommandClientPresence(String topic, String payload) {
+    final List<String> partes = topic.split('/');
+    if (partes.length < 4 ||
+        partes[partes.length - 3] != 'clients' ||
+        partes.last != 'presence') {
+      return false;
+    }
+
+    try {
+      final Object? decoded = jsonDecode(payload);
+      if (decoded is! Map<String, dynamic> ||
+          decoded['kind'] != 'command_client') {
+        return true;
+      }
+      final String source =
+          decoded['source'] == 'app'
+              ? 'app'
+              : decoded['source'] == 'web'
+              ? 'web'
+              : '';
+      final String topicId = partes[partes.length - 2].trim();
+      final String clientId = (decoded['client_id']?.toString() ?? topicId).trim();
+      if (source.isEmpty || clientId.isEmpty) return true;
+
+      if (decoded['state'] == 'offline') {
+        _commandClients.remove(clientId);
+      } else {
+        _commandClients[clientId] = _CommandClientPresence(
+          source: source,
+          seenAt: DateTime.now(),
+        );
+      }
+      _notify();
+    } catch (_) {
+      // Presença inválida não deve afetar telemetria/comandos.
+    }
+    return true;
+  }
+
+  bool _pruneCommandClients() {
+    final DateTime limite = DateTime.now().subtract(_commandClientTtl);
+    final int antes = _commandClients.length;
+    _commandClients.removeWhere(
+      (String _, _CommandClientPresence info) => !info.seenAt.isAfter(limite),
+    );
+    return antes != _commandClients.length;
+  }
+
   void _handlePayload(String topic, String payload) {
+    if (_handleCommandClientPresence(topic, payload)) return;
     // Partidas e respostas não dependem da configuração ativa: o dispositivo
     // vem do próprio tópico (prefixo/dispositivo/profiles).
     final List<String> partes = topic.split('/');
@@ -2863,9 +2951,11 @@ class MotorControlController extends ChangeNotifier {
   }
 
   void _notifyConnectionHealthIfChanged() {
+    final bool clientsChanged = _pruneCommandClients();
     final Set<String> current = connectedDeviceIds.toSet();
     final bool stale = hasStaleTelemetry;
-    if (_hasSameDevices(current, _lastConnectedDevices) &&
+    if (!clientsChanged &&
+        _hasSameDevices(current, _lastConnectedDevices) &&
         stale == _lastTelemetryStale) {
       return;
     }
