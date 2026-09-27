@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Som do motor, igual ao do painel web.
@@ -17,8 +18,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// Na partida, o laço entra por cima do fim da partida (0,25 s, potência
 /// constante), no mesmo ponto em que o painel passa a repetir.
-class MotorSoundService extends ChangeNotifier {
+class MotorSoundService extends ChangeNotifier with WidgetsBindingObserver {
   MotorSoundService() {
+    WidgetsBinding.instance.addObserver(this);
+    final AppLifecycleState? estado = WidgetsBinding.instance.lifecycleState;
+    _foreground = estado == null || estado == AppLifecycleState.resumed;
     _load();
   }
 
@@ -83,6 +87,11 @@ class MotorSoundService extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    unawaited(setForeground(state == AppLifecycleState.resumed));
   }
 
   Future<void> setEnabled(bool value) async {
@@ -322,6 +331,7 @@ class MotorSoundService extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _fimDaParada?.cancel();
     _playerPartida?.dispose();
