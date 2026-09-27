@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,7 @@ import 'package:iotmotor/app/theme/app_theme.dart';
 import 'package:iotmotor/features/iot_motor/controller/motor_control_controller.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/settings_tab.dart';
 import 'package:iotmotor/app/providers/mqtt_profiles_provider.dart';
+import 'package:iotmotor/app/providers/motor_sound_provider.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/alertas_tab.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/historico_tab.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/inicio_tab.dart';
@@ -24,12 +27,32 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage> {
   @override
   Widget build(BuildContext context) {
     final controller = ref.watch(motorControlControllerProvider);
+    final motorSound = ref.watch(motorSoundServiceProvider);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        motorSound.syncConfirmedState(
+          connected: controller.isConnected,
+          hasConfirmedState: controller.benchRelays != null,
+          motorOn: controller.isBenchMotorOn,
+        ),
+      );
+    });
 
     // Escuta mensagens pendentes (SnackBars) vindas do controller
     ref.listen<MotorControlController>(motorControlControllerProvider, (
       previous,
       next,
     ) {
+      unawaited(
+        ref.read(motorSoundServiceProvider).syncConfirmedState(
+          connected: next.isConnected,
+          hasConfirmedState: next.benchRelays != null,
+          motorOn: next.isBenchMotorOn,
+        ),
+      );
+
       final message = next.consumePendingMessage();
       if (message != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
