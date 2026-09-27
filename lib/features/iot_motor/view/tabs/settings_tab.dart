@@ -584,7 +584,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
-            value: _acqPreset,
+            initialValue: _acqPreset,
             decoration: const InputDecoration(labelText: 'Perfil'),
             items: const <DropdownMenuItem<String>>[
               DropdownMenuItem(value: 'custom', child: Text('Personalizado')),
