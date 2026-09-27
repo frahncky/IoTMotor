@@ -20,8 +20,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Check JavaScript syntax
@@ -103,7 +103,12 @@ jobs:
           assert 'MAX_ALARMES = 8' in lista, 'o painel conta com oito alarmes na placa'
           # Comandos cifrados: firmware, painel e app precisam da mesma conta.
           seguro = (root / 'comando_seguro.h').read_text()
-          assert seguro == (s3 / 'comando_seguro.h').read_text(), 'comando_seguro.h diferente entre os firmwares'
+          # Arquivo com o mesmo nome nas duas placas (OTA, Wi-Fi, selo, vigia...)
+          # e a mesma copia: corrigir so de um lado deixa a outra placa para tras.
+          comuns = sorted({f.name for f in root.iterdir() if f.is_file()} & {f.name for f in s3.iterdir() if f.is_file()})
+          assert 'comando_seguro.h' in comuns and 'watchdog.h' in comuns, comuns
+          for nome in comuns:
+              assert (root / nome).read_bytes() == (s3 / nome).read_bytes(), nome + ' diferente entre os firmwares'
           selo_js = Path('dashboard-cloudflare/command-seal.js').read_text()
           selo_dart = Path('lib/features/iot_motor/services/command_seal.dart').read_text()
           for texto, onde in ((seguro, 'firmware'), (selo_js, 'painel'), (selo_dart, 'app')):
