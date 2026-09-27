@@ -147,12 +147,13 @@ test('reiniciar vale para as duas placas e envia o comando restart para a seleci
     assert.equal(h.no('wifiRestart').disabled, true);
     h.enviar(`iotmotor/${placa}/command_ack`, JSON.stringify({device_id: placa, seq: comando.seq,
       action: 'restart', accepted: true, reason: 'reiniciando'}));
-    assert.match(h.no('wifiFeedback').textContent, /Aguardando reconexão/i);
+    assert.match(h.no('wifiActionFeedback').textContent, /Aguardando reconexão/i);
+    assert.equal(h.no('wifiFeedback').textContent, '', 'reinício não usa o campo geral');
     h.enviar(`iotmotor/${placa}/status`, 'offline');
-    assert.match(h.no('wifiFeedback').textContent, /reiniciando.*aguardando reconexão/i);
+    assert.match(h.no('wifiActionFeedback').textContent, /reiniciando.*aguardando reconexão/i);
     h.enviar(`iotmotor/${placa}/status`, 'online');
-    assert.match(h.no('wifiFeedback').textContent, /reiniciada e conectada/i);
-    assert.doesNotMatch(h.no('wifiFeedback').textContent, /A placa está online\?/i);
+    assert.match(h.no('wifiActionFeedback').textContent, /reiniciada e conectada/i);
+    assert.doesNotMatch(h.no('wifiActionFeedback').textContent, /A placa está online\?/i);
   }
   // Placa fora do ar: nada a reiniciar.
   h.enviar('iotmotor/esp32-02/status', 'offline');
