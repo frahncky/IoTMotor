@@ -393,7 +393,9 @@ function ingest(which,raw,packet){
  if(!politicaRemota||!ultimoRegistro||tempoAmostra-ultimoRegistro>=state.dataConfig.recordIntervalMs){
   if(politicaRemota)state.lastRecord[which]=tempoAmostra;
   state.records.push(registroCsv(sample,expected,state[which].at));
-  if(state.records.length>MAX_REGISTROS)state.records.shift();
+  const limiteIdade=Date.now()-MAX_IDADE_MS;
+  while(state.records.length&&Date.parse(state.records[0].at)<limiteIdade)state.records.shift();
+  while(state.records.length>MAX_REGISTROS)state.records.shift();
   guardarRegistros();
  }
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
