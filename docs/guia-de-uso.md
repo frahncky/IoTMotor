@@ -44,7 +44,7 @@ na rede da escola.
 - **Quadro de comando:** escolha da partida, os botões **Ligar**, **Desligar** e **Somente medição**, e o estado de CNT 1 a CNT 4.
 - **Diagnóstico:** o desenho do motor e, abaixo dele, as medições principais:
   - corrente e **carga em %**, quando a corrente nominal está cadastrada;
-  - vibração em **mm/s RMS** com a classificação **ISO 10816** (com o motor ligado);
+  - vibração em **mm/s RMS** com a classificação de referência do projeto (com o motor ligado);
   - temperatura;
   - uma linha de uso: *Ligado há…*, horímetro e partidas de hoje.
 - **Alarmes ativos:** o que está disparado agora, sensores sem leitura, grandezas perto do limite e manutenção vencida ou próxima.
