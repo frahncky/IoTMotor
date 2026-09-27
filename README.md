@@ -103,4 +103,4 @@ docs/                   Documentação técnica e imagens
 - [App: conexão, telemetria e armazenamento](docs/app-mqtt.md)
 
 > [!WARNING]
-> Projeto de **bancada didática**. O broker público aceita mensagens de qualquer pessoa, e os relés indicam o estado comandado, não a energização real. Para máquinas reais, use parada de emergência independente, proteções elétricas e intertravamentos físicos.
+> Projeto de **bancada didática** para fins de pesquisa.
