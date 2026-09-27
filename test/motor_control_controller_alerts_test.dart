@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iotmotor/features/iot_motor/controller/motor_control_controller.dart';
 import 'package:iotmotor/features/iot_motor/models/mqtt_connection_config.dart';
@@ -110,6 +112,60 @@ void main() {
     controller.clearHistoryFilters();
     controller.setHistoryStateFilter(MotorControlController.historyStateOff);
     expect(controller.filteredHistoryEntries.single.deviceId, 'esp-2');
+
+    controller.dispose();
+  });
+
+  test('gráfico usa janelas exatas e média das amostras', () {
+    final _FakeMqttMotorService service = _FakeMqttMotorService();
+    final MotorControlController controller = MotorControlController(
+      service: service,
+      loadSettings: false,
+    );
+    service.config = const MqttConnectionConfig(
+      host: 'broker.hivemq.com',
+      port: 1883,
+      clientId: 'test_client',
+      topicPrefix: 'iotmotor',
+      deviceId: 'auto',
+      useTls: false,
+    );
+
+    service.emit(
+      'iotmotor/system/acquisition',
+      jsonEncode(<String, Object>{
+        'revision': 7,
+        'pzem_read_ms': 1000,
+        'publish_ms': 1000,
+        'chart_ms': 5000,
+        'record_ms': 5000,
+      }),
+    );
+
+    final int agoraS = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final int inicioS = agoraS - (agoraS % 5);
+
+    String leitura(int deslocamentoS, double tensao) => jsonEncode(
+          <String, Object>{
+            'ts': inicioS + deslocamentoS,
+            'voltage': tensao,
+            'current': 4.0,
+          },
+        );
+
+    service.emit('iotmotor/esp-1/telemetry', leitura(1, 220));
+    service.emit('iotmotor/esp-1/telemetry', leitura(4, 230));
+    service.emit('iotmotor/esp-1/telemetry', leitura(6, 240));
+
+    expect(controller.historyEntryCount, 2);
+    final entries = controller.historyEntries;
+    expect(entries[0].sample.timestamp.millisecondsSinceEpoch, inicioS * 1000);
+    expect(entries[0].sample.voltage, closeTo(225, 0.001));
+    expect(
+      entries[1].sample.timestamp.millisecondsSinceEpoch,
+      (inicioS + 5) * 1000,
+    );
+    expect(entries[1].sample.voltage, closeTo(240, 0.001));
 
     controller.dispose();
   });
