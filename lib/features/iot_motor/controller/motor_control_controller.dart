@@ -2010,7 +2010,8 @@ class MotorControlController extends ChangeNotifier {
 
     final DateTime agoraGrafico = DateTime.now();
     final DateTime? ultimaGrafico = _lastChartSampleByDevice[deviceId];
-    if (ultimaGrafico == null ||
+    if (acquisitionConfig.revision == 0 ||
+        ultimaGrafico == null ||
         agoraGrafico.difference(ultimaGrafico).inMilliseconds >= acquisitionConfig.chartMs) {
       _lastChartSampleByDevice[deviceId] = agoraGrafico;
       _addSampleToHistory(deviceId: deviceId, sample: sample);
