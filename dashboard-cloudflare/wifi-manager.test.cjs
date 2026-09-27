@@ -158,6 +158,7 @@ test('versão do firmware: em dia, desatualizada ou não informada', () => {
   h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({device_id: 'esp32-01', firmware_version: FIRMWARE_PUBLICADO[0]}));
   h.enviar('iotmotor/esp32-02/capabilities', JSON.stringify({device_id: 'esp32-02', firmware_version: 's3-velho'}));
   assert.match(h.no('wifiFirmware').textContent, /em dia/);
+  assert.equal(h.no('wifiUpdateFw').disabled, true, 'firmware atual não deve oferecer OTA');
   assert.equal(h.no('wifiDev0').dataset.update, 'false');
   assert.equal(h.no('wifiDev1').dataset.update, 'true');
   assert.equal(h.no('tabBtn-wifi').dataset.update, 'true', 'a aba Wi-Fi mostra que há atualização');
