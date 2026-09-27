@@ -502,7 +502,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
             icon: Icons.electric_bolt_rounded,
             color: AppTheme.brandBlue,
             title: 'Dados do motor',
-            subtitle: 'Dados da placa gravados no quadro de comando.',
+            subtitle: 'Dados da placa do motor gravados no quadro de comando.',
           ),
           const SizedBox(height: 12),
           if (controller.motorDeviceId != null)
