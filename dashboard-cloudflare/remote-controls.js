@@ -162,6 +162,15 @@
       active.subscribe([topic('telemetry'), topic('command_ack'), topic('auth'), presenceFilter()], {qos: 1});
       startPresence();
       feedback('MQTT conectado. Aguardando telemetria do ESP32-01.');
+      // O tópico de aquisição é retido, mas também pedimos explicitamente a
+      // configuração gravada na placa. Isso cobre broker limpo/reiniciado e
+      // garante que os campos da web reflitam o ESP32-01 ao conectar.
+      setTimeout(() => {
+        if (client === active && connected) manutencao('acquisition_config_get', null, {}, true);
+      }, 700);
+      setTimeout(() => {
+        if (client === active && connected) manutencao('acquisition_config_get', null, {}, true);
+      }, 2500);
       refresh();
     });
     active.on('message', (name, payload, packet) => {
@@ -299,15 +308,16 @@
   // do motor mostra "aguardando o quadro" enquanto isso).
   window.iotmotorRemoteControls = {connect, disconnect: desconectar,
     pendente: () => (pending ? {action: pending.action} : null),
-    raw: (action, extras = {}) => manutencao(action, null, extras)};
+    raw: (action, extras = {}) => manutencao(action, null, extras),
+    requestAcquisitionConfig: () => manutencao('acquisition_config_get', null, {}, true)};
 
   // Manutencao do firmware. As redes Wi-Fi ficam na aba "Wi-Fi" (wifi-manager.js).
-  function manutencao(action, aviso, extras) {
+  function manutencao(action, aviso, extras, silencioso = false) {
     if (!client?.connected || (aviso !== null && !confirm(aviso))) return;
     const impede = window.iotmotorSelo?.impedimento(device);
-    if (impede) { feedback(impede); return; }
+    if (impede) { if (!silencioso) feedback(impede); return; }
     const seq = String(sequence = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequence + 1));
-    feedback('Enviando pedido ao ESP32…');
+    if (!silencioso) feedback('Enviando pedido ao ESP32…');
     const comando = {v: 1, device_id: device, boot, seq, action,
       mode: 'none', mask: 0, main: 0, star: 0, delta: 0, seconds: 0, ...extras};
     const selo = window.iotmotorSelo;
@@ -315,7 +325,7 @@
     const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
     if (aberto !== null) enviar(aberto);
     else selo.empacotar(device, comando).then(enviar)
-      .catch(erro => feedback('Não deu para selar o comando: ' + (erro.message || erro)));
+      .catch(erro => { if (!silencioso) feedback('Não deu para selar o comando: ' + (erro.message || erro)); });
   }
   $('updateBtn')?.addEventListener('click', () => manutencao('update',
     'A placa vai baixar o firmware publicado no GitHub e reiniciar.\n\nContinuar?'));

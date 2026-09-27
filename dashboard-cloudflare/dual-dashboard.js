@@ -491,8 +491,17 @@ function renderAcquisitionConfig(){
  for(const par of [['acqPzem','pzem_read_ms'],['acqPublish','publish_ms'],['acqChart','chart_ms'],['acqRecord','record_ms']]){
   const el=$(par[0]);if(el&&document.activeElement!==el)el.value=String(cfg[par[1]]/1000);
  }
+ const preset=$('acqPreset');
+ if(preset&&document.activeElement!==preset){
+  let nome='custom';
+  for(const [id,p] of Object.entries(ACQ_PRESETS)){
+   if(p.pzem_read_ms===cfg.pzem_read_ms&&p.publish_ms===cfg.publish_ms&&
+      p.chart_ms===cfg.chart_ms&&p.record_ms===cfg.record_ms){nome=id;break;}
+  }
+  preset.value=nome;
+ }
  text('acqFixed','Vibração: '+cfg.vibration_hz+' Hz · janela RMS '+(cfg.vibration_window_ms/1000)+' s · histórico: '+(cfg.history_bucket_s/60)+' min / '+cfg.history_retention_days+' dias');
- text('acqRevision',cfg.revision?'Configuração sincronizada · revisão '+cfg.revision:'Aguardando configuração do ESP32-01.');
+ text('acqRevision',cfg.revision?'Configuração carregada do ESP32-01 · revisão '+cfg.revision:'Aguardando configuração do ESP32-01.');
 }
 function lerConfiguracaoAquisicaoForm(){
  const seg=id=>Number($(id)?.value)*1000;
