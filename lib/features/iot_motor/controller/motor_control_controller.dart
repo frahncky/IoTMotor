@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/motor_info.dart';
+import '../models/acquisition_config.dart';
 import '../models/motor_app_settings.dart';
 import '../models/board_alarm.dart';
 import '../models/device_names.dart';
@@ -147,6 +148,10 @@ class MotorControlController extends ChangeNotifier {
     return null;
   }
 
+  /// Configuração única de aquisição publicada pelo ESP32-01.
+  AcquisitionConfig acquisitionConfig = AcquisitionConfig.defaults;
+  final Map<String, DateTime> _lastChartSampleByDevice = <String, DateTime>{};
+
   /// Versão do firmware informada por cada placa.
   final Map<String, String> firmwareByDevice = <String, String>{};
 
@@ -217,6 +222,35 @@ class MotorControlController extends ChangeNotifier {
     boardAlarms = BoardAlarm.listFromPayload(payload);
     boardAlarmsMax = BoardAlarm.maxFromPayload(payload, fallback: boardAlarmsMax);
     _notify();
+  }
+
+  Future<bool> saveAcquisitionConfig(AcquisitionConfig config) async {
+    final String? erro = config.validate();
+    if (erro != null) {
+      statusMessage = erro;
+      _notify();
+      return false;
+    }
+    final String dev = _motorDeviceId ?? 'esp32-01';
+    final String? seq = _service.sendRawCommand(
+      deviceId: dev,
+      action: 'acquisition_config_set',
+      body: <String, dynamic>{'config': config.toBoard()},
+    );
+    if (seq == null) {
+      statusMessage = _service.seal.impedimento(dev) ??
+          'Conecte ao MQTT antes de gravar a configuração.';
+      _notify();
+      return false;
+    }
+    statusMessage = 'Enviando configuração de aquisição ao ESP32-01…';
+    _notify();
+    return true;
+  }
+
+  void requestAcquisitionConfig() {
+    final String dev = _motorDeviceId ?? 'esp32-01';
+    _service.sendRawCommand(deviceId: dev, action: 'acquisition_config_get');
   }
 
   /// Cria ou edita um alarme na placa. A placa republica a lista ao aceitar.
@@ -1863,6 +1897,20 @@ class MotorControlController extends ChangeNotifier {
     // Partidas e respostas não dependem da configuração ativa: o dispositivo
     // vem do próprio tópico (prefixo/dispositivo/profiles).
     final List<String> partes = topic.split('/');
+    if (topic.endsWith('/system/acquisition')) {
+      try {
+        final Object? decoded = jsonDecode(payload);
+        if (decoded is Map<String, dynamic>) {
+          final AcquisitionConfig nova = AcquisitionConfig.fromJson(decoded);
+          if (nova.validate() == null) {
+            acquisitionConfig = nova;
+            statusMessage = 'Configuração de aquisição sincronizada (revisão ${nova.revision}).';
+            _notify();
+          }
+        }
+      } catch (_) {}
+      return;
+    }
     final String deviceIdDoTopico = partes.length >= 2 ? partes[partes.length - 2] : '';
     // Histórico da placa: prefixo/dispositivo/history/<dia>.
     if (partes.length >= 3 && partes[partes.length - 2] == 'history') {
@@ -1960,7 +2008,13 @@ class MotorControlController extends ChangeNotifier {
     _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
 
-    _addSampleToHistory(deviceId: deviceId, sample: sample);
+    final DateTime agoraGrafico = DateTime.now();
+    final DateTime? ultimaGrafico = _lastChartSampleByDevice[deviceId];
+    if (ultimaGrafico == null ||
+        agoraGrafico.difference(ultimaGrafico).inMilliseconds >= acquisitionConfig.chartMs) {
+      _lastChartSampleByDevice[deviceId] = agoraGrafico;
+      _addSampleToHistory(deviceId: deviceId, sample: sample);
+    }
 
     final TelemetryAlert? alert = _evaluateTelemetryAlerts(
       deviceId: deviceId,
