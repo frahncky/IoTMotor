@@ -125,10 +125,12 @@ class AlertasDaBancada {
     final String valor = leitura == null
         ? ''
         : ' · agora ${_numero(leitura)}${grandeza == null || grandeza.unit.isEmpty ? '' : ' ${grandeza.unit}'}';
+    // Com desarme, a placa manda o quadro desligar o motor.
+    final String desliga = alarme?.trip == true ? ' · desliga o motor' : '';
     return AvisoDoCelular(
       id: idDaNotificacao(chave),
       titulo: 'Alarme: ${_maiuscula(oQue)}',
-      texto: '${nomeDaPlaca(placa)} · às ${_hora(instante)}$valor',
+      texto: '${nomeDaPlaca(placa)} · às ${_hora(instante)}$valor$desliga',
       comSom: comSom,
     );
   }

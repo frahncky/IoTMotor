@@ -29,6 +29,7 @@ function setup() {
   node('broker').value = 'wss://test.mosquitto.org:8081';
   node('prefix').value = 'iotmotor';
   node('sensorDevice').value = 'esp32-02';
+  node('alarmeDesarme').checked = false;  // Na pagina a caixa comeca desmarcada.
   const clients = [];
   const context = vm.createContext({
     document: {getElementById: node, createElement: criar, createTextNode: t => ({textContent: t}), querySelectorAll: () => []},
@@ -115,7 +116,7 @@ test('editar o limite de uma linha e confirmar grava so aquele alarme', () => {
   h.parte(linha, 'ops').children[0].fire('click');
   assert.deepEqual(c.published[0].data, {
     v: 1, device_id: 'esp32-02', seq: c.published[0].data.seq, action: 'alarm_save',
-    alarm: {id: 'temp', field: 'temperature', board: 'sensors', above: true, limit: 75, on: true}
+    alarm: {id: 'temp', field: 'temperature', board: 'sensors', above: true, limit: 75, on: true, trip: false}
   });
   // O rascunho sobrevive a uma telemetria nova enquanto a placa nao confirma.
   h.telemetry(c);
@@ -162,7 +163,7 @@ test('adiciona alarme de corrente do quadro de comando e recusa limite fora da f
   h.node('alarmeLimite').value = '12.5';
   h.node('alarmeAddForm').fire('submit');
   assert.deepEqual(c.published[0].data.alarm, {
-    id: 'current', field: 'current', board: 'command', above: true, limit: 12.5, on: true
+    id: 'current', field: 'current', board: 'command', above: true, limit: 12.5, on: true, trip: false
   });
   h.send(c, 'command_ack', {...c.published[0].data, accepted: true, reason: 'alarme criado'});
   // O id novo nao colide com o que ja esta na placa.
@@ -171,8 +172,15 @@ test('adiciona alarme de corrente do quadro de comando e recusa limite fora da f
   h.node('alarmeLimite').value = '3';
   h.node('alarmeAddForm').fire('submit');
   assert.deepEqual(c.published[1].data.alarm, {
-    id: 'current2', field: 'current', board: 'command', above: false, limit: 3, on: true
+    id: 'current2', field: 'current', board: 'command', above: false, limit: 3, on: true, trip: false
   });
+  // Desarme escolhido no formulario vai junto (desligado por padrao).
+  h.send(c, 'command_ack', {...c.published[1].data, accepted: true, reason: 'alarme criado'});
+  h.node('alarmeDesarme').checked = true;
+  h.node('alarmeLado').value = 'above';
+  h.node('alarmeLimite').value = '15';
+  h.node('alarmeAddForm').fire('submit');
+  assert.equal(c.published[2].data.alarm.trip, true);
 });
 
 test('o botao de recarregar pede a lista de novo a placa', () => {

@@ -42,6 +42,26 @@ void publicarAuth() {
                               static_cast<unsigned int>(len), true);
 }
 
+// Desarme automatico: a placa de sensores manda Desligar com reason "alarm"
+// quando um alarme com desarme dispara. Guardamos qual foi, para o LCD, o
+// painel e o app dizerem por que o motor parou, ate a proxima partida.
+char desarmeAlarme[16] = "";
+char desarmeCampo[20] = "";
+
+void pararPorComando(JsonVariantConst doc) {
+  bool saidas = partidaAtiva;
+  for (uint8_t i = 0; i < NUM_RELES; ++i) saidas = saidas || estadoReles[i];
+  pararBancada();
+  if (saidas && !strcmp(doc["reason"] | "", "alarm")) {
+    strncpy(desarmeAlarme, doc["alarm"] | "", sizeof(desarmeAlarme) - 1);
+    desarmeAlarme[sizeof(desarmeAlarme) - 1] = '\0';
+    strncpy(desarmeCampo, doc["field"] | "", sizeof(desarmeCampo) - 1);
+    desarmeCampo[sizeof(desarmeCampo) - 1] = '\0';
+    lcdPrecisaAtualizar = true;
+    Serial.printf("[BANCADA] desarme pelo alarme %s (%s)\n", desarmeAlarme, desarmeCampo);
+  }
+}
+
 // Pedido de reinicio remoto (0 = nenhum); atendido no loop() do sketch.
 unsigned long reinicioPedidoEm = 0;
 
@@ -141,7 +161,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     const char* motivo = "";
     if (!(doc["sealed"] | "")[0]) {
       if (!strcmp(doc["action"] | "", "stop")) {
-        pararBancada();
+        pararPorComando(doc.as<JsonVariantConst>());
         publicarRespostaControle(doc["seq"] | "", true, "stop", "stopped");
         return;
       }
@@ -316,7 +336,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
 
   // Parar sempre: nao depende de telemetria, boot, estado ou partida pendente.
   if (!strcmp(acao, "stop")) {
-    pararBancada();
+    pararPorComando(doc.as<JsonVariantConst>());
     publicarRespostaControle(seq, true, acao, "stopped");
     return;
   }
@@ -362,5 +382,7 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     return;
   }
   iniciarPerfil(perfil, millis());
+  desarmeAlarme[0] = desarmeCampo[0] = '\0';  // Nova partida: o desarme ficou para tras.
+  lcdPrecisaAtualizar = true;
   publicarRespostaControle(seq, true, acao, "accepted");
 }

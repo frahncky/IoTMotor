@@ -91,6 +91,7 @@ omitidos, nunca inventados.
 | `starts_total`, `starts_today`, `starts_hour` | número | Partidas no total, hoje (horário de Brasília) e na última hora |
 | `session_s` | número | Há quanto tempo o motor está girando (só enquanto gira) |
 | `motor_running` | booleano | Motor girando: algum relé ligado ou, no modo instrumentação, corrente acima de 0,3 A. O painel, o app e a placa de sensores usam para mostrar e alarmar o motor ligado |
+| `trip_alarm`, `trip_field` | texto | Desarme automático: id e grandeza do alarme que desligou o motor. Só aparecem até a próxima partida (`v16` em diante) |
 | `reset_reason`, `wifi_ip` | texto | Diagnóstico |
 
 ## Telemetria dos sensores do motor
@@ -120,7 +121,7 @@ alguém assina. É por isso que o painel e o app abrem já preenchidos.
 **`capabilities`**
 
 ```json
-{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v15-partida-sem-bloqueio","fields":["voltage","current","power","energy","frequency","pf"]}
+{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v16-desarme","fields":["voltage","current","power","energy","frequency","pf"]}
 ```
 
 **`motor_info`**: dados da placa do motor. Todos são opcionais; campo ausente é
@@ -150,7 +151,7 @@ Cada `cnt` é um contator: `on` e `off` em ms desde o início da partida (`off: 
 
 ```json
 {"device_id":"esp32-02","max":8,"buzzer_hz":2000,
- "alarms":[{"id":"temp","field":"temperature","board":"sensors","above":true,"limit":60,"on":true,"firing":false}]}
+ "alarms":[{"id":"temp","field":"temperature","board":"sensors","above":true,"limit":60,"on":true,"trip":false,"firing":false}]}
 ```
 
 | `board` | Grandezas (`field`) |
@@ -212,7 +213,7 @@ mosquitto_pub -h test.mosquitto.org -t iotmotor/esp32-01/command \
 
 | `action` | Campos | O que faz |
 | --- | --- | --- |
-| `stop` | — | Desliga todas as saídas e cancela a partida. **Sempre aceito**, sem `boot` nem ordem de `seq` |
+| `stop` | `reason`, `alarm`, `field` (opcionais) | Desliga todas as saídas e cancela a partida. **Sempre aceito**, sem `boot` nem ordem de `seq`. Com `reason: "alarm"` (enviado pela placa de sensores no desarme), o quadro guarda `alarm` e `field` e os publica em `trip_alarm`/`trip_field` |
 | `start` | `boot`, `profile` | Dá a partida gravada com esse `id`. Veja as condições abaixo |
 | `profile_list` | — | Republica a lista de partidas |
 | `profile_save` | `profile` | Cria ou edita uma partida (formato de `profiles`); nome até 24 bytes |
@@ -271,8 +272,14 @@ corrente menor que as do triângulo.
 
 ```json
 {"v":1,"device_id":"esp32-02","seq":"1790000000000002","action":"alarm_save",
- "alarm":{"id":"current","field":"current","board":"command","above":true,"limit":14.49,"on":true}}
+ "alarm":{"id":"current","field":"current","board":"command","above":true,"limit":14.49,"on":true,"trip":false}}
 ```
+
+`trip: true` liga o **desarme** daquele alarme (`s3-sensors-1.8` em diante):
+com o quadro acionando o motor, disparar faz a placa de sensores mandar ao
+quadro `{"action":"stop","reason":"alarm","alarm":"<id>","field":"<grandeza>"}`,
+repetido a cada 3 s enquanto o alarme seguir disparado. No `alarm_log`, o
+episódio que desligou o motor sai com `"trip":true`.
 
 ## Comandos das duas placas
 

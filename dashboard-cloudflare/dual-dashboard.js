@@ -59,7 +59,9 @@ function parseTelemetry(json){
   relays,alarmEnabled:typeof source.alarm_enabled==='boolean'?source.alarm_enabled:null,
   runSTotal:numeric(source.run_s_total),startsTotal:numeric(source.starts_total),
   startsToday:numeric(source.starts_today),sessionS:numeric(source.session_s),startsHour:numeric(source.starts_hour),
-  alarmsFiring:Array.isArray(source.alarms_firing)?source.alarms_firing.filter(id=>typeof id==='string'&&id):[]};
+  alarmsFiring:Array.isArray(source.alarms_firing)?source.alarms_firing.filter(id=>typeof id==='string'&&id):[],
+  // Desarme: o quadro parou o motor por um alarme (vale até a próxima partida).
+  tripField:typeof source.trip_field==='string'&&source.trip_field?source.trip_field:''};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
  result.reactive=result.apparent===null?null:result.power!==null?
@@ -232,6 +234,12 @@ function maintenanceText(m){
  return m.vencida?`Manutenção vencida há ${horas(-m.restanteH)} de uso (a cada ${m.intervaloH} h)`
   :`Próxima manutenção em ${horas(m.restanteH)} de uso (a cada ${m.intervaloH} h)`;
 }
+// "Desligado pelo alarme de temperatura": só com o motor parado.
+function tripText(tripField,motorOn){
+ if(!tripField||motorOn===true)return '';
+ const nome=METRICS.find(m=>m.key===tripField)?.label??GRANDEZA_AVISO[tripField]?.label??tripField;
+ return `Desligado pelo alarme de ${nome.toLowerCase()}`;
+}
 // Comando enviado e ainda não confirmado pelo quadro (null quando já refletiu).
 function commandPendingLabel(pending,motorOn){
  if(!pending)return null;
@@ -280,7 +288,7 @@ function renderMotorVisual(){
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
  const manutencao=maintenanceStatus(info,cmd?.runSTotal);
- const uso=[cmd?usageLine(cmd):'',manutencao?.vencida?'Manutenção vencida':manutencao?.perto?`Manutenção em ${horas(manutencao.restanteH)}`:'']
+ const uso=[tripText(cmd?.tripField,cmd?.motorOn),cmd?usageLine(cmd):'',manutencao?.vencida?'Manutenção vencida':manutencao?.perto?`Manutenção em ${horas(manutencao.restanteH)}`:'']
   .filter(Boolean).join(' · ');
  const manutEl=$('motorInfoManutStatus');
  if(manutEl){
@@ -508,4 +516,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationSeverity,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationSeverity,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};

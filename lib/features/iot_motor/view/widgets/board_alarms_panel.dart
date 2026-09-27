@@ -117,6 +117,7 @@ class _AlarmTile extends StatelessWidget {
                         ? 'quadro de comando'
                         : 'sensores do motor',
                     if (!alarme.enabled) 'desligado',
+                    if (alarme.trip) 'desliga o motor',
                     if (disparado) 'DISPARADO',
                   ].join(' · '),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -183,6 +184,7 @@ Future<void> _editar(
 ) async {
   String campo = alarme?.field ?? kAlarmQuantities.first.field;
   bool acima = alarme?.above ?? true;
+  bool desarma = alarme?.trip ?? false;
   final TextEditingController limite = TextEditingController(
     text: alarme == null ? '' : '${alarme.limit}',
   );
@@ -250,6 +252,19 @@ Future<void> _editar(
                           'de ${grandeza.min} a ${grandeza.max} ${grandeza.unit}',
                     ),
                   ),
+                  const SizedBox(height: 4),
+                  // Desarme: desligado por padrão, escolhido por alarme.
+                  SwitchListTile(
+                    key: const ValueKey<String>('alarme_desarme'),
+                    contentPadding: EdgeInsets.zero,
+                    value: desarma,
+                    onChanged: (bool valor) => redesenhar(() => desarma = valor),
+                    title: const Text('Desligar o motor'),
+                    subtitle: const Text(
+                      'Com o motor ligado, disparar faz o quadro desligar o motor. '
+                      'Precisa das placas conectadas ao broker.',
+                    ),
+                  ),
                 ],
               ),
               actions: <Widget>[
@@ -283,6 +298,7 @@ Future<void> _editar(
                         above: acima,
                         limit: valor,
                         enabled: alarme?.enabled ?? true,
+                        trip: desarma,
                       ),
                     );
                   },

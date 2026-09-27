@@ -11,6 +11,7 @@ cada mensagem, veja a [referência MQTT](mqtt.md).
 - [Somente medição (modo instrumentação)](#somente-medição-modo-instrumentação)
 - [Dados do motor e manutenção](#dados-do-motor-e-manutenção)
 - [Alarmes](#alarmes)
+  - [Desarme automático](#desarme-automático)
 - [Histórico](#histórico)
 - [Placas: Wi-Fi, atualização e reinício](#placas-wi-fi-atualização-e-reinício)
 - [Senha de comando](#senha-de-comando)
@@ -145,6 +146,7 @@ o buzzer mesmo com o painel fechado e sem internet.
 - **Testar LED** e **Testar LED e buzzer** conferem a sinalização.
 - **Alarmes gravados na placa:** cada linha tem a grandeza, o limite, se está ligado, **✓** para gravar a mudança e **✕** para remover.
 - **Adicionar alarme:** escolha a grandeza, **acima** ou **abaixo**, e o limite.
+- **Desliga o motor** (desligado por padrão): veja [Desarme automático](#desarme-automático).
 
 As grandezas disponíveis são:
 
@@ -160,6 +162,19 @@ Na primeira vez, a placa vem com dois alarmes: vibração (pico) acima de 0,5 g 
 temperatura acima de 60 °C.
 
 O que o LED indica está em [Hardware › O que o LED indica](hardware.md#o-que-o-led-indica).
+
+### Desarme automático
+
+Cada alarme pode, além de avisar, **desligar o motor**. A opção é por alarme e
+vem desligada: marque **desliga o motor** na linha do alarme (painel) ou
+**Desligar o motor** ao editá-lo (app), e grave.
+
+- Com o quadro acionando o motor, o alarme que dispara faz a placa de sensores mandar **Desligar** ao quadro.
+- Enquanto o alarme seguir disparado, ela repete a cada 3 s: religar o motor antes de a grandeza voltar ao normal faz ele cair de novo.
+- O quadro mostra o motivo no LCD ("Desarme: temperatura"), e o painel e o app mostram "Desligado pelo alarme de temperatura" até a próxima partida. Nos alertas do celular, o aviso diz "desliga o motor".
+- Com o **monitoramento de alarmes desligado**, não há desarme.
+- **Precisa do broker:** as duas placas só se falam por ele. Com a rede fora, o alarme toca na placa de sensores, mas o quadro não recebe o Desligar. O desarme **não substitui** a proteção elétrica do quadro (relé térmico, disjuntor-motor).
+- Funciona com senha de comando: o quadro aceita Desligar sem selo.
 
 ## Histórico
 
