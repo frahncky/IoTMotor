@@ -297,7 +297,10 @@
     return { master, sources, stop };
   }
 
-  // Gravação real de um motor (motor-ligado.mp3), usada inteira:
+  // Gravação real de um motor (motor-ligado.mp3), obtida no Pixabay.
+  // Proveniência: docs/audio.md e THIRD_PARTY_NOTICES.md.
+  // Página registrada: https://pixabay.com/pt/sound-effects/search/electric-motor/
+  // A gravação é usada inteira:
   // - início (0 a 1 s): estalo de ligar, que sinaliza a partida;
   // - trecho estável (1 a 3,55 s): repete enquanto o motor está ligado;
   // - final (3,70 s ao fim): estalos de desligar e o motor parando.
