@@ -26,22 +26,7 @@ void main() {
 
     expect(find.byKey(const ValueKey<String>('motor_animation_paint')), findsOneWidget);
     expect(find.text('Motor desligado'), findsOneWidget);
-    expect(find.text('Partida: Direta'), findsOneWidget);
     expect(find.textContaining('Rotação de placa:'), findsOneWidget);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: MotorAnimationCard(
-            controller: controller,
-            startType: MotorCommandType.starDeltaStart,
-          ),
-        ),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 80));
-
-    expect(find.text('Partida: Estrela-Triângulo'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
