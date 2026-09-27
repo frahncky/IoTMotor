@@ -134,6 +134,14 @@ class TelemetryChart extends StatelessWidget {
     ];
 
     final double xInterval = _xAxisInterval(scale.maxX);
+    // Largura do eixo pelo maior rótulo: "231.6" não cabe em 48 px com duas
+    // casas, quebrava em duas linhas e o "0" de sobra cobria o rótulo de baixo.
+    final int casas = _casasDoIntervalo(scale.interval);
+    final int maiorRotulo = math.max(
+      scale.minY.toStringAsFixed(casas).length,
+      scale.maxY.toStringAsFixed(casas).length,
+    );
+    final double larguraDoEixo = math.max(28, maiorRotulo * 7.2 + 8);
 
     return LineChartData(
       minX: 0,
@@ -197,7 +205,9 @@ class TelemetryChart extends StatelessWidget {
             interval: xInterval,
             reservedSize: 20,
             getTitlesWidget: (double value, TitleMeta meta) {
-              if (value < 0 || value > scale.maxX) {
+              // Só múltiplos do intervalo: o fl_chart também põe o último
+              // índice (63), que ficava colado no 60.
+              if (value < 0 || value > scale.maxX || value % xInterval != 0) {
                 return const SizedBox.shrink();
               }
               return SideTitleWidget(
@@ -219,12 +229,14 @@ class TelemetryChart extends StatelessWidget {
           sideTitles: SideTitles(
             showTitles: true,
             interval: scale.interval,
-            reservedSize: 48,
+            reservedSize: larguraDoEixo,
             getTitlesWidget: (double value, TitleMeta meta) {
               return SideTitleWidget(
                 axisSide: meta.axisSide,
                 child: Text(
-                  _formatValue(value, scale.interval),
+                  value.toStringAsFixed(casas),
+                  maxLines: 1,
+                  softWrap: false,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: color.withValues(alpha: 0.86),
                     fontSize: 11,
@@ -323,7 +335,8 @@ class TelemetryChart extends StatelessWidget {
     if (range == 0) {
       return 1;
     }
-    final double roughStep = range / 5;
+    // Uns 4 intervalos: com 6, a margem somava 8 rótulos numa altura pequena.
+    final double roughStep = range / 4;
     final int exponent = (math.log(roughStep) / math.ln10).floor();
     final double magnitude = math.pow(10, exponent).toDouble();
     final double normalized = roughStep / magnitude;
@@ -342,18 +355,11 @@ class TelemetryChart extends StatelessWidget {
     return step * magnitude;
   }
 
-  String _formatValue(double value, double interval) {
-    final double absInterval = interval.abs();
-    if (absInterval < 0.1) {
-      return value.toStringAsFixed(3);
-    }
-    if (absInterval < 1) {
-      return value.toStringAsFixed(2);
-    }
-    if (absInterval < 10) {
-      return value.toStringAsFixed(1);
-    }
-    return value.toStringAsFixed(0);
+  /// Casas decimais que o intervalo pede: 0,2 → 1; 0,05 → 2; 5 → 0.
+  static int _casasDoIntervalo(double interval) {
+    final double passo = interval.abs();
+    if (passo <= 0 || passo >= 1) return 0;
+    return math.max(0, -(math.log(passo) / math.ln10).floor());
   }
 }
 

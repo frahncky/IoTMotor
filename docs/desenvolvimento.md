@@ -79,7 +79,7 @@ controlador com mensagens como se viessem do broker.
 | `cloudflare-dashboard.yml` | PR e push na `main` que mexem no painel, em `functions/` ou no firmware | Checa sintaxe, roda os testes do painel e confere firmware × painel × app (versões, campos, arquivos iguais nas duas placas) |
 | `esp32-compile.yml` | PR e push na `main` no firmware, ou manual | Compila as duas placas |
 | `publish-firmware.yml` | Push na `main` no firmware | Compila e publica `esp32-01.bin` e `esp32-02.bin` no release `firmware-latest` |
-| `android-apk.yml` | PR e push na `main` no app (`lib/`, `android/`, `assets/`, `pubspec.*`) | Roda `flutter test` e gera o APK assinado (só ARM, 32 e 64 bits). Só o push na `main` publica no release `app-latest` |
+| `android-apk.yml` | PR e push na `main` no app (`lib/`, `android/`, `assets/`, `pubspec.*`) | Na PR, exige versão maior que a da `main`. Roda `flutter test` e gera o APK assinado (só ARM, 32 e 64 bits). Só o push na `main` publica: `app-latest` e a release da versão (`app-v2.1.0`) |
 
 Erro de compilação do firmware ou do app aparece na própria PR, antes do merge.
 
@@ -90,6 +90,22 @@ Erro de compilação do firmware ou do app aparece na própria PR, antes do merg
 | **Painel** | Cloudflare Pages ligado ao GitHub publica a `main` em [iotmotor.pages.dev](https://iotmotor.pages.dev). Cada PR ganha uma prévia | ~1 min |
 | **Firmware** | `publish-firmware.yml` → release `firmware-latest` → botão **Atualizar firmware** em cada placa | ~3 min + OTA |
 | **App** | `android-apk.yml` → release `app-latest` (`IoTMotor.apk` + `app-latest.json`) → **Configurações › Atualizar este app** | ~7 min |
+
+### Versão do app
+
+Cada atualização do app tem número e nome:
+
+- **Número:** `version:` do `pubspec.yaml` (`2.1.0+5`). O que vem depois do `+` o CI troca pelo build; conta só o `2.1.0`.
+- **Nome:** `nomeDaVersao` em `lib/app/versao.dart`, curto e dizendo o que a versão traz ("Alertas no celular").
+
+Ao mudar o app, suba o número e troque o nome na mesma PR: sem isso a PR falha
+no `android-apk.yml`. Na `main`, o CI publica a release `app-v<número>` com o
+título "IoTMotor 2.1.0 — Alertas no celular" e o APK, e o `app-latest.json`
+leva o nome, que o app mostra em **Configurações › Atualizar este app**.
+
+- Correção pequena: `2.1.0 → 2.1.1`.
+- Recurso novo: `2.1.0 → 2.2.0`.
+- Mudança grande: `2.x → 3.0.0`.
 
 Configuração do Cloudflare Pages:
 - branch `main`;

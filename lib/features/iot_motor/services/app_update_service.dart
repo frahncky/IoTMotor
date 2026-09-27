@@ -12,6 +12,7 @@ class AppUpdateInfo {
     required this.installedVersion,
     required this.installedBuild,
     required this.publishedVersion,
+    this.publishedName = '',
     required this.publishedBuild,
     required this.commit,
     required this.apkUrl,
@@ -23,6 +24,9 @@ class AppUpdateInfo {
   /// Selo do build gravado pelo CI (vazio em APK compilado à mão).
   final String installedBuild;
   final String publishedVersion;
+
+  /// Nome da versão publicada ("Alertas no celular"); vazio nos APKs antigos.
+  final String publishedName;
   final String publishedBuild;
   final String commit;
   final String apkUrl;
@@ -70,6 +74,7 @@ class AppUpdateService {
       installedVersion: instalada,
       installedBuild: installedBuild,
       publishedVersion: publicada,
+      publishedName: (dados['name'] ?? '').toString(),
       publishedBuild: build,
       commit: (dados['commit'] ?? '').toString(),
       apkUrl: (dados['apk'] ?? '').toString(),
