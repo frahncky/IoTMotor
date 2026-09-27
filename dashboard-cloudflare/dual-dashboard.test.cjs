@@ -257,8 +257,8 @@ test('vibração medida em mm/s pela placa: zona direta, sem precisar da rotaç�
  assert.equal(vibrationZone(NaN,5),null);
  // O cartão prefere a medida em mm/s; classifica só com o motor girando.
  assert.deepEqual(vibrationText({vibration:0.2,vibration_mms:1.234},true,{power_cv:5}),
-  {texto:'Vibração 1,23 mm/s RMS · Aceitável',iso:{mmS:1.234,zona:1,label:'Aceitável'}});
- assert.equal(vibrationText({vibration:0.2,vibration_mms:1.234},false,null).texto,'Vibração 1,23 mm/s RMS');
+  {texto:'Vibração 1,23 mm/s · Aceitável',iso:{mmS:1.234,zona:1,label:'Aceitável'}});
+ assert.equal(vibrationText({vibration:0.2,vibration_mms:1.234},false,null).texto,'Vibração 1,23 mm/s');
  // Só aceleração em g (firmware antigo): não é mostrada.
  assert.equal(vibrationText({vibration:0.01},true,{rpm:1800,power_cv:5}),null);
  assert.equal(vibrationText({},true,null),null);
