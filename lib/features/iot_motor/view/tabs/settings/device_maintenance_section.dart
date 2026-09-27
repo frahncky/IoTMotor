@@ -30,6 +30,12 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   /// pede que a placa abra a própria rede, onde a senha é digitada.
   Widget _buildMaintenanceSection(BuildContext context) {
     final bool conectado = widget.controller.isConnected;
+    final List<String> placas = <String>{
+      ...widget.controller.firmwareByDevice.keys,
+      ...widget.controller.firmwareUpdateDeviceIds,
+    }.toList()..sort();
+    final bool otaEmAndamento = widget.controller.firmwareUpdateDeviceIds
+        .any(widget.controller.isFirmwareUpdating);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -38,18 +44,10 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
           style: Theme.of(context).textTheme.titleSmall,
         ),
         const SizedBox(height: 4),
-        // Versão de cada placa frente à publicada para OTA.
-        for (final String placa in widget.controller.firmwareByDevice.keys)
-          if (widget.controller.firmwareOf(placa) case final ({String texto, bool atualizar}) firmware)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                '${nomeDaPlaca(placa)}: firmware ${firmware.texto}${firmware.atualizar ? ' — use "Atualizar firmware"' : ''}.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: firmware.atualizar ? AppTheme.brandOrange : AppTheme.bodySoft,
-                ),
-              ),
-            ),
+        // Versão/estado OTA de cada placa. Durante o reboot da OTA, mantém
+        // "Atualizando firmware…" em vez de trocar para "desconectado".
+        for (final String placa in placas)
+          _buildFirmwareLine(context, placa),
         // Versão instalada do app, com o nome dela.
         FutureBuilder<PackageInfo>(
           future: PackageInfo.fromPlatform(),
@@ -73,6 +71,8 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
             ),
             OutlinedButton.icon(
               // Vai para cada placa no ar com firmware diferente do publicado.
+              // Se todas as placas elegíveis já estão em OTA, fica desabilitado
+              // mostrando o progresso; a outra placa continua independente.
               onPressed:
                   conectado && widget.controller.boardsToUpdate.isNotEmpty
                       ? () => _confirmarManutencao(
@@ -87,8 +87,18 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
                             'com o motor parado.',
                       )
                       : null,
-              icon: const Icon(Icons.system_update_alt_rounded),
-              label: const Text('Atualizar firmware'),
+              icon:
+                  otaEmAndamento && widget.controller.boardsToUpdate.isEmpty
+                      ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Icon(Icons.system_update_alt_rounded),
+              label: Text(
+                otaEmAndamento && widget.controller.boardsToUpdate.isEmpty
+                    ? 'Atualizando firmware…'
+                    : 'Atualizar firmware',
+              ),
             ),
             OutlinedButton.icon(
               onPressed:
@@ -107,6 +117,41 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildFirmwareLine(BuildContext context, String placa) {
+    final String? ota = widget.controller.firmwareUpdateLabel(placa);
+    if (ota != null) {
+      final bool concluida = widget.controller.firmwareUpdateSucceeded(placa);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          '${nomeDaPlaca(placa)}: $ota.',
+          key: ValueKey<String>('firmware_update_$placa'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: concluida ? AppTheme.brandMint : AppTheme.brandOrange,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+
+    final ({String texto, bool atualizar})? firmware =
+        widget.controller.firmwareOf(placa);
+    if (firmware == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        '${nomeDaPlaca(placa)}: firmware ${firmware.texto}'
+        '${firmware.atualizar ? ' — use "Atualizar firmware"' : ''}.',
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          color:
+              firmware.atualizar
+                  ? AppTheme.brandOrange
+                  : AppTheme.bodySoft,
+        ),
+      ),
     );
   }
 
