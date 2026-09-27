@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
@@ -8,6 +9,7 @@ import '../../models/motor_command_type.dart';
 import '../../models/board_alarm.dart';
 import '../../models/motor_info.dart';
 import 'glass_panel.dart';
+import 'motor_motion.dart';
 import 'motor_usage_strip.dart';
 
 /// Representação vetorial nativa do motor para a tela Início.
@@ -15,6 +17,10 @@ import 'motor_usage_strip.dart';
 /// Não comanda a bancada. A rotação acompanha somente o estado confirmado
 /// pelos contatores do ESP32-01. RPM e temperatura vêm dos dados já recebidos
 /// pelo app; não há deslocamento visual por vibração.
+///
+/// O desenho e o movimento são os mesmos do painel web
+/// (`dashboard-cloudflare/motor-animation.js`). Com o motor parado e sem
+/// alarme piscando o ticker dorme: nada é redesenhado.
 class MotorAnimationCard extends StatefulWidget {
   const MotorAnimationCard({
     super.key,
@@ -31,150 +37,166 @@ class MotorAnimationCard extends StatefulWidget {
 
 class _MotorAnimationCardState extends State<MotorAnimationCard>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ticker;
-  Duration? _lastElapsed;
-  double _angle = 0;
-  double _speed = 0;
-  double _startupElapsed = 0;
+  late final Ticker _ticker = createTicker(_onTick);
+  final MotorMotion _motion = MotorMotion();
+
+  /// Avisa o desenho de um novo quadro sem reconstruir o cartão.
+  final ValueNotifier<int> _frame = ValueNotifier<int>(0);
+  Duration _lastElapsed = Duration.zero;
+  double _blinkSeconds = 0;
+  bool _reduceMotion = false;
+  String? _shownStatus;
 
   @override
   void initState() {
     super.initState();
-    _ticker = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 1),
-    )
-      ..addListener(_tick)
-      ..repeat();
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    _sync();
   }
 
   @override
   void didUpdateWidget(covariant MotorAnimationCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.controller.isMotorRunning &&
-        widget.controller.isMotorRunning) {
-      _startupElapsed = 0;
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
     }
-  }
-
-  void _tick() {
-    final Duration elapsed = _ticker.lastElapsedDuration ?? Duration.zero;
-    final Duration? previous = _lastElapsed;
-    _lastElapsed = elapsed;
-    if (previous == null) return;
-
-    double dt = (elapsed - previous).inMicroseconds / 1000000;
-    if (dt < 0) dt += 1;
-    dt = dt.clamp(0.0, 0.064).toDouble();
-
-    final bool connected = widget.controller.isConnected;
-    final bool running = connected && widget.controller.isMotorRunning;
-    final double startupSeconds = _startupSeconds(widget.startType);
-    if (!connected) {
-      // Sem telemetria ao vivo, não animamos o último estado conhecido.
-      _startupElapsed = 0;
-      _speed = 0;
-    } else if (running) {
-      _startupElapsed += dt;
-      _speed = math.min(1.0, _speed + dt / startupSeconds).toDouble();
-    } else {
-      _startupElapsed = 0;
-      _speed = math.max(0.0, _speed - dt / 3.6).toDouble();
-    }
-
-    double effectiveSpeed = _smoothstep(_speed);
-    if (running && _looksSequential(widget.startType)) {
-      final double progress = (_startupElapsed / startupSeconds).clamp(0.0, 1.0).toDouble();
-      final double center = widget.startType.sequence ? 0.61 : 0.64;
-      final double width = widget.startType.sequence ? 0.055 : 0.075;
-      final double depth = widget.startType.sequence ? 0.16 : 0.08;
-      final double z = (progress - center) / width;
-      effectiveSpeed *= 1 - depth * math.exp(-(z * z));
-    }
-
-    if (effectiveSpeed > 0.0001) {
-      final double rpm = widget.controller.motorInfo?.rpm ?? 1750;
-      _angle = (_angle + _visualDps(rpm) * effectiveSpeed * dt) % 360;
-    }
-
-    if (mounted) setState(() {});
-  }
-
-  static double _smoothstep(double x) {
-    final double v = x.clamp(0.0, 1.0).toDouble();
-    return v * v * (3 - 2 * v);
-  }
-
-  static bool _looksSequential(MotorCommandType type) {
-    if (type.sequence) return true;
-    final List<ContactorTiming>? timings = type.timings;
-    if (timings == null) return false;
-    final Set<int> onTimes = timings
-        .where((ContactorTiming item) => item.use)
-        .map((ContactorTiming item) => item.onMs)
-        .toSet();
-    return onTimes.length > 1 ||
-        timings.any(
-          (ContactorTiming item) => item.use && item.offMs > 0,
-        );
-  }
-
-  static double _startupSeconds(MotorCommandType type) {
-    if (type.sequence) return 2.8;
-    if (_looksSequential(type)) return 2.2;
-    return 1.5;
-  }
-
-  static double _visualDps(double rpm) {
-    final double nominal = rpm > 0 ? rpm : 1750;
-    final double x = ((nominal - 600) / 3000).clamp(0.0, 1.0).toDouble();
-    return (540 + 720 * math.pow(x, 0.72)).toDouble();
+    _sync();
   }
 
   @override
   void dispose() {
-    _ticker
-      ..removeListener(_tick)
-      ..dispose();
+    widget.controller.removeListener(_onControllerChanged);
+    _ticker.dispose();
+    _frame.dispose();
     super.dispose();
+  }
+
+  bool get _connected => widget.controller.isConnected;
+  bool get _running => _connected && widget.controller.isMotorRunning;
+
+  _AlarmParts get _alarms =>
+      _connected ? _AlarmParts.of(widget.controller) : const _AlarmParts();
+
+  void _onControllerChanged() {
+    if (!mounted) return;
+    _sync();
+    setState(() {});
+  }
+
+  /// Ajusta o movimento ao estado da bancada e liga/desliga o ticker.
+  void _sync() {
+    final bool running = _running;
+    if (!_connected) {
+      // Sem telemetria ao vivo, não animamos o último estado conhecido.
+      _motion.halt();
+    } else if (_reduceMotion) {
+      _motion.settle(running: running);
+    }
+    final bool needsFrames = _connected &&
+        !_reduceMotion &&
+        (running || _motion.moving || _alarms.any);
+    if (needsFrames && !_ticker.isActive) {
+      _lastElapsed = Duration.zero;
+      _ticker.start();
+    } else if (!needsFrames && _ticker.isActive) {
+      _ticker.stop();
+    }
+    _frame.value++;
+  }
+
+  void _onTick(Duration elapsed) {
+    final double dt = (elapsed - _lastElapsed).inMicroseconds / 1e6;
+    _lastElapsed = elapsed;
+    final bool running = _running;
+    _motion.step(
+      dt,
+      running: running,
+      kind: motorStartKindFor(widget.startType),
+      rpm: widget.controller.motorInfo?.rpm,
+    );
+    _blinkSeconds = (_blinkSeconds + dt) % 1;
+    _frame.value++;
+
+    if (_statusText() != _shownStatus) setState(() {});
+    if (!running && !_motion.moving && !_alarms.any) _ticker.stop();
+  }
+
+  String _statusText() {
+    if (!_connected) return 'Desconectado';
+    if (_running) {
+      return _motion.speed < 0.95 ? 'Motor partindo' : 'Motor ligado';
+    }
+    return _motion.speed > 0.03 ? 'Motor desacelerando' : 'Motor desligado';
+  }
+
+  /// Opacidade do ícone de alarme: 1 → 0,4 → 1 a cada segundo.
+  double get _blinkOpacity {
+    if (_reduceMotion) return 1;
+    return 0.7 + 0.3 * math.cos(_blinkSeconds * 2 * math.pi);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool connected = widget.controller.isConnected;
-    final bool running = connected && widget.controller.isMotorRunning;
+    final bool connected = _connected;
+    final bool running = _running;
     final MotorInfo? info = widget.controller.motorInfo;
     final double? temperature = widget.controller.latestSample?.temperature;
     final double rpm = info?.rpm ?? 1750;
     final String? desarme = widget.controller.desarmeCampo;
-    final String status = !connected
-        ? 'Desconectado'
-        : running
-            ? (_speed < 0.95 ? 'Motor partindo' : 'Motor ligado')
-            : (_speed > 0.03 ? 'Motor desacelerando' : 'Motor desligado');
+    final _AlarmParts alarms = _alarms;
+    final String status = _shownStatus = _statusText();
+    final double? heat = motorHeat(
+      temperature,
+      temperatureLimit(widget.controller.boardAlarms),
+    );
+
+    final List<String> falaDesenho = <String>[
+      status,
+      if (alarms.temperature) 'alarme de temperatura',
+      if (alarms.vibration) 'alarme de vibração',
+    ];
 
     return SizedBox(
       width: double.infinity,
       child: GlassPanel(
-        tint: running
-            ? AppTheme.online
-            : connected
-                ? AppTheme.brandBlue
-                : AppTheme.offline,
+        tint: alarms.any
+            ? AppTheme.danger
+            : running
+                ? AppTheme.online
+                : connected
+                    ? AppTheme.brandBlue
+                    : AppTheme.offline,
         padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool compact = constraints.maxWidth < 600;
-            final Widget drawing = SizedBox(
-              width: compact ? 150 : 210,
-              height: compact ? 86 : 120,
-              child: CustomPaint(
-                key: const ValueKey<String>('motor_animation_paint'),
-                painter: _MotorPainter(
-                  angleDegrees: _angle,
-                  speed: _speed,
-                  temperature: temperature,
-                  running: running,
+            final Widget drawing = Semantics(
+              image: true,
+              label: 'Desenho do motor: ${falaDesenho.join(', ')}',
+              child: RepaintBoundary(
+                child: SizedBox(
+                  width: compact ? 150 : 210,
+                  height: compact ? 86 : 120,
+                  child: CustomPaint(
+                    key: const ValueKey<String>('motor_animation_paint'),
+                    painter: _MotorPainter(
+                      repaint: _frame,
+                      motion: _motion,
+                      blinkOpacity: () => _blinkOpacity,
+                      heat: heat,
+                      alarmTemperature: alarms.temperature,
+                      alarmVibration: alarms.vibration,
+                      dimmed: !connected,
+                      motionBlur: !_reduceMotion,
+                    ),
+                  ),
                 ),
               ),
             );
@@ -286,211 +308,442 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   }
 }
 
-class _MotorPainter extends CustomPainter {
-  const _MotorPainter({
-    required this.angleDegrees,
-    required this.speed,
-    required this.temperature,
-    required this.running,
-  });
+/// Aquecimento de 0 a 1 entre ~30 °C e o limite do alarme de temperatura.
+///
+/// Mesma regra de `motorHeat` no painel web; `null` sem leitura.
+double? motorHeat(double? temperature, double limit) {
+  if (temperature == null || !temperature.isFinite) return null;
+  final double top = limit.isFinite && limit > 0 ? limit : 60;
+  final double base = math.min(30, top - 10);
+  return ((temperature - base) / (top - base)).clamp(0.0, 1.0).toDouble();
+}
 
-  final double angleDegrees;
-  final double speed;
-  final double? temperature;
-  final bool running;
+/// Menor limite "acima de" dos alarmes de temperatura ligados; 60 °C sem lista.
+double temperatureLimit(List<BoardAlarm> alarms) {
+  double? menor;
+  for (final BoardAlarm a in alarms) {
+    if (a.field != 'temperature' || !a.above || !a.enabled || !a.limit.isFinite) {
+      continue;
+    }
+    menor = menor == null ? a.limit : math.min(menor, a.limit);
+  }
+  return menor ?? 60;
+}
+
+/// Partes do motor com alarme disparado agora, segundo a placa.
+class _AlarmParts {
+  const _AlarmParts({this.temperature = false, this.vibration = false});
+
+  factory _AlarmParts.of(MotorControlController controller) {
+    bool temperatura = false, vibracao = false;
+    for (final String id in controller.firingAlarmIds) {
+      String field = id == 'temp'
+          ? 'temperature'
+          : id == 'vib'
+              ? 'vibration_mms'
+              : '';
+      for (final BoardAlarm a in controller.boardAlarms) {
+        if (a.id == id) field = a.field;
+      }
+      if (field == 'temperature') temperatura = true;
+      if (field.startsWith('vibration')) vibracao = true;
+    }
+    return _AlarmParts(temperature: temperatura, vibration: vibracao);
+  }
+
+  final bool temperature;
+  final bool vibration;
+  bool get any => temperature || vibration;
+}
+
+/// Cor do aquecimento: laranja morno até vermelho.
+Color _heatColor(double heat) =>
+    Color.lerp(const Color(0xFFF5A524), const Color(0xFFE5484D), heat)!;
+
+/// Desenho do motor. Coordenadas do SVG do painel web (760 x 430).
+class _MotorPainter extends CustomPainter {
+  _MotorPainter({
+    required Listenable repaint,
+    required this.motion,
+    required this.blinkOpacity,
+    required this.heat,
+    required this.alarmTemperature,
+    required this.alarmVibration,
+    required this.dimmed,
+    required this.motionBlur,
+  }) : super(repaint: repaint);
+
+  final MotorMotion motion;
+  final double Function() blinkOpacity;
+  final double? heat;
+  final bool alarmTemperature;
+  final bool alarmVibration;
+  final bool dimmed;
+  final bool motionBlur;
+
+  static const double _w = 760, _h = 430;
+
+  static const LinearGradient _rear = LinearGradient(
+    colors: <Color>[Color(0xFF173F52), Color(0xFF2A7793), Color(0xFF0C3042)],
+    stops: <double>[0, .55, 1],
+  );
+  static const LinearGradient _body = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: <Color>[Color(0xFF2D7D9B), Color(0xFF16556F), Color(0xFF0A3447)],
+    stops: <double>[0, .46, 1],
+  );
+  static const LinearGradient _metal = LinearGradient(
+    colors: <Color>[
+      Color(0xFF778C95),
+      Color(0xFFE2ECEF),
+      Color(0xFF8FA9B3),
+      Color(0xFFF4F8F9),
+      Color(0xFF687D86),
+    ],
+    stops: <double>[0, .2, .48, .74, 1],
+  );
+  static const LinearGradient _flange = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: <Color>[Color(0xFF3E8BA7), Color(0xFF14516A), Color(0xFF082C3C)],
+    stops: <double>[0, .55, 1],
+  );
+  static const LinearGradient _box = LinearGradient(
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+    colors: <Color>[Color(0xFF438EA9), Color(0xFF17465A)],
+  );
+  static const RadialGradient _endcap = RadialGradient(
+    center: Alignment(-.32, -.44),
+    radius: .82,
+    colors: <Color>[Color(0xFF4D9CB7), Color(0xFF16516A), Color(0xFF092B3B)],
+    stops: <double>[0, .56, 1],
+  );
+
+  static Paint _fill(Color c) => Paint()..color = c;
+
+  static Paint _stroke(Color c, double w) => Paint()
+    ..color = c
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = w;
+
+  static Paint _shader(Gradient g, Rect r) => Paint()..shader = g.createShader(r);
+
+  /// Preenche e contorna a mesma forma, como `fill` + `stroke` no SVG.
+  static void _shape(Canvas c, Path p, Paint fill, Paint stroke) {
+    c.drawPath(p, fill);
+    c.drawPath(p, stroke);
+  }
+
+  static Path _rrect(double x, double y, double w, double h, double r) =>
+      Path()..addRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(r)));
+
+  static Path _oval(double cx, double cy, double rx, double ry) =>
+      Path()..addOval(Rect.fromCenter(center: Offset(cx, cy), width: rx * 2, height: ry * 2));
+
+  static Path _poly(List<Offset> pts) => Path()..addPolygon(pts, true);
+
+  static void _rotateAbout(Canvas c, double cx, double cy, double degrees) {
+    c
+      ..translate(cx, cy)
+      ..rotate(degrees * math.pi / 180)
+      ..translate(-cx, -cy);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Desenho em 304 x 172 unidades, escalado sem distorcer.
-    const double largura = 304, altura = 172;
-    final double scale = math.min(size.width / largura, size.height / altura).toDouble();
-    final Offset origin = Offset(
-      (size.width - largura * scale) / 2,
-      (size.height - altura * scale) / 2,
-    );
+    final double scale = math.min(size.width / _w, size.height / _h);
     canvas.save();
-    canvas.translate(origin.dx, origin.dy);
+    canvas.translate((size.width - _w * scale) / 2, (size.height - _h * scale) / 2);
     canvas.scale(scale);
-
-    final Paint shadow = Paint()
-      ..color = Colors.black.withValues(alpha: 0.30)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(154, 160), width: 236, height: 18),
-      shadow,
-    );
-
-    final Color bodyBase = Color.lerp(
-      const Color(0xFF17556F),
-      const Color(0xFFD85B45),
-      _heatLevel(temperature),
-    )!;
-    final Paint body = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: <Color>[
-          Color.lerp(bodyBase, Colors.white, 0.16)!,
-          bodyBase,
-          Color.lerp(bodyBase, Colors.black, 0.34)!,
-        ],
-      ).createShader(const Rect.fromLTWH(64, 42, 164, 108));
-
-    final RRect bodyRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(66, 44, 160, 104),
-      const Radius.circular(28),
-    );
-    canvas.drawRRect(bodyRect, body);
-
-    final Paint outline = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.4
-      ..color = const Color(0xFF88B9C8).withValues(alpha: 0.85);
-    canvas.drawRRect(bodyRect, outline);
-
-    final Paint fin = Paint()
-      ..color = const Color(0xFF0C4054).withValues(alpha: 0.80)
-      ..strokeWidth = 4;
-    for (double x = 84; x <= 210; x += 16) {
-      canvas.drawLine(Offset(x, 55), Offset(x, 137), fin);
+    if (dimmed) {
+      canvas.saveLayer(
+        const Rect.fromLTWH(0, 0, _w, _h),
+        Paint()..color = const Color(0xC7000000),
+      );
     }
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(114, 20, 64, 30),
-        const Radius.circular(7),
-      ),
-      Paint()..color = const Color(0xFF2A6B83),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(121, 12, 50, 12),
-        const Radius.circular(5),
-      ),
-      Paint()..color = const Color(0xFF173E50),
+    final double angle = motion.angle;
+    final MotionAppearance look = motionAppearance(motion.speed);
+
+    // Sombra no chão.
+    canvas.drawOval(
+      Rect.fromCenter(center: const Offset(355, 378), width: 540, height: 76),
+      _fill(const Color(0xFF020F15).withValues(alpha: .48)),
     );
 
-    canvas.drawOval(
-      const Rect.fromLTWH(36, 50, 60, 92),
-      Paint()..color = const Color(0xFF154A60),
+    // Tampa traseira da ventoinha.
+    final Path rear = Path()
+      ..moveTo(145, 155)
+      ..cubicTo(112, 163, 94, 190, 94, 241)
+      ..cubicTo(94, 289, 112, 318, 145, 327)
+      ..lineTo(176, 328)
+      ..lineTo(176, 155)
+      ..close();
+    _shape(
+      canvas,
+      rear,
+      _shader(_rear, const Rect.fromLTRB(94, 155, 176, 328)),
+      _stroke(const Color(0xFF6DA6B8), 5),
     );
-    canvas.drawOval(
-      const Rect.fromLTWH(44, 60, 44, 72),
-      Paint()..color = const Color(0xFF071F2A),
+    canvas.drawPath(
+      Path()
+        ..moveTo(129, 171)
+        ..cubicTo(105, 181, 95, 205, 95, 240)
+        ..cubicTo(95, 275, 105, 299, 129, 310),
+      _stroke(const Color(0xFF8AC5D6).withValues(alpha: .18), 5),
+    );
+    _shape(
+      canvas,
+      _oval(111, 240, 24, 49),
+      _fill(const Color(0xFF061A24)),
+      _stroke(const Color(0xFF4F7F90), 4),
     );
 
-    final Offset fanCenter = const Offset(66, 96);
+    // Ventoinha vista de lado: achatada na horizontal.
     canvas.save();
-    canvas.translate(fanCenter.dx, fanCenter.dy);
-    canvas.rotate(angleDegrees * math.pi / 180);
-    final double blur = ((speed - 0.48) / 0.52).clamp(0.0, 1.0).toDouble();
-    final Paint blade = Paint()
-      ..color = const Color(0xFF4A90A8).withValues(alpha: 1 - 0.34 * blur);
+    canvas
+      ..translate(111, 240)
+      ..scale(.46, 1)
+      ..translate(-118, -240);
+    _rotateAbout(canvas, 118, 240, angle);
+    final Path blade = Path()
+      ..moveTo(113, 231)
+      ..cubicTo(104, 215, 107, 197, 118, 191)
+      ..cubicTo(125, 204, 126, 219, 121, 234)
+      ..close();
+    final Paint bladeFill = _fill(const Color(0xFF15485D).withValues(alpha: look.bladeOpacity));
+    final Paint bladeStroke =
+        _stroke(const Color(0xFF73A9BB).withValues(alpha: look.bladeOpacity), 2);
+    if (motionBlur && look.blurPx > 0) {
+      final MaskFilter blur = MaskFilter.blur(BlurStyle.normal, look.blurPx);
+      bladeFill.maskFilter = blur;
+      bladeStroke.maskFilter = blur;
+    }
     for (int i = 0; i < 5; i++) {
       canvas.save();
-      canvas.rotate(i * math.pi * 2 / 5);
-      final Path p = Path()
-        ..moveTo(1, -3)
-        ..quadraticBezierTo(9, -25, 20, -26)
-        ..quadraticBezierTo(22, -10, 6, 4)
-        ..close();
-      canvas.drawPath(p, blade);
+      _rotateAbout(canvas, 118, 240, i * 72.0);
+      _shape(canvas, blade, bladeFill, bladeStroke);
       canvas.restore();
     }
+    final double marker = motionBlur ? look.markerOpacity : 1;
     canvas.drawCircle(
-      Offset.zero,
-      6,
-      Paint()..color = const Color(0xFFB8D4DD),
+      const Offset(117, 214),
+      4.5,
+      _fill(const Color(0xFFF0BB69).withValues(alpha: marker)),
+    );
+    canvas.drawCircle(
+      const Offset(117, 214),
+      4.5,
+      _stroke(const Color(0xFFFFE2A5).withValues(alpha: marker), 1.5),
+    );
+    _shape(
+      canvas,
+      Path()..addOval(Rect.fromCircle(center: const Offset(118, 240), radius: 10)),
+      _fill(const Color(0xFF0B2330)),
+      _stroke(const Color(0xFFBDD9E2), 3),
     );
     canvas.restore();
 
-    canvas.drawOval(
-      const Rect.fromLTWH(212, 42, 70, 108),
-      Paint()..color = const Color(0xFF246C85),
+    canvas.drawPath(
+      _oval(111, 240, 28, 54),
+      _stroke(const Color(0xFF7DB4C5).withValues(alpha: .9), 4),
     );
-    canvas.drawOval(
-      const Rect.fromLTWH(226, 56, 42, 80),
-      Paint()..color = const Color(0xFF0C3444),
-    );
-
-    final Paint shaft = Paint()
-      ..shader = const LinearGradient(
-        colors: <Color>[
-          Color(0xFF7D929B),
-          Color(0xFFE8F0F2),
-          Color(0xFF788D96),
-        ],
-      ).createShader(const Rect.fromLTWH(262, 89, 34, 14));
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(262, 89, 34, 14),
-        const Radius.circular(6),
-      ),
-      shaft,
-    );
-
-    final Offset shaftEnd = const Offset(296, 96);
-    canvas.drawCircle(
-      shaftEnd,
-      7,
-      Paint()..color = const Color(0xFF8CA0A8),
-    );
-    canvas.save();
-    canvas.translate(shaftEnd.dx, shaftEnd.dy);
-    canvas.rotate(angleDegrees * math.pi / 180);
-    canvas.drawLine(
-      Offset.zero,
-      const Offset(0, -6),
-      Paint()
-        ..color = AppTheme.brandOrange
-        ..strokeWidth = 2.5
-        ..strokeCap = StrokeCap.round,
-    );
-    canvas.restore();
-
-    final Paint foot = Paint()..color = const Color(0xFF0D3C4D);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(80, 140, 50, 20),
-        const Radius.circular(4),
-      ),
-      foot,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(164, 140, 50, 20),
-        const Radius.circular(4),
-      ),
-      foot,
+    final Paint grid = _stroke(const Color(0xFF5F93A5).withValues(alpha: .5), 3);
+    canvas
+      ..drawLine(const Offset(111, 188), const Offset(111, 292), grid)
+      ..drawLine(const Offset(91, 206), const Offset(130, 274), grid)
+      ..drawLine(const Offset(91, 274), const Offset(130, 206), grid);
+    final Path shade = Path()
+      ..moveTo(123, 185)
+      ..cubicTo(143, 195, 151, 214, 151, 240)
+      ..cubicTo(151, 267, 143, 286, 123, 296)
+      ..lineTo(141, 322)
+      ..lineTo(175, 328)
+      ..lineTo(175, 155)
+      ..lineTo(141, 156)
+      ..close();
+    canvas.drawPath(
+      shade,
+      _shader(_rear, const Rect.fromLTRB(123, 155, 175, 328))
+        ..color = const Color(0xCC000000),
     );
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(118, 76, 56, 40),
-        const Radius.circular(4),
-      ),
-      Paint()..color = const Color(0xFFB8C4C8),
+    // Carcaça com aletas.
+    _shape(
+      canvas,
+      _rrect(154, 143, 330, 194, 50),
+      _shader(_body, const Rect.fromLTWH(154, 143, 330, 194)),
+      _stroke(const Color(0xFF77AEBE), 5),
     );
-    final Paint plateLine = Paint()
-      ..color = const Color(0xFF65757B)
-      ..strokeWidth = 2;
-    for (double y = 84; y <= 108; y += 6) {
-      canvas.drawLine(Offset(125, y), Offset(167, y), plateLine);
+    const List<double> finTop = <double>[149, 146, 144, 143, 142, 142, 143, 144, 146, 149];
+    const List<double> finHeight = <double>[181, 187, 190, 192, 193, 193, 192, 190, 187, 181];
+    final Paint finFill = _fill(const Color(0xFF0B4055));
+    final Paint finStroke = _stroke(const Color(0xFF3B829A), 2);
+    for (int i = 0; i < finTop.length; i++) {
+      _shape(canvas, _rrect(188 + 26.0 * i, finTop[i], 14, finHeight[i], 5), finFill, finStroke);
+    }
+    final double? h = heat;
+    if (h != null && h > 0) {
+      canvas.drawPath(
+        _rrect(154, 143, 330, 194, 50),
+        _fill(_heatColor(h).withValues(alpha: .18 + .6 * h))
+          ..blendMode = BlendMode.screen
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, .8),
+      );
+    }
+    canvas.drawPath(
+      Path()
+        ..moveTo(179, 169)
+        ..cubicTo(245, 140, 378, 140, 453, 165),
+      _stroke(const Color(0xFF85C8D9).withValues(alpha: .24), 11),
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(177, 308)
+        ..cubicTo(267, 338, 383, 335, 455, 304),
+      _stroke(const Color(0xFF061E29).withValues(alpha: .58), 13),
+    );
+
+    // Pés e base.
+    final Paint footFill = _fill(const Color(0xFF0B3749));
+    final Paint footStroke = _stroke(const Color(0xFF6196A8), 4);
+    _shape(canvas, _poly(const <Offset>[Offset(174, 324), Offset(252, 324), Offset(264, 369), Offset(161, 369)]), footFill, footStroke);
+    _shape(canvas, _poly(const <Offset>[Offset(369, 324), Offset(450, 324), Offset(464, 369), Offset(357, 369)]), footFill, footStroke);
+    _shape(canvas, _rrect(158, 361, 313, 18, 5), footFill, footStroke);
+
+    // Caixa de ligação.
+    _shape(
+      canvas,
+      _poly(const <Offset>[Offset(247, 95), Offset(379, 95), Offset(404, 118), Offset(386, 155), Offset(239, 155), Offset(221, 118)]),
+      _shader(_box, const Rect.fromLTRB(221, 95, 404, 155)),
+      _stroke(const Color(0xFF88BBCA), 5),
+    );
+    _shape(canvas, _rrect(237, 78, 152, 34, 9), _fill(const Color(0xFF2D6E88)), _stroke(const Color(0xFF9AC8D5), 5));
+    _shape(canvas, _rrect(255, 68, 116, 15, 6), _fill(const Color(0xFF163F53)), _stroke(const Color(0xFF75A7B7), 4));
+    for (final double x in const <double>[282, 346]) {
+      _shape(canvas, _oval(x, 122, 10, 10), _fill(const Color(0xFF071E29)), _stroke(const Color(0xFF91BDCA), 4));
     }
 
-    canvas.restore();
-  }
+    // Tampa dianteira, rolamento e parafusos.
+    _shape(
+      canvas,
+      _oval(486, 240, 85, 100),
+      _shader(_flange, const Rect.fromLTRB(401, 140, 571, 340)),
+      _stroke(const Color(0xFF8BB9C8), 5),
+    );
+    _shape(
+      canvas,
+      _oval(486, 240, 63, 75),
+      _shader(_endcap, const Rect.fromLTRB(423, 165, 549, 315)),
+      _stroke(const Color(0xFF5B93A6), 5),
+    );
+    _shape(canvas, _oval(486, 240, 43, 52), _fill(const Color(0xFF082B3A)), _stroke(const Color(0xFF9BC2CE), 5));
+    final Paint spoke = _stroke(const Color(0xFF5E9DB3).withValues(alpha: .78), 7);
+    const List<List<double>> spokes = <List<double>>[
+      <double>[486, 168, 486, 190], <double>[486, 290, 486, 312],
+      <double>[432, 240, 454, 240], <double>[518, 240, 540, 240],
+      <double>[450, 190, 464, 205], <double>[508, 276, 523, 292],
+      <double>[450, 290, 465, 275], <double>[508, 204, 523, 189],
+    ];
+    for (final List<double> s in spokes) {
+      canvas.drawLine(Offset(s[0], s[1]), Offset(s[2], s[3]), spoke);
+    }
+    const List<Offset> bolts = <Offset>[
+      Offset(486, 157), Offset(486, 323), Offset(417, 240), Offset(555, 240),
+      Offset(437, 179), Offset(535, 179), Offset(437, 301), Offset(535, 301),
+    ];
+    final Paint boltFill = _fill(const Color(0xFFD0DDE1));
+    final Paint boltStroke = _stroke(const Color(0xFF617680), 2);
+    for (final Offset b in bolts) {
+      canvas
+        ..drawCircle(b, 6, boltFill)
+        ..drawCircle(b, 6, boltStroke);
+    }
 
-  double _heatLevel(double? temperature) {
-    if (temperature == null) return 0;
-    return ((temperature - 30) / 40).clamp(0.0, 1.0).toDouble() * 0.72;
+    // Eixo.
+    _shape(
+      canvas,
+      _rrect(480, 221, 178, 38, 16),
+      _shader(_metal, const Rect.fromLTWH(480, 221, 178, 38)),
+      _stroke(const Color(0xFFE0EDF0), 3),
+    );
+    canvas.drawLine(
+      const Offset(501, 229),
+      const Offset(638, 229),
+      _stroke(Colors.white.withValues(alpha: .32), 5),
+    );
+    _shape(canvas, _oval(658, 240, 15, 19), _fill(const Color(0xFF8599A1)), _stroke(const Color(0xFFE0EBEE), 3));
+    canvas.drawPath(_oval(658, 240, 7, 10), _fill(const Color(0xFF31464E)));
+    canvas.save();
+    _rotateAbout(canvas, 658, 240, angle);
+    canvas.drawLine(
+      const Offset(658, 240),
+      const Offset(658, 232),
+      _stroke(const Color(0xFFDBE8EB), 3.2)..strokeCap = StrokeCap.round,
+    );
+    canvas
+      ..drawCircle(const Offset(658, 230), 2.6, _fill(const Color(0xFFF0BB69)))
+      ..drawCircle(const Offset(658, 230), 2.6, _stroke(const Color(0xFFFFE4AD), 1));
+    canvas.restore();
+
+    // Placa de identificação.
+    _shape(canvas, _rrect(260, 216, 100, 61, 7), _fill(const Color(0xFFB8C4C8)), _stroke(const Color(0xFF52666E), 3));
+    final Paint plateLine = _fill(const Color(0xFF75868C));
+    canvas
+      ..drawPath(_rrect(269, 225, 82, 6, 2), plateLine)
+      ..drawPath(_rrect(269, 237, 69, 4, 2), plateLine)
+      ..drawPath(_rrect(269, 247, 76, 4, 2), plateLine)
+      ..drawPath(_rrect(269, 257, 57, 4, 2), plateLine);
+
+    // Rotor visível no eixo.
+    canvas.save();
+    _rotateAbout(canvas, 622, 240, angle);
+    _shape(canvas, _oval(622, 240, 15, 15), _fill(const Color(0xFF0A2631)), _stroke(const Color(0xFFB2D0D8), 4));
+    final Paint rotorLine = _stroke(const Color(0xFFD5E6EA), 6)..strokeCap = StrokeCap.round;
+    canvas
+      ..drawLine(const Offset(622, 227), const Offset(622, 253), rotorLine)
+      ..drawLine(const Offset(609, 240), const Offset(635, 240), rotorLine);
+    canvas.restore();
+
+    // Alarmes disparados, piscando.
+    if (alarmVibration || alarmTemperature) {
+      final double o = blinkOpacity();
+      if (alarmVibration) {
+        final Paint wave = _stroke(const Color(0xFFFF6B6B).withValues(alpha: o), 9)
+          ..strokeCap = StrokeCap.round;
+        canvas
+          ..drawPath(Path()..moveTo(140, 334)..cubicTo(128, 347, 128, 368, 140, 381), wave)
+          ..drawPath(Path()..moveTo(118, 322)..cubicTo(98, 344, 98, 372, 118, 394), wave)
+          ..drawPath(Path()..moveTo(490, 334)..cubicTo(502, 347, 502, 368, 490, 381), wave)
+          ..drawPath(Path()..moveTo(512, 322)..cubicTo(532, 344, 532, 372, 512, 394), wave);
+      }
+      if (alarmTemperature) {
+        canvas.save();
+        canvas.translate(222, 208);
+        canvas
+          ..drawCircle(Offset.zero, 38, _fill(const Color(0xFFE5484D).withValues(alpha: o)))
+          ..drawCircle(Offset.zero, 38, _stroke(const Color(0xFFFFD6D6).withValues(alpha: o), 5));
+        final Paint glyph = _fill(Colors.white.withValues(alpha: o));
+        canvas
+          ..drawPath(_rrect(-7, -26, 14, 36, 7), glyph)
+          ..drawCircle(const Offset(0, 14), 13, glyph);
+        canvas.restore();
+      }
+    }
+
+    if (dimmed) canvas.restore();
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(covariant _MotorPainter oldDelegate) {
-    return oldDelegate.angleDegrees != angleDegrees ||
-        oldDelegate.speed != speed ||
-        oldDelegate.temperature != temperature ||
-        oldDelegate.running != running;
+  bool shouldRepaint(covariant _MotorPainter old) {
+    return old.motion != motion ||
+        old.heat != heat ||
+        old.alarmTemperature != alarmTemperature ||
+        old.alarmVibration != alarmVibration ||
+        old.dimmed != dimmed ||
+        old.motionBlur != motionBlur;
   }
 }

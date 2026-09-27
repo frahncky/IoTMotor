@@ -110,6 +110,11 @@ function motorVisualState({brokerReady,commandFresh,motorOn}){
  if(motorOn===false)return {state:'stopped',label:'Motor desligado'};
  return {state:'waiting',label:'Estado do motor não informado'};
 }
+// Texto do desenho do motor para leitores de tela: estado e alarmes na peça.
+function motorVisualAria(label,parts){
+ const extras=[parts?.has?.('temperature')&&'alarme de temperatura',parts?.has?.('vibration')&&'alarme de vibração'].filter(Boolean);
+ return `Desenho do motor: ${[label,...extras].join(', ')}`;
+}
 // Aquecimento da carcaça de 0 (frio) a 1 (no limite do alarme de temperatura).
 function motorHeat(temperature,limit){
  if(!Number.isFinite(temperature))return null;
@@ -279,6 +284,7 @@ function renderMotorVisual(){
  root.dataset.alarm=parts.size?'on':'off';
  root.dataset.alarmTemp=parts.has('temperature')?'on':'off';
  root.dataset.alarmVib=parts.has('vibration')?'on':'off';
+ $('motorVisualStage')?.setAttribute('aria-label',motorVisualAria(pendente||visual.label,parts));
  const dados=[];
  if(cmd?.current!==null&&cmd?.current!==undefined){
   const carga=cmd.motorOn===true?motorLoad(cmd.current,window.iotmotorMotorInfo?.dados?.()?.current_in_use_a):null;
@@ -586,4 +592,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};

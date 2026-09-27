@@ -67,4 +67,92 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('motor parado não mantém o desenho animando', (
+    WidgetTester tester,
+  ) async {
+    final MotorControlController controller =
+        MotorControlController(loadSettings: false)
+          ..isConnected = true;
+    controller.handlePayloadForTest(
+      'iotmotor/esp32-01/telemetry',
+      '{"relays":[false,false,false,false],"motor_running":false}',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MotorAnimationCard(
+            controller: controller,
+            startType: MotorCommandType.directStart,
+          ),
+        ),
+      ),
+    );
+    // Sem quadros pendentes: pumpAndSettle termina.
+    await tester.pumpAndSettle();
+    expect(find.text('Motor desligado'), findsOneWidget);
+
+    // Liga: anima; desliga: desacelera e volta a dormir.
+    controller.handlePayloadForTest(
+      'iotmotor/esp32-01/telemetry',
+      '{"relays":[true,false,false,false],"motor_running":true}',
+    );
+    controller.notifyListeners();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Motor partindo'), findsOneWidget);
+    for (int i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Motor ligado'), findsOneWidget);
+
+    controller.handlePayloadForTest(
+      'iotmotor/esp32-01/telemetry',
+      '{"relays":[false,false,false,false],"motor_running":false}',
+    );
+    controller.notifyListeners();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Motor desacelerando'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Motor desligado'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('movimento reduzido mostra o estado final sem animar', (
+    WidgetTester tester,
+  ) async {
+    final MotorControlController controller =
+        MotorControlController(loadSettings: false)
+          ..isConnected = true;
+    controller.handlePayloadForTest(
+      'iotmotor/esp32-01/telemetry',
+      '{"relays":[true,false,false,false],"motor_running":true}',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: MotorAnimationCard(
+              controller: controller,
+              startType: MotorCommandType.directStart,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Motor ligado'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp('Desenho do motor: Motor ligado')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
 }

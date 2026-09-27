@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
+const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -290,4 +290,9 @@ test('grafico usa janelas temporais exatas e consolida pela media',()=>{
  assert.equal(serie[0].v,225);
  assert.equal(serie[1].t,15000);
  assert.equal(serie[1].v,240);
+});
+test('desenho do motor tem texto para leitor de tela com os alarmes',()=>{
+ assert.equal(motorVisualAria('Motor ligado',new Set()),'Desenho do motor: Motor ligado');
+ assert.equal(motorVisualAria('Motor ligado',new Set(['temperature','vibration'])),'Desenho do motor: Motor ligado, alarme de temperatura, alarme de vibração');
+ assert.equal(motorVisualAria('Desconectado',null),'Desenho do motor: Desconectado');
 });
