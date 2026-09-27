@@ -90,12 +90,12 @@ function freshness(which){return state.connected&&state.subscribed&&state[which]
 // Conexao do dispositivo: telemetria recente prevalece; senao usa o status retido/LWT mais novo.
 function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now()}){
  if(!brokerOk)return {label:'broker desconectado',kind:''};
- const fresh=at>0&&now-at<TELEMETRY_STALE_MS,st=String(status||'').trim().toLowerCase();
+ const fresh=at>0&&now-at<telemetryStaleMs(),st=String(status||'').trim().toLowerCase();
  if(st==='offline'&&statusAt>=at)return {label:'desconectado',kind:'error'};
  if(fresh)return {label:'conectado',kind:'live'};
  if(st==='offline')return {label:'desconectado',kind:'error'};
- if(st==='online')return {label:at?'online · sem dados há mais de 6 s':'online · aguardando dados',kind:'wait'};
- return {label:at?'sem dados há mais de 6 s':'sem sinal',kind:at?'error':''};
+ if(st==='online')return {label:at?'online · sem dados recentes':'online · aguardando dados',kind:'wait'};
+ return {label:at?'sem dados recentes':'sem sinal',kind:at?'error':''};
 }
 function renderDevice(id,which,name){
  const s=state[which],info=deviceConnection({brokerOk:state.connected&&state.subscribed,status:s.status,statusAt:s.statusAt,at:s.at});
@@ -463,7 +463,7 @@ function connect(automatico){
   if(!active())return;state.connected=true;pill('Broker conectado','live');
   const topics=[topic(config.commandDevice,'telemetry'),topic(config.commandDevice,'status'),topic(config.commandDevice,'data_config'),topic(config.commandDevice,'auth'),topic(config.sensorDevice,'telemetry'),topic(config.sensorDevice,'status'),topic(config.sensorDevice,'data_config'),topic(config.sensorDevice,'auth')];
   client.subscribe(topics,{qos:0},err=>{
-   if(!active())return;state.subscribed=!err;diag(err?`Conectado, erro de assinatura: ${err.message}`:`Broker conectado. Aguardando ${topics[0]} e ${topics[2]}.`);updateControl();
+   if(!active())return;state.subscribed=!err;diag(err?`Conectado, erro de assinatura: ${err.message}`:`Broker conectado. Aguardando ${topics[0]} e ${topics[4]}.`);updateControl();
   });
  });
  client.on('message',(destination,payload,packet)=>{
