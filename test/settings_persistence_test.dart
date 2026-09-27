@@ -38,7 +38,7 @@ void main() {
 
   test('conexão MQTT digitada continua salva ao reabrir o app', () async {
     final MotorControlController primeiro = MotorControlController();
-    await Future<void>.delayed(const Duration(milliseconds: 100));
+    await primeiro.ready;
 
     primeiro.brokerController.text = 'test.mosquitto.org';
     primeiro.portController.text = '8883';
@@ -48,6 +48,7 @@ void main() {
     // Digitar agenda a gravação; espera passar o atraso do debounce.
     await Future<void>.delayed(const Duration(milliseconds: 800));
     primeiro.dispose();
+    await primeiro.settingsWritten;
 
     final File arquivo = File('${pasta.path}${Platform.pathSeparator}motor_settings_v1.json');
     expect(await arquivo.exists(), isTrue, reason: 'nada foi gravado no disco');
@@ -55,7 +56,7 @@ void main() {
         'test.mosquitto.org');
 
     final MotorControlController segundo = MotorControlController();
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await segundo.ready;
     expect(segundo.brokerController.text, 'test.mosquitto.org');
     expect(segundo.portController.text, '8883');
     expect(segundo.clientIdController.text, 'bancada_ifma');
@@ -84,24 +85,26 @@ void main() {
     // Abre no perfil A e digita outro broker.
     final MotorControlController primeiro =
         MotorControlController.withMqttConfig(perfilA, profileId: 'a');
-    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await primeiro.ready;
     primeiro.brokerController.text = 'test.mosquitto.org';
-    await Future<void>.delayed(const Duration(milliseconds: 800));
     primeiro.dispose();
+    await primeiro.settingsWritten;
 
     // Reabre no mesmo perfil: vale o que foi digitado.
     final MotorControlController segundo =
         MotorControlController.withMqttConfig(perfilA, profileId: 'a');
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await segundo.ready;
     expect(segundo.brokerController.text, 'test.mosquitto.org');
     segundo.dispose();
+    await segundo.settingsWritten;
 
     // Troca para o perfil B: quem manda é o perfil novo.
     final MotorControlController terceiro =
         MotorControlController.withMqttConfig(perfilB, profileId: 'b');
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await terceiro.ready;
     expect(terceiro.brokerController.text, 'outro.broker.org');
     terceiro.dispose();
+    await terceiro.settingsWritten;
   });
 
   test('abrir o app não apaga as configurações já salvas', () async {
@@ -125,7 +128,10 @@ void main() {
     }));
 
     final MotorControlController controlador = MotorControlController();
+    await controlador.ready;
+    // Dá tempo a uma gravação indevida (debounce) de acontecer.
     await Future<void>.delayed(const Duration(milliseconds: 800));
+    await controlador.settingsWritten;
     expect(controlador.brokerController.text, 'meu.broker.local');
     expect(
       jsonDecode(await arquivo.readAsString())['settings']['broker'],
@@ -133,5 +139,6 @@ void main() {
       reason: 'a abertura do app sobrescreveu o arquivo com os padrões',
     );
     controlador.dispose();
+    await controlador.settingsWritten;
   });
 }

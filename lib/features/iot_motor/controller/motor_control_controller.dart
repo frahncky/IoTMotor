@@ -156,8 +156,19 @@ class MotorControlController extends ChangeNotifier {
     _connectedDevicesTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _notifyConnectionHealthIfChanged();
     });
-    _initializeData(loadSettings);
+    ready = _initializeData(loadSettings);
   }
+
+  /// Termina quando o que estava salvo foi lido (e o app pode gravar).
+  late final Future<void> ready;
+
+  /// Gravações das configurações em fila: uma nunca começa antes de a
+  /// anterior terminar, então o arquivo não fica pela metade nem fora de ordem.
+  Future<void> _settingsWrite = Future<void>.value();
+
+  /// Termina quando a última gravação das configurações pedida até agora
+  /// chegou ao disco (inclusive a do [dispose]).
+  Future<void> get settingsWritten => _settingsWrite;
 
   /// `true` só quando alguma placa foi gravada exigindo comando cifrado.
   bool get commandPasswordNeeded => _service.seal.algumaExigeSelo;
@@ -3114,12 +3125,15 @@ class MotorControlController extends ChangeNotifier {
     });
   }
 
-  Future<void> _persistSettings() async {
-    try {
-      await savePersistedMotorSettings(_buildSettingsSnapshot());
-    } catch (_) {
-      // Keep app flow active even if settings persistence fails.
-    }
+  Future<void> _persistSettings() {
+    final MotorAppSettings snapshot = _buildSettingsSnapshot();
+    return _settingsWrite = _settingsWrite.then((_) async {
+      try {
+        await savePersistedMotorSettings(snapshot);
+      } catch (_) {
+        // Keep app flow active even if settings persistence fails.
+      }
+    });
   }
 
   MotorAppSettings _buildSettingsSnapshot() {
