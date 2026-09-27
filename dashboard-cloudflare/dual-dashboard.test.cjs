@@ -185,6 +185,9 @@ test('avisos de limite seguem o firmware: estrito, o mais grave vale e nada com 
  // Monitoramento desligado: sem avisos de limite, mas a falta de leitura continua.
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{alarmEnabled:false,vibration:null,temperature:95},alarms:dois})),
   ['warn|Vibração sem leitura']);
+ // Firmware novo manda só mm/s: não é falta de leitura; firmware antigo, só g, também não.
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:1.2,temperature:30},alarms:[]})),[]);
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.02,temperature:30},alarms:[]})),[]);
 });
 
 test('carga do motor usa a corrente nominal cadastrada e some sem ela',()=>{

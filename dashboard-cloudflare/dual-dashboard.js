@@ -147,8 +147,14 @@ function motorWarnings({brokerReady,command,sensor,alarms,maintenance}){
  if(!brokerReady)return [];
  const out=[];
  if(!sensor)out.push({kind:'no-data',field:'sensor',level:'warn',text:'Sensores do motor sem dados'});
- else for(const key of ['vibration','temperature'])if(sensor[key]===null||sensor[key]===undefined)
-  out.push({kind:'missing',field:key,level:'warn',text:`${key==='vibration'?'Vibração':METRICS.find(m=>m.key===key).label} sem leitura`});
+ else{
+  // Vibração: mm/s (ISO 10816); a aceleração em g vale só para o firmware antigo, que não manda mm/s.
+  const semLeitura=v=>v===null||v===undefined;
+  if(semLeitura(sensor.vibration_mms)&&semLeitura(sensor.vibration))
+   out.push({kind:'missing',field:'vibration',level:'warn',text:'Vibração sem leitura'});
+  if(semLeitura(sensor.temperature))
+   out.push({kind:'missing',field:'temperature',level:'warn',text:'Temperatura sem leitura'});
+ }
  if(!command)out.push({kind:'no-data',field:'command',level:'warn',text:'Quadro de comando sem dados'});
  else if(METRICS.filter(m=>m.source==='command'&&!['apparent','reactive'].includes(m.key)).every(m=>command[m.key]===null||command[m.key]===undefined))
   out.push({kind:'missing',field:'pzem',level:'warn',text:'Medições elétricas (PZEM) sem leitura'});
