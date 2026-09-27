@@ -1940,6 +1940,8 @@ class MotorControlController extends ChangeNotifier {
     isConnected = true;
     isBusy = false;
     _recebeuDadoAtual = false;
+    // Uma conexão nova pode apontar para outro broker/prefixo.
+    _commandClients.clear();
     final MqttConnectionConfig? config = _service.activeConfig;
     if (config != null) {
       connectionMessage = 'Conectado em ${config.host}:${config.port}';
@@ -1953,6 +1955,7 @@ class MotorControlController extends ChangeNotifier {
     _recebeuDadoAtual = false;
     _lastSeenByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
+    _commandClients.clear();
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     connectionMessage = 'Desconectado';
