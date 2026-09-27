@@ -29,7 +29,7 @@ class MotorUsageStrip extends StatelessWidget {
     if (iso != null) {
       itens.add(_Item(
         Icons.vibration_rounded,
-        'Vibração ${iso.mmS.toStringAsFixed(2).replaceAll('.', ',')} mm/s RMS · ${iso.label}',
+        'Vibração ${iso.mmS.toStringAsFixed(2).replaceAll('.', ',')} mm/s · ${iso.label}',
         iso.zona >= 2 ? (iso.zona == 3 ? AppTheme.danger : AppTheme.brandOrange) : null,
       ));
     }

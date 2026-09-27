@@ -49,7 +49,7 @@ void main() {
       ),
     ));
     expect(find.text('Carga 50%'), findsOneWidget);
-    expect(find.text('Vibração 1,20 mm/s RMS · Aceitável'), findsOneWidget);
+    expect(find.text('Vibração 1,20 mm/s · Aceitável'), findsOneWidget);
     expect(find.textContaining('Horímetro 2100,0 h · 3 partidas hoje'), findsOneWidget);
     expect(find.textContaining('Manutenção vencida há 100 h'), findsOneWidget);
     expect(find.textContaining('Quadro de comando: firmware v11-velho'), findsOneWidget);
