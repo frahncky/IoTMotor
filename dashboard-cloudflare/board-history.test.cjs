@@ -33,3 +33,12 @@ test('resumo: tempo ligado e máximos dos 7 dias', () => {
     'Motor ligado 0 h 45 min em 7 dias · Corrente máxima 10,34 A · Temperatura máxima 48,0 °C');
   assert.equal(resumoDoHistorico([null], agora), '');
 });
+
+test('vibração em mm/s; dias antigos em g ficam fora do gráfico', () => {
+  const novo = lerDia({day: 20000, v: 1, vib: 'mm/s', hours: [[10, 912, 1034, 2201, 452, 480, 231, 455, 45]]});
+  assert.equal(g('vibracao').unidade, 'mm/s');
+  assert.deepEqual(serieDoHistorico([novo], g('vibracao'), agora).map(p => [p.media, p.maximo]), [[2.31, 4.55]]);
+  // O dia do exemplo acima veio do firmware antigo (sem "vib"): vibração em g.
+  assert.equal(serieDoHistorico([dia], g('vibracao'), agora).length, 0);
+  assert.equal(serieDoHistorico([dia], g('corrente'), agora).length, 1, 'o resto do dia antigo continua');
+});

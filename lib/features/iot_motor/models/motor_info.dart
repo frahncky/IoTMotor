@@ -4,7 +4,7 @@ import 'dart:math' as math;
 /// Versão do firmware publicada para OTA (release firmware-latest), a mesma que
 /// o painel usa (FIRMWARE_PUBLICADO em wifi-manager.js): [quadro, sensores].
 /// O CI confere que é a mesma do firmware_version de cada .ino.
-const List<String> firmwarePublicado = <String>['v16-desarme', 's3-sensors-1.8-desarme'];
+const List<String> firmwarePublicado = <String>['v16-desarme', 's3-sensors-1.9-mms'];
 
 double? _numero(Object? valor) =>
     valor is num && valor.isFinite ? valor.toDouble() : null;
@@ -165,13 +165,16 @@ class MaintenanceStatus {
           : 'Próxima manutenção em ${_horas(restanteH)} de uso (a cada ${intervaloH.round()} h)';
 }
 
-/// Severidade da vibração pela ISO 10816, com a velocidade estimada da
-/// aceleração RMS na rotação do motor (mesma conta do painel).
+/// Severidade da vibração pela ISO 10816: zonas da velocidade RMS em mm/s
+/// (mesmas faixas do painel). Classe pela potência; sem ela, máquina pequena.
 class VibrationSeverity {
-  const VibrationSeverity(this.mmS, this.zona);
+  const VibrationSeverity(this.mmS, this.zona, {this.estimada = false});
 
   final double mmS;
   final int zona;
+
+  /// true = calculada da aceleração em g pela rotação (firmware antigo).
+  final bool estimada;
 
   static const List<String> _nomes = <String>['Boa', 'Aceitável', 'Alerta', 'Crítica'];
   static const List<(double, List<double>)> _classes = <(double, List<double>)>[
@@ -182,13 +185,20 @@ class VibrationSeverity {
 
   String get label => _nomes[zona];
 
-  static VibrationSeverity? of(double? rmsG, double? rpm, double? powerCv) {
-    if (rmsG == null || rmsG < 0 || rpm == null || rpm <= 0) return null;
-    final double mmS = rmsG * 9806.65 / (2 * math.pi * rpm / 60);
+  /// Zona da velocidade medida pela placa (mm/s RMS).
+  static VibrationSeverity? zone(double? mmS, double? powerCv, {bool estimada = false}) {
+    if (mmS == null || !mmS.isFinite || mmS < 0) return null;
     final double kw = powerCv != null && powerCv > 0 ? powerCv * 0.7355 : 0;
     final List<double> zonas = _classes.firstWhere(((double, List<double>) c) => kw <= c.$1).$2;
     final int indice = zonas.indexWhere((double limite) => mmS < limite);
-    return VibrationSeverity(mmS, indice < 0 ? 3 : indice);
+    return VibrationSeverity(mmS, indice < 0 ? 3 : indice, estimada: estimada);
+  }
+
+  /// Firmware antigo: estima a velocidade pela aceleração RMS (g) supondo a
+  /// vibração na rotação do motor (1×). Sem rotação cadastrada, nada.
+  static VibrationSeverity? of(double? rmsG, double? rpm, double? powerCv) {
+    if (rmsG == null || rmsG < 0 || rpm == null || rpm <= 0) return null;
+    return zone(rmsG * 9806.65 / (2 * math.pi * rpm / 60), powerCv, estimada: true);
   }
 }
 
@@ -221,6 +231,8 @@ class BoardHistoryHour {
   final double? voltageAvg;
   final double? temperatureAvg;
   final double? temperatureMax;
+  /// Vibração em mm/s RMS. Dias gravados pelo firmware antigo (em g) chegam
+  /// sem vibração: não há como passar para mm/s sem a rotação.
   final double? vibrationAvg;
   final double? vibrationMax;
   final int minutesOn;
@@ -233,6 +245,7 @@ class BoardHistoryHour {
       final Object? dia = dados['day'];
       final Object? horas = dados['hours'];
       if (dia is! int || dia <= 0 || horas is! List) return const <BoardHistoryHour>[];
+      final bool vibracaoMms = dados['vib'] == 'mm/s';
       final List<BoardHistoryHour> saida = <BoardHistoryHour>[];
       for (final Object? linha in horas) {
         if (linha is! List || linha.length < 9) continue;
@@ -249,8 +262,8 @@ class BoardHistoryHour {
           voltageAvg: v(3, 10),
           temperatureAvg: v(4, 10),
           temperatureMax: v(5, 10),
-          vibrationAvg: v(6, 1000),
-          vibrationMax: v(7, 1000),
+          vibrationAvg: vibracaoMms ? v(6, 100) : null,
+          vibrationMax: vibracaoMms ? v(7, 100) : null,
           minutesOn: (_numero(linha[8]) ?? 0).round(),
         ));
       }

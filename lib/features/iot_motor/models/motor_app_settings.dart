@@ -44,7 +44,7 @@ class MotorAppSettings {
       voltageMin: '190',
       voltageMax: '240',
       currentMax: '10',
-      vibrationMax: '1.5',
+      vibrationMax: '4.5',
       temperatureMax: '70',
     );
   }
@@ -142,7 +142,8 @@ class MotorAppSettings {
       voltageMin: '${map['voltage_min'] ?? '190'}'.trim(),
       voltageMax: '${map['voltage_max'] ?? '240'}'.trim(),
       currentMax: '${map['current_max'] ?? '10'}'.trim(),
-      vibrationMax: '${map['vibration_max'] ?? '1.5'}'.trim(),
+      // Em mm/s (ISO 10816). A chave antiga 'vibration_max' era em g: não vale mais.
+      vibrationMax: '${map['vibration_mms_max'] ?? '4.5'}'.trim(),
       temperatureMax: '${map['temperature_max'] ?? '70'}'.trim(),
       dashboardTab: _readDashboardTab(map['dashboard_tab']),
       electricalPlotAId: _readPlotId(
@@ -182,7 +183,7 @@ class MotorAppSettings {
       'voltage_min': voltageMin,
       'voltage_max': voltageMax,
       'current_max': currentMax,
-      'vibration_max': vibrationMax,
+      'vibration_mms_max': vibrationMax,
       'temperature_max': temperatureMax,
       'dashboard_tab': dashboardTab,
       'electrical_plot_a': electricalPlotAId,

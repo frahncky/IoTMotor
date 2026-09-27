@@ -10,8 +10,10 @@
 
   // Grandezas oferecidas, com a placa de origem e a faixa aceita no formulário.
   const GRANDEZAS = [
-    {campo: 'vibration_peak', placa: 'sensors', nome: 'Vibração (pico)', unidade: 'g', min: 0.02, max: 8, passo: 0.01},
-    {campo: 'vibration', placa: 'sensors', nome: 'Vibração (RMS)', unidade: 'g', min: 0.01, max: 8, passo: 0.01},
+    // Vibração pelo padrão de máquinas elétricas (ISO 10816-3): velocidade RMS.
+    {campo: 'vibration_mms', placa: 'sensors', nome: 'Vibração (RMS)', unidade: 'mm/s', min: 0.1, max: 50, passo: 0.1},
+    {campo: 'vibration_peak', placa: 'sensors', nome: 'Aceleração (pico)', unidade: 'g', min: 0.02, max: 8, passo: 0.01},
+    {campo: 'vibration', placa: 'sensors', nome: 'Aceleração (RMS)', unidade: 'g', min: 0.01, max: 8, passo: 0.01},
     {campo: 'temperature', placa: 'sensors', nome: 'Temperatura', unidade: '°C', min: 1, max: 125, passo: 1},
     {campo: 'voltage', placa: 'command', nome: 'Tensão', unidade: 'V', min: 0, max: 600, passo: 1},
     {campo: 'current', placa: 'command', nome: 'Corrente', unidade: 'A', min: 0, max: 200, passo: 0.1},

@@ -43,17 +43,35 @@ na rede da escola.
 - **Quadro de comando:** escolha da partida, os botões **Ligar**, **Desligar** e **Somente medição**, e o estado de CNT 1 a CNT 4.
 - **Diagnóstico:** o desenho do motor e, abaixo dele, as medições principais:
   - corrente e **carga em %**, quando a corrente nominal está cadastrada;
-  - vibração com a classificação **ISO 10816**, quando a rotação está cadastrada;
+  - vibração em **mm/s RMS** com a classificação **ISO 10816** (com o motor ligado);
   - temperatura;
   - uma linha de uso: *Ligado há…*, horímetro e partidas de hoje.
 - **Alarmes ativos:** o que está disparado agora, sensores sem leitura, grandezas perto do limite e manutenção vencida ou próxima.
 - **Grandezas elétricas e mecânicas** e **Gráficos em tempo real:** todas as medições, atualizadas a cada segundo.
 - **Histórico da placa:** os últimos 7 dias, hora a hora (veja [Histórico](#histórico)).
 
-A vibração é classificada em **Boa, Aceitável, Alerta ou Crítica**. A velocidade
-em mm/s é estimada a partir da aceleração e da rotação, e as faixas dependem da
-potência do motor. É uma estimativa: serve para acompanhar tendência, não
-substitui um analisador de vibração.
+A vibração segue o padrão de máquinas elétricas (ISO 10816-3 / ISO 20816-3,
+IEC 60034-14): **velocidade RMS em mm/s**. A placa de sensores lê o MPU6050
+1000 vezes por segundo, integra a aceleração dos 3 eixos e mostra o pior eixo.
+Ela é classificada em **Boa, Aceitável, Alerta ou Crítica**, com as faixas pela
+potência do motor (sem potência cadastrada, vale a das máquinas pequenas, até
+15 kW):
+
+| Potência | Boa | Aceitável | Alerta | Crítica |
+| --- | --- | --- | --- | --- |
+| até 15 kW (≈20 cv) | < 0,71 | < 1,8 | < 4,5 | ≥ 4,5 mm/s |
+| até 75 kW (≈100 cv) | < 1,12 | < 2,8 | < 7,1 | ≥ 7,1 mm/s |
+| acima | < 1,8 | < 4,5 | < 11,2 | ≥ 11,2 mm/s |
+
+A faixa medida vai de 10 Hz a cerca de 180 Hz (limite do MPU6050), onde está o
+que pesa num motor de 2 ou 4 polos: 1× e 2× a rotação (desbalanceamento,
+desalinhamento, folga). Serve para acompanhar a condição do motor, mas não
+substitui um analisador de vibração. A aceleração em g continua disponível
+(gráfico **Aceleração RMS** e alarmes de aceleração).
+
+Com o firmware de sensores antigo (antes da `s3-sensors-1.9`), a placa só manda
+a aceleração em g; o painel e o app então estimam os mm/s pela rotação
+cadastrada.
 
 ## Dar partida no motor
 
@@ -113,7 +131,7 @@ Todos são opcionais e aceitam vírgula ou ponto.
 | Tipo | Trifásico ou monofásico |
 | Ligação em uso | Aparece com duas tensões: **Triângulo** ou **Estrela** |
 | Potência (cv) | Escolher a faixa da ISO 10816 |
-| Rotação (rpm) | Converter a vibração para mm/s |
+| Rotação (rpm) | Estimar mm/s com o firmware de sensores antigo |
 | Fator de serviço | Referência de sobrecarga |
 | Manutenção a cada (h de uso) | Lembrete de manutenção pelo horímetro |
 
@@ -152,14 +170,16 @@ As grandezas disponíveis são:
 
 | Placa | Grandezas |
 | --- | --- |
-| Sensores do motor | vibração (pico e RMS), temperatura |
+| Sensores do motor | vibração RMS (mm/s), aceleração (pico e RMS, em g), temperatura |
 | Quadro de comando | tensão, corrente, potência, frequência, fator de potência, partidas na última hora |
 
 As grandezas do quadro também disparam o LED e o buzzer da placa de sensores,
 porque ela ouve o quadro pelo broker.
 
-Na primeira vez, a placa vem com dois alarmes: vibração (pico) acima de 0,5 g e
-temperatura acima de 60 °C.
+Na primeira vez, a placa vem com dois alarmes: vibração acima de 4,5 mm/s RMS e
+temperatura acima de 60 °C. Quem já tinha o alarme de fábrica antigo (pico de
+0,5 g, nunca editado) passa automaticamente para 4,5 mm/s ao atualizar a placa;
+alarmes editados ficam como estavam.
 
 O que o LED indica está em [Hardware › O que o LED indica](hardware.md#o-que-o-led-indica).
 
@@ -285,4 +305,4 @@ quando um alarme da placa dispara, **mesmo fechado**.
 | **Ligar** recusado | Veja o motivo na mensagem: modo instrumentação ligado, saída já ligada, partida em andamento ou placa reiniciada (tente de novo) |
 | Histórico da placa vazio | A placa de sensores precisa do firmware com histórico e da hora da internet. A primeira hora aparece quando termina |
 | Carga em % não aparece | Cadastre a corrente nominal em **Dados do motor**. A carga só aparece com o motor ligado |
-| Vibração sem classificação ISO | Cadastre a rotação (rpm). A classificação só aparece com o motor ligado |
+| Vibração sem classificação ISO | A classificação só aparece com o motor ligado. Com firmware de sensores antigo, cadastre a rotação (rpm) ou atualize a placa |

@@ -18,7 +18,8 @@ constexpr uint8_t DIAS = 7;
 constexpr int16_t VAZIO = INT16_MIN;
 
 // Valores em inteiros para caber na memoria: corrente em centesimos de A,
-// tensao e temperatura em decimos, vibracao em milesimos de g.
+// tensao e temperatura em decimos, vibracao em centesimos de mm/s (dias
+// gravados antes da versao 1.9: milesimos de g, ver Dia::vibracaoMms).
 struct Hora {
   int16_t correnteMedia = VAZIO, correnteMax = VAZIO, tensaoMedia = VAZIO;
   int16_t temperaturaMedia = VAZIO, temperaturaMax = VAZIO;
@@ -30,7 +31,14 @@ struct Hora {
 struct Dia {
   uint32_t dia = 0;  // Dias desde 1970 (UTC); 0 = vazio.
   Hora horas[24];
+  // Vibracao em mm/s. Dias gravados pelo firmware antigo (em g) nao tem este
+  // campo: carregam com false e saem com a unidade deles.
+  bool vibracaoMms = true;
 };
+
+// Tamanho do dia no firmware antigo, sem 'vibracaoMms'.
+constexpr size_t TAMANHO_DIA_ANTIGO = sizeof(uint32_t) + 24 * sizeof(Hora);
+static_assert(sizeof(Dia) != TAMANHO_DIA_ANTIGO, "o dia novo precisa se distinguir do antigo pelo tamanho");
 
 inline Dia dias[DIAS];
 
@@ -60,9 +68,15 @@ inline void carregar() {
   for (uint8_t i = 0; i < DIAS; ++i) {
     char k[4];
     chave(i, k);
+    if (!memoria.isKey(k)) continue;
     Dia lido;
-    if (memoria.isKey(k) && memoria.getBytesLength(k) == sizeof(Dia) && memoria.getBytes(k, &lido, sizeof(Dia)) == sizeof(Dia))
+    const size_t tamanho = memoria.getBytesLength(k);
+    if (tamanho == sizeof(Dia) && memoria.getBytes(k, &lido, sizeof(Dia)) == sizeof(Dia)) {
       dias[i] = lido;
+    } else if (tamanho == TAMANHO_DIA_ANTIGO && memoria.getBytes(k, &lido, TAMANHO_DIA_ANTIGO) == TAMANHO_DIA_ANTIGO) {
+      lido.vibracaoMms = false;
+      dias[i] = lido;
+    }
   }
   memoria.end();
 }
@@ -86,6 +100,10 @@ inline void fechar() {
     dias[slot] = Dia();
     dias[slot].dia = dia;
   }
+  if (!dias[slot].vibracaoMms) {  // Dia da atualizacao: a vibracao em g sai, o resto fica.
+    for (Hora& antiga : dias[slot].horas) antiga.vibracaoMedia = antiga.vibracaoMax = VAZIO;
+    dias[slot].vibracaoMms = true;
+  }
   Hora& h = dias[slot].horas[a.hora % 24];
   h = Hora();
   if (a.nCorrente) {
@@ -98,8 +116,8 @@ inline void fechar() {
     h.temperaturaMax = escalar(a.maxTemperatura, 10);
   }
   if (a.nVibracao) {
-    h.vibracaoMedia = escalar(a.somaVibracao / a.nVibracao, 1000);
-    h.vibracaoMax = escalar(a.maxVibracao, 1000);
+    h.vibracaoMedia = escalar(a.somaVibracao / a.nVibracao, 100);
+    h.vibracaoMax = escalar(a.maxVibracao, 100);
   }
   h.minutosLigado = static_cast<uint8_t>(min<uint32_t>(60, (a.segundosLigado + 30) / 60));
   h.usada = a.nCorrente || a.nTensao || a.nTemperatura || a.nVibracao || a.segundosLigado;
@@ -138,6 +156,8 @@ inline void amostrar(uint32_t utc, bool ligado, float corrente, float tensao,
 inline void descrever(uint8_t slot, JsonDocument& doc) {
   doc["day"] = dias[slot].dia;
   doc["v"] = 1;
+  // Unidade da vibracao: centesimos de mm/s, ou milesimos de g nos dias antigos.
+  doc["vib"] = dias[slot].vibracaoMms ? "mm/s" : "g";
   JsonArray linhas = doc.createNestedArray("hours");
   if (!dias[slot].dia) return;
   for (uint8_t i = 0; i < 24; ++i) {

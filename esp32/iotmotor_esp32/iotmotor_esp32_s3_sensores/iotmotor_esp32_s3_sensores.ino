@@ -3,7 +3,9 @@
  * (DQ GPIO4, resistor pull-up 4k7 a 3V3), como no projeto de dois modulos.
  * Confirme os pinos da SUA placa S3 antes de gravar. Sensores reais por padrao:
  * campos invalidos sao omitidos; nao inventamos temperatura ou vibracao.
- * O RMS de vibracao e estimativa da aceleracao dinamica em g; nao e mm/s.
+ * Vibracao em velocidade RMS (mm/s), o padrao de maquinas eletricas
+ * (ISO 10816-3 / 20816-3): 1000 amostras/s integradas nos 3 eixos (vibracao.h).
+ * A aceleracao dinamica em g (RMS e pico) continua na telemetria.
  * Bibliotecas: PubSubClient, ArduinoJson 6.x, OneWire, DallasTemperature.
  * Comandos de alarme, Wi-Fi e OTA; nenhum comando de motor.
  */
@@ -28,6 +30,7 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "comando_seguro.h"
 #include "relogio.h"
 #include "historico.h"
+#include "vibracao.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -83,13 +86,13 @@ static const uint16_t BEEP_HZ_PADRAO = 2000;
 static const uint16_t BEEP_HZ_MIN = 500;
 static const uint16_t BEEP_HZ_MAX = 5000;
 // Limites padrao do alarme; ajustaveis pelo painel e gravados na placa.
-static const float VIBRACAO_LIMITE_PADRAO = 0.50f;
+// Vibracao em mm/s RMS: 4,5 e o limite de zona D das maquinas pequenas (ISO 10816).
+static const float VIBRACAO_LIMITE_PADRAO = 4.5f;
 static const float TEMPERATURA_LIMITE_PADRAO = 60.0f;
 static const uint8_t MPU_ADDR = 0x68;
 static const uint32_t WIFI_RETRY_MS = 6000UL;
 static const uint32_t WIFI_RADIO_RESET_MS = 30000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
-static const uint32_t SAMPLE_MS = 20UL;  // aproximadamente 50 amostras/s
 static const uint32_t PUBLISH_MS = 1000UL;
 static const uint32_t TEMP_REQUEST_MS = 2000UL;
 static const uint32_t TEMP_WAIT_MS = 800UL; // DS18B20 12-bit: ate 750 ms
@@ -106,7 +109,7 @@ static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96];
 char quadroCommandTopic[96];
-uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0,lastHistorico=0;
+uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastPublish=0,lastHistorico=0;
 uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -115,9 +118,6 @@ uint32_t reiniciarEm=0;
 // Sem DS18B20 no boot (mau contato, fio solto), procura de novo sem reiniciar.
 static const uint32_t DS18B20_RETRY_MS = 30000UL;
 uint32_t lastDs18b20Retry=0;
-uint32_t sampleCount=0;
-float vibrationSquares=0.0f,vibrationPeak=0.0f;
-float gravityX=0.0f,gravityY=0.0f,gravityZ=1.0f;
 float temperatureC=NAN;
 bool mpuReady=false,tempPending=false,tempReady=false;
 // Alarme local: LED RGB e buzzer.
@@ -128,7 +128,14 @@ uint32_t ultimoBeep=0,inicioDoTeste=0;
 bool testeAtivo=false;
 bool testeLedAtivo=false;
 uint32_t inicioTesteLed=0;
-float picoAtual=0.0f,rmsAtual=0.0f;
+// Ultima janela de 1 s (vibracao.h): aceleracao em g e velocidade em mm/s.
+float picoAtual=0.0f,rmsAtual=0.0f,mmsAtual=0.0f;
+char eixoAtual='x';
+bool mmsValida=false;
+uint32_t mmsEm=0;  // Quando saiu a ultima velocidade valida.
+// Uma janela falha (FIFO cheia durante a procura do DS18B20, por exemplo) nao
+// derruba a leitura: sem isso um alarme disparado fecharia e reabriria.
+static const uint32_t MMS_VALIDADE_MS = 3000UL;
 uint32_t amostrasAtuais=0;
 // Estado do motor vem da telemetria do quadro de comando (esp32-01).
 bool motorLigado=false;
@@ -282,7 +289,7 @@ void amostrarHistorico() {
   };
   const float corrente=doQuadro("current"),tensao=doQuadro("voltage");
   const float temperatura=tempReady&&isfinite(temperatureC)?temperatureC:NAN;
-  const float vibracao=mpuReady&&amostrasAtuais>=10?rmsAtual:NAN;
+  const float vibracao=mpuReady&&mmsValida?mmsAtual:NAN;
   xSemaphoreGive(sensoresMutex);
   historico::amostrar(relogio::agoraUtc(),ligado,corrente,tensao,temperatura,vibracao);
   if(historico::diaParaPublicar>=0){
@@ -376,6 +383,7 @@ void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
   // Quem decide os alarmes e a lista configurada na placa. Avaliados tambem
   // sem rede: temperatura e vibracao sao medidas aqui mesmo.
   const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
+                                            mmsValida?mmsAtual:NAN,
                                             temperatureC,relogio::agoraUtc());
   const bool falhaSensor=!mpuReady || !tempReady;
   estadoCritico=alarmeHabilitado&&(algumDisparou||falhaSensor);
@@ -479,35 +487,18 @@ bool initMpu(bool avisarFalha) {
   bool ok=Wire.endTransmission(false)==0 && Wire.requestFrom(MPU_ADDR,(uint8_t)1,(bool)true)==1;
   const uint8_t id=ok?Wire.read():0;
   ok=ok&&mpuWrite(0x6B,0x00);  // wake up
-  ok=ok&&mpuWrite(0x1C,0x08);  // +/-4 g -> 8192 LSB/g
-  if(ok) Serial.printf("[S3/MPU6050] iniciado nos GPIO5/9, WHO_AM_I=0x%02X\n",id);
+  delay(ok?50:0);              // Acordando: o oscilador precisa estabilizar.
+  ok=ok&&vibracao::iniciar(id);
+  if(ok) Serial.printf("[S3/MPU6050] iniciado nos GPIO5/9, WHO_AM_I=0x%02X, 1000 amostras/s\n",id);
   else if(avisarFalha) Serial.println("[S3/MPU6050] indisponivel; confira I2C e alimentacao (nova tentativa a cada 5 s)");
   return ok;
 }
 
 void sampleMpu() {
   if(!mpuReady)return;
-  Wire.beginTransmission(MPU_ADDR);
-  Wire.write((uint8_t)0x3B);
-  if(Wire.endTransmission(false)!=0 || Wire.requestFrom(MPU_ADDR,(uint8_t)6,(bool)true)!=6) {
+  if(!vibracao::ler()) {
     mpuReady=false;
     Serial.println("[S3/MPU6050] leitura falhou; tentara reiniciar");
-    return;
-  }
-  int16_t rx=(int16_t)((Wire.read()<<8)|Wire.read());
-  int16_t ry=(int16_t)((Wire.read()<<8)|Wire.read());
-  int16_t rz=(int16_t)((Wire.read()<<8)|Wire.read());
-  const float x=rx/8192.0f,y=ry/8192.0f,z=rz/8192.0f;
-  // Filtra gravidade lentamente, usa magnitude da aceleracao dinamica.
-  gravityX=0.98f*gravityX+0.02f*x;
-  gravityY=0.98f*gravityY+0.02f*y;
-  gravityZ=0.98f*gravityZ+0.02f*z;
-  const float dx=x-gravityX,dy=y-gravityY,dz=z-gravityZ;
-  const float dynamicG=sqrtf(dx*dx+dy*dy+dz*dz);
-  if(isfinite(dynamicG) && dynamicG<8.0f) {
-    vibrationSquares+=dynamicG*dynamicG;
-    vibrationPeak=fmaxf(vibrationPeak,dynamicG);
-    sampleCount++;
   }
 }
 
@@ -540,7 +531,7 @@ void tarefaSensores(void*) {
   for(;;) {
     const uint32_t now=millis();
     xSemaphoreTake(sensoresMutex,portMAX_DELAY);
-    if((uint32_t)(now-lastSample)>=SAMPLE_MS){lastSample=now;sampleMpu();}
+    sampleMpu();  // Esvazia a FIFO do MPU (1000 amostras/s).
     if(!mpuReady&&(uint32_t)(now-lastMpuRetry)>=MPU_RETRY_MS) {
       lastMpuRetry=now;
       mpuReady=initMpu(false);
@@ -553,12 +544,23 @@ void tarefaSensores(void*) {
     pollTemperature(now);
     if((uint32_t)(now-ultimaJanela)>=PUBLISH_MS) {
       ultimaJanela=now;
-      amostrasAtuais=mpuReady?sampleCount:0;
-      picoAtual=amostrasAtuais>=10?vibrationPeak:0.0f;
-      rmsAtual=amostrasAtuais>=10?sqrtf(vibrationSquares/amostrasAtuais):0.0f;
-      vibrationSquares=0.0f;vibrationPeak=0.0f;sampleCount=0;
+      vibracao::fecharJanela(mpuReady);
+      amostrasAtuais=vibracao::amostras;
+      picoAtual=vibracao::picoG;
+      rmsAtual=vibracao::rmsG;
+      if(vibracao::velocidadeValida) {
+        mmsAtual=vibracao::mmS;
+        eixoAtual=vibracao::eixo;
+        mmsEm=now?now:1;
+      }
+      mmsValida=mpuReady&&mmsEm&&(uint32_t)(now-mmsEm)<MMS_VALIDADE_MS;
+      static uint32_t perdasAvisadas=0;
+      if(vibracao::perdas!=perdasAvisadas) {
+        Serial.printf("[S3/MPU6050] FIFO cheia %lu vez(es): amostras perdidas\n",(unsigned long)vibracao::perdas);
+        perdasAvisadas=vibracao::perdas;
+      }
     }
-    atualizarSinalizacao(now,fmaxf(picoAtual,vibrationPeak));
+    atualizarSinalizacao(now,fmaxf(picoAtual,vibracao::picoParcial));
     xSemaphoreGive(sensoresMutex);
     vTaskDelay(pdMS_TO_TICKS(2));
   }
@@ -567,12 +569,12 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.8-desarme";
+  doc["firmware_version"]="s3-sensors-1.9-mms";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
   JsonArray fields=doc.createNestedArray("fields");
-  fields.add("vibration");fields.add("vibration_peak");fields.add("temperature");
+  fields.add("vibration_mms");fields.add("vibration");fields.add("vibration_peak");fields.add("temperature");
   char payload[384];size_t n=serializeJson(doc,payload,sizeof(payload));
   if(n)mqtt.publish(capabilitiesTopic,(const uint8_t*)payload,(unsigned int)n,true);
 }
@@ -598,9 +600,13 @@ void publishTelemetry() {
   doc["motor_on"]=motorLigado;
   doc["command_telemetry_fresh"]=ultimaTelemetriaQuadro &&
       (uint32_t)(millis()-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
-  if(mpuReady && amostrasAtuais>=10) {
+  if(mpuReady && vibracao::aceleracaoValida) {
     doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
     doc["vibration_peak"]=picoAtual;
+  }
+  if(mpuReady && mmsValida) {
+    doc["vibration_mms"]=mmsAtual;  // Velocidade RMS, mm/s, 10 Hz a ~180 Hz, pior eixo
+    doc["vibration_axis"]=String(eixoAtual);  // x, y ou z (String: copiado)
   }
   if(tempReady && isfinite(temperatureC))doc["temperature"]=temperatureC;
   JsonArray disparados=doc.createNestedArray("alarms_firing");
@@ -875,7 +881,7 @@ bool conectarWifiS3(uint32_t esperaPadraoMs) {
 void setup() {
   Serial.begin(115200);
   Wire.begin(SDA_PIN,SCL_PIN);
-  Wire.setClock(100000);
+  Wire.setClock(400000);  // 1000 amostras/s do MPU pedem o I2C rapido.
   pinMode(LED_AZUL_PIN,OUTPUT);pinMode(LED_VERDE_PIN,OUTPUT);pinMode(LED_VERM_PIN,OUTPUT);
   pinMode(BUZZER_PIN,OUTPUT);noTone(BUZZER_PIN);
   comandoseguro::iniciar(DEVICE_ID);

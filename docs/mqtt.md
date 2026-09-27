@@ -101,11 +101,13 @@ omitidos, nunca inventados.
 | Campo | Tipo | Significado |
 | --- | --- | --- |
 | `device_id`, `seq`, `ts`, `secure` | | Como no quadro |
+| `vibration_mms` | número | Vibração: velocidade RMS em mm/s (ISO 10816-3), 10 Hz a ~180 Hz, no pior eixo (`s3-sensors-1.9` em diante) |
+| `vibration_axis` | texto | Eixo do MPU6050 com a maior velocidade: `x`, `y` ou `z` |
 | `vibration` | número | RMS da aceleração dinâmica, em g (sem a gravidade) |
 | `vibration_peak` | número | Pico da aceleração dinâmica no último segundo, em g |
 | `temperature` | número | °C do DS18B20 |
 | `mpu_ok`, `temperature_ok` | booleano | Cada sensor respondendo |
-| `sample_count` | número | Amostras do MPU6050 no último segundo |
+| `sample_count` | número | Amostras do MPU6050 no último segundo (cerca de 1000) |
 | `alarm_enabled` | booleano | Interruptor geral dos alarmes |
 | `alarm_active` | booleano | Algum alarme disparado ou sensor faltando |
 | `alarms_firing` | lista | IDs dos alarmes disparados agora |
@@ -156,11 +158,12 @@ Cada `cnt` é um contator: `on` e `off` em ms desde o início da partida (`off: 
 
 | `board` | Grandezas (`field`) |
 | --- | --- |
-| `sensors` | `vibration_peak`, `vibration`, `temperature` |
+| `sensors` | `vibration_mms`, `vibration_peak`, `vibration`, `temperature` |
 | `command` | `voltage`, `current`, `power`, `energy`, `frequency`, `pf`, `starts_hour` |
 
 Uma leitura com mais de 15 s não dispara nem silencia um alarme. Na primeira vez,
-a placa cria dois alarmes: pico de vibração acima de 0,50 g e temperatura acima de 60 °C.
+a placa cria dois alarmes: vibração acima de 4,5 mm/s (`vibration_mms`) e temperatura acima de 60 °C.
+O alarme de fábrica antigo (`vib`, pico acima de 0,5 g, nunca editado) é trocado por esse na atualização.
 
 **`alarm_log`**: os 10 últimos disparos, com `value` no início, `start`/`end` em
 UTC (quando há hora) e `seconds` de duração. É zerado quando a placa reinicia.
@@ -168,12 +171,13 @@ UTC (quando há hora) e `seconds` de duração. É zerado quando a placa reinici
 **`history/<0..6>`**: um dia do histórico por hora. O número do tópico é `dia % 7`.
 
 ```json
-{"device_id":"esp32-02","day":20722,"v":1,"hours":[[14,912,1034,2201,452,480,31,55,60]]}
+{"device_id":"esp32-02","day":20722,"v":1,"vib":"mm/s","hours":[[14,912,1034,2201,452,480,231,455,60]]}
 ```
 
 - `day`: dias desde 1970, em UTC.
 - Cada linha tem: `[hora UTC, corrente média, corrente máx, tensão média, temperatura média, temperatura máx, vibração média, vibração máx, minutos ligado]`.
-- Escalas: corrente em centésimos de A, tensão e temperatura em décimos, vibração em milésimos de g. `null` = sem leitura.
+- Escalas: corrente em centésimos de A, tensão e temperatura em décimos, vibração em centésimos de mm/s. `null` = sem leitura.
+- `vib`: unidade da vibração do dia. Sem ele (dias gravados antes da `s3-sensors-1.9`), a vibração está em milésimos de g e o painel e o app a deixam de fora.
 - Corrente e vibração só são contadas com o motor girando.
 
 **`wifi`**: `networks` (`ssid`, `open`), `connected`, `max` (8), `ap` (rede
