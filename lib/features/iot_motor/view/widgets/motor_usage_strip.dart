@@ -4,10 +4,10 @@ import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/device_names.dart';
 import '../../models/motor_info.dart';
-import 'glass_panel.dart';
 
 /// Uso do motor, como no painel: carga, vibração pela ISO 10816, horímetro e
-/// partidas, manutenção e aviso de firmware novo. Some quando não há nada.
+/// partidas, manutenção e aviso de firmware novo. Fica dentro do cartão do
+/// motor, para sobrar altura para os gráficos. Some quando não há nada.
 class MotorUsageStrip extends StatelessWidget {
   const MotorUsageStrip({super.key, required this.controller});
 
@@ -59,34 +59,27 @@ class MotorUsageStrip extends StatelessWidget {
 
     final TextStyle? estilo = Theme.of(context).textTheme.bodySmall;
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: SizedBox(
-        width: double.infinity,
-        child: GlassPanel(
-          tint: AppTheme.brandBlue,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          radius: 16,
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 6,
-            children: <Widget>[
-              for (final _Item item in itens)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(item.icone, size: 16, color: item.cor ?? AppTheme.labelSoft),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        item.texto,
-                        style: estilo?.copyWith(color: item.cor ?? AppTheme.bodySoft),
-                      ),
-                    ),
-                  ],
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(
+        key: const ValueKey<String>('motor_usage_strip'),
+        spacing: 14,
+        runSpacing: 4,
+        children: <Widget>[
+          for (final _Item item in itens)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(item.icone, size: 15, color: item.cor ?? AppTheme.labelSoft),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    item.texto,
+                    style: estilo?.copyWith(color: item.cor ?? AppTheme.bodySoft),
+                  ),
                 ),
-            ],
-          ),
-        ),
+              ],
+            ),
+        ],
       ),
     );
   }

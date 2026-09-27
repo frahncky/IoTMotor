@@ -7,6 +7,7 @@ import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
 import '../../models/motor_info.dart';
 import 'glass_panel.dart';
+import 'motor_usage_strip.dart';
 
 /// Representação vetorial nativa do motor para a tela Início.
 ///
@@ -212,12 +213,42 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
               ],
             );
 
+            final Widget uso = MotorUsageStrip(controller: widget.controller);
+
+            if (compact) {
+              // Em tela estreita, carga e avisos vão numa linha própria,
+              // embaixo do desenho, ainda dentro do cartão.
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      drawing,
+                      const SizedBox(width: 12),
+                      Expanded(child: details),
+                    ],
+                  ),
+                  uso,
+                ],
+              );
+            }
+
             return Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
                 drawing,
                 const SizedBox(width: 12),
-                Expanded(child: details),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      details,
+                      uso,
+                    ],
+                  ),
+                ),
               ],
             );
           },
