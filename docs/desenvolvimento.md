@@ -26,7 +26,7 @@ esp32/iotmotor_esp32/   Firmware das duas placas (veja firmware.md)
 lib/                    App Flutter
   features/iot_motor/
     controller/           Estado e regras do app
-    models/               Telemetria, alarmes, dados do motor
+    models/               Telemetria, aquisição, alarmes, dados do motor
     services/             MQTT, selo de comando, atualização do app, armazenamento
     view/                 Abas Início, Histórico, Alertas e Configurações
 test/                   Testes do app (flutter test)
@@ -79,7 +79,7 @@ controlador com mensagens como se viessem do broker.
 | `cloudflare-dashboard.yml` | PR e push na `main` que mexem no painel, em `functions/` ou no firmware | Checa sintaxe, roda os testes do painel e confere firmware × painel × app (versões, campos, arquivos iguais nas duas placas) |
 | `esp32-compile.yml` | PR e push na `main` no firmware, ou manual | Compila as duas placas |
 | `publish-firmware.yml` | Push na `main` no firmware | Compila e publica `esp32-01.bin` e `esp32-02.bin` no release `firmware-latest` |
-| `android-apk.yml` | PR e push na `main` no app (`lib/`, `android/`, `assets/`, `pubspec.*`) | Na PR, exige versão maior que a da `main`. Roda `flutter test` e gera o APK assinado (só ARM, 32 e 64 bits). Só o push na `main` publica: `app-latest` e a release da versão (`app-v2.1.0`) |
+| `android-apk.yml` | PR e push na `main` no app (`lib/`, `android/`, `assets/`, `pubspec.*`) | Na PR, exige versão maior que a da `main`. Roda `flutter test` e gera o APK assinado (só ARM, 32 e 64 bits). Só o push na `main` publica: `app-latest` e a release da versão (por exemplo, `app-v2.4.3`) |
 
 Erro de compilação do firmware ou do app aparece na própria PR, antes do merge.
 
@@ -95,16 +95,16 @@ Erro de compilação do firmware ou do app aparece na própria PR, antes do merg
 
 Cada atualização do app tem número e nome:
 
-- **Número:** `version:` do `pubspec.yaml` (`2.1.0+5`). O que vem depois do `+` o CI troca pelo build; conta só o `2.1.0`.
+- **Número:** `version:` do `pubspec.yaml` (por exemplo, `2.4.3+12`). O que vem depois do `+` é o `versionCode`; a versão exibida é `2.4.3`.
 - **Nome:** `nomeDaVersao` em `lib/app/versao.dart`, curto e dizendo o que a versão traz ("Alertas no celular").
 
 Ao mudar o app, suba o número e troque o nome na mesma PR: sem isso a PR falha
 no `android-apk.yml`. Na `main`, o CI publica a release `app-v<número>` com o
-título "IoTMotor 2.1.0 — Alertas no celular" e o APK, e o `app-latest.json`
+título "IoTMotor <versão> — <nome da versão>" e o APK, e o `app-latest.json`
 leva o nome, que o app mostra em **Configurações › Atualizar este app**.
 
-- Correção pequena: `2.1.0 → 2.1.1`.
-- Recurso novo: `2.1.0 → 2.2.0`.
+- Correção pequena: `2.4.3 → 2.4.4`.
+- Recurso novo: `2.4.x → 2.5.0`.
 - Mudança grande: `2.x → 3.0.0`.
 
 Configuração do Cloudflare Pages:
@@ -136,6 +136,14 @@ no projeto Pages `iotmotor` (o plano gratuito cobre até 50 pessoas):
 
 Isso não substitui a senha de comando: quem estiver no broker continua vendo a
 telemetria, que não é cifrada.
+
+## Checklist ao mudar aquisição e telemetria
+
+- [ ] Se mudar `pzem_read_ms`, `publish_ms`, `chart_ms` ou `record_ms`, mantenha as validações equivalentes no firmware, web e app.
+- [ ] O ESP32-01 continua sendo a fonte oficial: grava em NVS e publica `<prefixo>/system/acquisition` como mensagem retida.
+- [ ] O ESP32-S3 deve continuar assinando a configuração e aplicar somente a cadência de publicação; a aquisição de vibração fica em 1000 Hz / janela RMS de 1 s.
+- [ ] Gráficos não devem criar amostras sintéticas. A janela temporal deve usar dados realmente recebidos.
+- [ ] Atualize [mqtt.md](mqtt.md), [guia-de-uso.md](guia-de-uso.md) e [firmware.md](firmware.md) quando o contrato mudar.
 
 ## Checklist ao mudar o firmware
 
