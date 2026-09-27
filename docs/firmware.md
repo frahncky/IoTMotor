@@ -109,8 +109,10 @@ Regras: `pzem_read_ms <= publish_ms <= chart_ms` e
 `publish_ms <= record_ms`.
 
 A vibração não acompanha esses intervalos de aquisição elétrica: o MPU6050
-continua sendo lido a **1000 Hz**, com janela RMS fixa de **1 s**. Também são
-fixos o histórico consolidado em janelas de 1 h e a retenção de 7 dias.
+continua sendo lido a **1000 Hz**, com janela RMS fixa de **1 s**. O cálculo
+inclui dois passa-altas Butterworth de 2ª ordem a 8 Hz e integração trapezoidal;
+veja a [metodologia completa de vibração](vibracao.md). Também são fixos o
+histórico consolidado em janelas de 1 h e a retenção de 7 dias.
 
 Quando `publish_ms` muda, o ESP32-S3 recebe o tópico retido e passa a publicar
 sua telemetria na mesma cadência. `chart_ms` e `record_ms` são preservados
@@ -153,6 +155,7 @@ Dependem da hora:
 | `iotmotor_profiles.h` | quadro | Partidas gravadas e motor de tempos |
 | `iotmotor_motor_info.h` | quadro | Dados do motor, horímetro, partidas e manutenção |
 | `iotmotor_esp32_s3_sensores.ino` | sensores | Sensores, LED, buzzer, telemetria e comandos |
+| `vibracao.h` | sensores | FIFO do MPU6050, filtros, integração e cálculo de velocidade RMS em mm/s |
 | `alarm_list.h` | sensores | Lista de alarmes e registro de disparos |
 | `historico.h` | sensores | Histórico por hora dos últimos 7 dias |
 | `wifi_store.h`, `wifi_portal.h` | as duas | Redes Wi-Fi e rede própria da placa |

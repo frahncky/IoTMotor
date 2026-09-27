@@ -1,4 +1,7 @@
-// Gera os WAVs do som do motor no app a partir da gravação do painel, com o
+// Gera os WAVs do som do motor no app a partir da gravação do painel.
+// Origem do áudio-base: Pixabay; veja docs/audio.md e THIRD_PARTY_NOTICES.md.
+// Página registrada: https://pixabay.com/pt/sound-effects/search/electric-motor/
+// Mantém o
 // MESMO processamento (makeSampleParts de dashboard-cloudflare/motor-sound.js,
 // executado no Chromium): partida, laço sem emenda e parada.
 //

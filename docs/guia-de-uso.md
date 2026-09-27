@@ -44,34 +44,43 @@ na rede da escola.
 - **Quadro de comando:** escolha da partida, os botões **Ligar**, **Desligar** e **Somente medição**, e o estado de CNT 1 a CNT 4.
 - **Diagnóstico:** o desenho do motor e, abaixo dele, as medições principais:
   - corrente e **carga em %**, quando a corrente nominal está cadastrada;
-  - vibração em **mm/s RMS** com a classificação **ISO 10816** (com o motor ligado);
+  - vibração em **mm/s RMS** com a classificação de referência do projeto (com o motor ligado);
   - temperatura;
   - uma linha de uso: *Ligado há…*, horímetro e partidas de hoje.
 - **Alarmes ativos:** o que está disparado agora, sensores sem leitura, grandezas perto do limite e manutenção vencida ou próxima.
 - **Grandezas elétricas e mecânicas** e **Gráficos em tempo real:** todas as medições, na cadência definida em **Aquisição e registro de dados**.
 - **Histórico da placa:** os últimos 7 dias, hora a hora (veja [Histórico](#histórico)).
 
-A vibração segue o padrão de máquinas elétricas (ISO 10816-3 / ISO 20816-3,
-IEC 60034-14): **velocidade RMS em mm/s**. A placa de sensores lê o MPU6050
-1000 vezes por segundo, integra a aceleração dos 3 eixos e mostra o pior eixo.
-Ela é classificada em **Boa, Aceitável, Alerta ou Crítica**, com as faixas pela
-potência do motor (sem potência cadastrada, vale a das máquinas pequenas, até
-15 kW):
+A grandeza mostrada é **velocidade de vibração RMS em mm/s**. A placa de
+sensores lê o MPU6050 a 1000 amostras/s, filtra, integra a aceleração para
+velocidade, calcula o RMS de X/Y/Z e usa o maior eixo da janela de 1 s.
 
-| Potência | Boa | Aceitável | Alerta | Crítica |
+O painel e o app também exibem **Boa, Aceitável, Alerta ou Crítica** segundo
+faixas de referência implementadas no projeto:
+
+| Potência cadastrada | Boa | Aceitável | Alerta | Crítica |
 | --- | --- | --- | --- | --- |
-| até 15 kW (≈20 cv) | < 0,71 | < 1,8 | < 4,5 | ≥ 4,5 mm/s |
-| até 75 kW (≈100 cv) | < 1,12 | < 2,8 | < 7,1 | ≥ 7,1 mm/s |
-| acima | < 1,8 | < 4,5 | < 11,2 | ≥ 11,2 mm/s |
+| até 15 kW | < 0,71 | 0,71 a < 1,8 | 1,8 a < 4,5 | ≥ 4,5 mm/s |
+| >15 até 75 kW | < 1,12 | 1,12 a < 2,8 | 2,8 a < 7,1 | ≥ 7,1 mm/s |
+| acima de 75 kW | < 1,8 | 1,8 a < 4,5 | 4,5 a < 11,2 | ≥ 11,2 mm/s |
 
-A faixa medida vai de 10 Hz a cerca de 180 Hz (limite do MPU6050), onde está o
-que pesa num motor de 2 ou 4 polos: 1× e 2× a rotação (desbalanceamento,
-desalinhamento, folga). Serve para acompanhar a condição do motor, mas não
-substitui um analisador de vibração.
+Esses rótulos são **indicadores operacionais do IoTMotor**, não um laudo ou
+certificação normativa. A ISO 20816-3 possui escopo e requisitos próprios de
+máquina, ponto de medição, operação e instrumentação; para avaliação formal,
+use a edição vigente e instrumento/procedimento adequados.
 
-Só a vibração é mostrada: a aceleração em g não aparece no painel, no app nem
-nos alarmes. O firmware de sensores antigo (antes da `s3-sensors-1.10`) só
-mandava aceleração; com ele a vibração fica sem leitura até atualizar a placa.
+A faixa útil do processamento atual é aproximadamente **10–180 Hz**. Ela é
+adequada para acompanhamento de tendência em bancada, mas não substitui um
+analisador de vibração de banda mais larga ou análise espectral de rolamentos e
+engrenagens.
+
+O método completo — filtros, integração trapezoidal, RMS, critérios de validade,
+montagem e validação experimental — está em [**Vibração: medição, processamento
+e interpretação**](vibracao.md).
+
+Só a velocidade em mm/s é usada pelas interfaces e alarmes atuais. O firmware
+de sensores antigo (antes da `s3-sensors-1.10`) enviava aceleração em g; com
+ele a vibração atual fica sem leitura até atualizar a placa.
 
 ## Aquisição e registro de dados
 
@@ -143,7 +152,7 @@ caminho.
 - O botão vira **Liberar acionamento** para voltar ao normal.
 - O modo fica gravado na placa e sobrevive a reinício.
 - Nesse modo, o horímetro e as partidas contam o motor como ligado quando a corrente passa de 0,3 A.
-- Com o motor girando assim, o painel e o app mostram o motor ligado (animação, som, carga e vibração ISO), e o LED e o buzzer da placa de sensores alarmam como numa partida pelo quadro. **Ligar/Desligar** não age sobre esse motor.
+- Com o motor girando assim, o painel e o app mostram o motor ligado (animação, som, carga e vibração RMS), e o LED e o buzzer da placa de sensores alarmam como numa partida pelo quadro. **Ligar/Desligar** não age sobre esse motor.
 
 ## Dados do motor e manutenção
 
@@ -159,7 +168,7 @@ Todos são opcionais e aceitam vírgula ou ponto.
 | Tensão nominal (V) | Referência da ligação em uso |
 | Tipo | Trifásico ou monofásico |
 | Ligação em uso | Aparece com duas tensões: **Triângulo** ou **Estrela** |
-| Potência (cv) | Escolher a faixa da ISO 10816 |
+| Potência (cv) | Escolher a faixa de referência de vibração usada pelo projeto |
 | Rotação (rpm) | Velocidade da animação do motor |
 | Fator de serviço | Referência de sobrecarga |
 | Manutenção a cada (h de uso) | Lembrete de manutenção pelo horímetro |
@@ -292,7 +301,7 @@ baixa o APK e o Android pede a confirmação.
 
 | Aba | O que tem |
 | --- | --- |
-| **Início** | Partida e Ligar/Desligar, cartão do motor (animação, carga, vibração ISO, horímetro, manutenção, aviso de firmware) e gráficos |
+| **Início** | Partida e Ligar/Desligar, cartão do motor (animação, carga, vibração RMS, horímetro, manutenção, aviso de firmware) e gráficos |
 | **Histórico** | Histórico da placa (7 dias) e leituras recebidas pelo app, com exportação |
 | **Alertas** | Alertas de limite e de manutenção vencida; **Reconhecer** marca como visto |
 | **Configurações** | Conexão, **Aquisição**, dados do motor (**Editar dados do motor**, **Manutenção feita**), Wi-Fi, **Atualizar firmware** e **Atualizar este app** |
@@ -301,6 +310,16 @@ baixa o APK e o Android pede a confirmação.
 com TLS desligado: é o mesmo caminho das placas e passa em rede que bloqueia
 MQTT. Cada celular usa um *client id* próprio; dois aparelhos com o mesmo id se
 derrubam no broker.
+
+Na barra superior e em **Configurações › Conexão**, o app resume separadamente
+hardware e interfaces de comando:
+
+- **Dispositivos:** `2 · Quadro 1 · Sensores 1`;
+- **Clientes:** `2 · App 1 · Web 1`.
+
+Os clientes App/Web anunciam presença a cada 3 s; quem deixa de anunciar sai da
+contagem após aproximadamente 10 s. As duas placas não entram em **Clientes**:
+elas aparecem somente em **Dispositivos**.
 **Testar caminhos de conexão** mostra qual endereço passa na rede em que você
 está.
 
@@ -335,6 +354,6 @@ quando um alarme da placa dispara, **mesmo fechado**.
 | **Ligar** recusado | Veja o motivo na mensagem: modo instrumentação ligado, saída já ligada, partida em andamento ou placa reiniciada (tente de novo) |
 | Histórico da placa vazio | A placa de sensores precisa do firmware com histórico e da hora da internet. A primeira hora aparece quando termina |
 | Carga em % não aparece | Cadastre a corrente nominal em **Dados do motor**. A carga só aparece com o motor ligado |
-| Vibração sem classificação ISO | A classificação só aparece com o motor ligado |
+| Vibração sem classificação | A classificação só aparece com o motor ligado |
 | Intervalos da aquisição não aparecem como foram salvos | Reconecte ao MQTT; painel e app solicitam ao ESP32-01 a configuração oficial gravada e a exibem quando ela chega |
 | Vibração sem leitura | Atualize a placa de sensores (`s3-sensors-1.10` em diante) e confira o MPU6050 (I2C a 400 kHz: fios curtos) |

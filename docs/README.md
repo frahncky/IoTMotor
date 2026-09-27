@@ -6,6 +6,8 @@
 | 📡 [Referência MQTT](mqtt.md) | Quem integra outro sistema | Tópicos, telemetria, configuração de aquisição, mensagens retidas, comandos e motivos de recusa |
 | 🔌 [Hardware](hardware.md) | Quem monta | Lista de materiais, pinos das duas placas, LED, buzzer |
 | 🔧 [Firmware](firmware.md) | Quem grava as placas | Primeira gravação, OTA, versões, partições, Wi-Fi, senha de comando |
+| 📐 [Vibração](vibracao.md) | Quem mede/valida | De LSB a mm/s RMS, filtros, RMS, montagem, faixa útil, validação e limites |
+| 🔊 [Áudio do motor](audio.md) | Quem mantém a interface | Origem Pixabay, arquivo-base, processamento, loop e arquivos derivados do app |
 | 🛠️ [Desenvolvimento](desenvolvimento.md) | Quem programa | Estrutura, testes, simuladores, CI, publicação do painel, do firmware e do app |
 
 ## Visão geral
@@ -24,3 +26,7 @@ flowchart LR
 - A **placa de sensores** mede vibração e temperatura, cuida dos alarmes (LED e buzzer) e guarda o histórico de 7 dias.
 - O **painel** e o **app** trocam telemetria e comandos pelo broker; as configurações operacionais que precisam valer para todo o sistema ficam gravadas nas placas.
 - A configuração de aquisição fica gravada no ESP32-01 e é compartilhada com web, app e ESP32-S3; a vibração permanece em 1000 Hz com janela RMS de 1 s.
+
+## Documentação de medição
+
+Para entender ou validar o valor de vibração mostrado no sistema, comece por [**Vibração: medição, processamento e interpretação**](vibracao.md). O documento separa aquisição física, processamento digital, publicação MQTT e interpretação dos rótulos de condição.

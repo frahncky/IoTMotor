@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+<title id="title">Montagem recomendada do sensor de vibração</title>
+<desc id="desc">Motor elétrico com sensor montado rigidamente na carcaça próximo ao mancal e eixos X Y Z indicados.</desc>
+<rect width="1200" height="620" rx="24" fill="#f7fafc"/>
+<style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#153746}.h{font-size:28px;font-weight:700}.t{font-size:20px}.small{font-size:17px}.motor{fill:#d9e5ea;stroke:#315d6f;stroke-width:4}.dark{fill:#9fb5bf;stroke:#315d6f;stroke-width:4}.sensor{fill:#fff7e6;stroke:#c88719;stroke-width:4}.ok{fill:#e9f8f0;stroke:#3d8062;stroke-width:3}.warn{fill:#fff0ef;stroke:#a94b45;stroke-width:3}.axis{stroke-width:4;fill:none;marker-end:url(#a)}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+<text x="50" y="54" class="h">Fixação do MPU6050 para medições comparáveis</text>
+<rect x="120" y="250" width="650" height="190" rx="60" class="motor"/>
+<rect x="70" y="285" width="100" height="120" rx="15" class="dark"/>
+<circle cx="155" cy="345" r="72" class="dark"/>
+<circle cx="155" cy="345" r="28" fill="#f7fafc" stroke="#315d6f" stroke-width="4"/>
+<rect x="770" y="325" width="170" height="40" rx="18" class="dark"/>
+<rect x="305" y="208" width="125" height="55" rx="10" class="sensor"/>
+<text x="367" y="242" text-anchor="middle" class="t">MPU6050</text>
+<path d="M367 205V135" class="axis" stroke="#4d77a8"/><text x="380" y="145" class="t">Z</text>
+<path d="M435 235H520" class="axis" stroke="#3d8062"/><text x="498" y="225" class="t">X</text>
+<path d="M300 235H245" class="axis" stroke="#a94b45"/><text x="250" y="222" class="t">Y</text>
+<rect x="60" y="490" width="500" height="92" rx="14" class="ok"/>
+<text x="82" y="523" class="t">Preferir</text>
+<text x="82" y="551" class="small">superfície rígida da carcaça, próxima ao mancal; montagem firme e repetível.</text>
+<rect x="590" y="490" width="550" height="92" rx="14" class="warn"/>
+<text x="612" y="523" class="t">Evitar</text>
+<text x="612" y="551" class="small">tampa de ventilação, chapa fina, folga, espuma ou ímã com deslizamento durante a vibração.</text>
+<text x="842" y="230" class="small">Mantenha a orientação XYZ registrada</text>
+<text x="842" y="256" class="small">para comparar ensaios diferentes.</text>
+</svg>
