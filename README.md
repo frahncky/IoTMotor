@@ -112,6 +112,7 @@ docs/                   Documentação técnica e imagens
 | 🔌 [Hardware](docs/hardware.md) | Materiais e ligações das duas placas |
 | 🔧 [Firmware](docs/firmware.md) | Gravar, atualizar e configurar as placas |
 | 📐 [Vibração](docs/vibracao.md) | Cálculo de mm/s RMS, filtros, montagem, validação e limitações |
+| 🔊 [Áudio do motor](docs/audio.md) | Origem do som, processamento para web/app e arquivos derivados |
 | 🛠️ [Desenvolvimento](docs/desenvolvimento.md) | Estrutura, testes, CI e publicação |
 
 ## 🎓 Escopo do projeto
