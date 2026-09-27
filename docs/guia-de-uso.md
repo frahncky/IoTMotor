@@ -7,6 +7,7 @@ cada mensagem, veja a [referência MQTT](mqtt.md).
 
 - [Abrir e conectar](#abrir-e-conectar)
 - [A tela Painel](#a-tela-painel)
+- [Aquisição e registro de dados](#aquisição-e-registro-de-dados)
 - [Dar partida no motor](#dar-partida-no-motor)
 - [Somente medição (modo instrumentação)](#somente-medição-modo-instrumentação)
 - [Dados do motor e manutenção](#dados-do-motor-e-manutenção)
@@ -47,7 +48,7 @@ na rede da escola.
   - temperatura;
   - uma linha de uso: *Ligado há…*, horímetro e partidas de hoje.
 - **Alarmes ativos:** o que está disparado agora, sensores sem leitura, grandezas perto do limite e manutenção vencida ou próxima.
-- **Grandezas elétricas e mecânicas** e **Gráficos em tempo real:** todas as medições, atualizadas a cada segundo.
+- **Grandezas elétricas e mecânicas** e **Gráficos em tempo real:** todas as medições, na cadência definida em **Aquisição e registro de dados**.
 - **Histórico da placa:** os últimos 7 dias, hora a hora (veja [Histórico](#histórico)).
 
 A vibração segue o padrão de máquinas elétricas (ISO 10816-3 / ISO 20816-3,
@@ -72,11 +73,40 @@ Só a vibração é mostrada: a aceleração em g não aparece no painel, no app
 nos alarmes. O firmware de sensores antigo (antes da `s3-sensors-1.10`) só
 mandava aceleração; com ele a vibração fica sem leitura até atualizar a placa.
 
+## Aquisição e registro de dados
+
+Em **Configurações › Aquisição**, painel e app mostram a mesma configuração,
+gravada no **ESP32-01**. Ao conectar, a configuração já salva é carregada
+automaticamente; alterar em uma interface passa a valer também para a outra e
+para o ESP32-S3.
+
+| Perfil | PZEM | MQTT | Gráfico | Registro |
+| --- | ---: | ---: | ---: | ---: |
+| **Tempo real** | 1 s | 1 s | 1 s | 1 s |
+| **Monitoramento** | 1 s | 2 s | 2 s | 5 s |
+| **Econômico** | 5 s | 5 s | 5 s | 30 s |
+| **Personalizado** | 1–10 s | 1–60 s | MQTT–60 s | MQTT–600 s |
+
+- **Aquisição elétrica:** intervalo entre leituras do PZEM no ESP32-01.
+- **Publicação MQTT:** intervalo entre mensagens de telemetria das duas placas.
+- **Pontos do gráfico:** intervalo visual dos gráficos.
+- **Registro de dados:** cadência lógica usada para guardar amostras no histórico local do painel/app.
+- A leitura do PZEM não pode ser mais lenta que a publicação MQTT; gráfico e registro não podem ser mais rápidos que a fonte MQTT.
+
+A vibração é tratada separadamente: o MPU6050 continua a **1000 amostras/s**,
+com janela RMS fixa de **1 s**, independentemente do perfil escolhido. Alterar a
+publicação não reduz a frequência física usada no cálculo da vibração.
+
+Os gráficos usam **janelas temporais exatas**. Por exemplo, com 5 s, os pontos
+ficam alinhados em `:00`, `:05`, `:10`, `:15` etc. As amostras reais
+recebidas dentro de cada janela são consolidadas; o sistema não inventa pontos
+intermediários para preencher atrasos do MQTT.
+
 ## Dar partida no motor
 
 1. No quadro **Quadro de comando**, escolha a partida (por exemplo, *Estrela-triângulo*).
 2. Toque em **Ligar**. O título do card mostra **Ligando…** até a placa confirmar.
-3. Para parar, toque em **Desligar todos**. Esse botão funciona **sempre**, mesmo durante uma partida em andamento.
+3. Para parar, toque em **Desligar**. Esse botão funciona **sempre**, mesmo durante uma partida em andamento.
 
 As partidas ficam gravadas no quadro de comando, até 6. São as mesmas no painel e
 no app. Para criar ou mudar uma, use **Nova partida** ou **Editar**:
@@ -208,7 +238,8 @@ hora, guardados na placa de sensores. O registro continua com o painel fechado.
 - A hora em andamento entra no gráfico quando termina.
 
 Há também o **histórico do navegador**: as leituras da **última hora** recebidas
-enquanto o painel está aberto, guardadas só naquele navegador. Use **Período**
+enquanto o painel está aberto, guardadas só naquele navegador e respeitando o
+intervalo de **Registro de dados** configurado. Use **Período**
 (última hora, 15 min ou 5 min) e **Exportar CSV** para levar os dados para uma
 planilha, e **Limpar** para apagá-los. Para períodos maiores, use o histórico da
 placa acima (7 dias, por hora).
@@ -264,7 +295,7 @@ baixa o APK e o Android pede a confirmação.
 | **Início** | Partida e Ligar/Desligar, cartão do motor (animação, carga, vibração ISO, horímetro, manutenção, aviso de firmware) e gráficos |
 | **Histórico** | Histórico da placa (7 dias) e leituras recebidas pelo app, com exportação |
 | **Alertas** | Alertas de limite e de manutenção vencida; **Reconhecer** marca como visto |
-| **Configurações** | Conexão, dados do motor (**Editar dados do motor**, **Manutenção feita**), Wi-Fi, **Atualizar firmware** e **Atualizar este app** |
+| **Configurações** | Conexão, **Aquisição**, dados do motor (**Editar dados do motor**, **Manutenção feita**), Wi-Fi, **Atualizar firmware** e **Atualizar este app** |
 
 **Conexão no app.** O app já vem em `ws://test.mosquitto.org`, porta **8080**,
 com TLS desligado: é o mesmo caminho das placas e passa em rede que bloqueia
@@ -305,4 +336,5 @@ quando um alarme da placa dispara, **mesmo fechado**.
 | Histórico da placa vazio | A placa de sensores precisa do firmware com histórico e da hora da internet. A primeira hora aparece quando termina |
 | Carga em % não aparece | Cadastre a corrente nominal em **Dados do motor**. A carga só aparece com o motor ligado |
 | Vibração sem classificação ISO | A classificação só aparece com o motor ligado |
+| Intervalos da aquisição não aparecem como foram salvos | Reconecte ao MQTT; painel e app solicitam ao ESP32-01 a configuração oficial gravada e a exibem quando ela chega |
 | Vibração sem leitura | Atualize a placa de sensores (`s3-sensors-1.10` em diante) e confira o MPU6050 (I2C a 400 kHz: fios curtos) |
