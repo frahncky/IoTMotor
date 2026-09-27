@@ -1,9 +1,22 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Som do motor, igual ao do painel web.
+///
+/// A gravação vem em três partes, geradas de `motor-ligado.mp3` com o mesmo
+/// processamento do painel (`tools/gerar-audio-motor.js`):
+/// - `motor-partida.wav`: estalo de ligar e o motor acelerando;
+/// - `motor-laco.wav`: o trecho estável, com a emenda já fundida. Ele é
+///   repetido pelo próprio Android (SoundPool, em memória), amostra por
+///   amostra, sem o reinício perceptível de trocar de player por código;
+/// - `motor-parada.wav`: estalos de desligar e o motor parando.
+///
+/// Na partida, o laço entra por cima do fim da partida (0,25 s, potência
+/// constante), no mesmo ponto em que o painel passa a repetir.
 class MotorSoundService extends ChangeNotifier {
   MotorSoundService() {
     _load();
@@ -11,30 +24,27 @@ class MotorSoundService extends ChangeNotifier {
 
   static const String _enabledKey = 'motor_sound_enabled_v1';
   static const String _volumeKey = 'motor_sound_volume_v1';
-  static final AssetSource _sample = AssetSource('audio/motor-ligado.mp3');
+  static final AssetSource _partida = AssetSource('audio/motor-partida.wav');
+  static final AssetSource _laco = AssetSource('audio/motor-laco.wav');
+  static final AssetSource _parada = AssetSource('audio/motor-parada.wav');
 
-  static const Duration _loopStart = Duration(milliseconds: 1000);
-  static const Duration _crossfadeAt = Duration(milliseconds: 3150);
-  static const Duration _shutdownStart = Duration(milliseconds: 3700);
+  /// Onde o laço começa dentro da partida, e quanto os dois se sobrepõem.
+  static const Duration _entradaDoLaco = Duration(milliseconds: 1000);
+  static const Duration _sobreposicao = Duration(milliseconds: 250);
+  static const Duration _duracaoDoTeste = Duration(seconds: 5);
 
-  AudioPlayer? _playerA;
-  AudioPlayer? _playerB;
-  AudioPlayer? _active;
-  AudioPlayer? _standby;
-
-  StreamSubscription<Duration>? _positionA;
-  StreamSubscription<Duration>? _positionB;
-  StreamSubscription<void>? _completeA;
-  StreamSubscription<void>? _completeB;
+  AudioPlayer? _playerPartida;
+  AudioPlayer? _playerLaco;
+  AudioPlayer? _playerParada;
+  StreamSubscription<void>? _fimDaParada;
+  Timer? _timer;
 
   bool _enabled = false;
   double _volume = 0.70;
   bool? _lastMotorOn;
   bool _baselinePending = true;
-  bool _looping = false;
   bool _playing = false;
   bool _testMode = false;
-  bool _crossfading = false;
   int _generation = 0;
   String? _lastError;
 
@@ -45,12 +55,14 @@ class MotorSoundService extends ChangeNotifier {
   bool get testing => _testMode;
   String? get lastError => _lastError;
 
+  /// Mesma curva do painel (gainForVolume): o nível já vem nos arquivos, e o
+  /// controle de volume é quadrático, então 70% soa igual nos dois.
+  double get _ganho => _volume * _volume;
+
   Future<void> _load() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     _enabled = prefs.getBool(_enabledKey) ?? false;
-    _volume = (prefs.getDouble(_volumeKey) ?? 0.70)
-        .clamp(0.0, 1.0)
-        .toDouble();
+    _volume = (prefs.getDouble(_volumeKey) ?? 0.70).clamp(0.0, 1.0).toDouble();
     notifyListeners();
   }
 
@@ -70,10 +82,10 @@ class MotorSoundService extends ChangeNotifier {
 
   Future<void> setVolume(double value) async {
     _volume = value.clamp(0.0, 1.0).toDouble();
-    for (final AudioPlayer? player in <AudioPlayer?>[_playerA, _playerB]) {
-      if (player != null && player == _active && !_crossfading) {
-        await player.setVolume(_volume);
-      }
+    if (_playing) {
+      // Muda na hora o que está tocando (o laço em transição ajusta sozinho).
+      await _playerLaco?.setVolume(_ganho);
+      await _playerParada?.setVolume(_ganho);
     }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_volumeKey, _volume);
@@ -94,6 +106,8 @@ class MotorSoundService extends ChangeNotifier {
     }
 
     if (_baselinePending || _lastMotorOn == null) {
+      // Primeiro estado depois de conectar: motor já ligado entra direto no
+      // trecho estável, sem estalo de partida (como a reconexão do painel).
       _baselinePending = false;
       _lastMotorOn = motorOn;
       if (_enabled && motorOn) {
@@ -122,29 +136,14 @@ class MotorSoundService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Teste local, como o do painel: partida, 5 s ligado e desligamento.
   Future<void> testSound() async {
-    _lastError = null;
-    final int token = ++_generation;
-    _testMode = true;
-    _looping = false;
-    _playing = true;
-    _crossfading = false;
-
-    try {
-      final (AudioPlayer a, AudioPlayer b) = await _ensurePlayers();
-      if (token != _generation) return;
-      await b.stop();
-      await a.stop();
-      await a.setVolume(_volume);
-      await a.seek(Duration.zero);
-      await a.resume();
-      _active = a;
-      _standby = b;
-    } catch (_) {
-      _testMode = false;
-      _playing = false;
-      _lastError = 'Não foi possível reproduzir o som do motor.';
-    }
+    await _startContinuous(includeStartup: true, test: true);
+    if (!_testMode) return;
+    final int token = _generation;
+    _timer = Timer(_duracaoDoTeste, () {
+      if (token == _generation && _testMode) unawaited(_playShutdown());
+    });
     notifyListeners();
   }
 
@@ -154,180 +153,142 @@ class MotorSoundService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _startContinuous({required bool includeStartup}) async {
+  Future<void> _startContinuous({required bool includeStartup, bool test = false}) async {
     _lastError = null;
-    final int token = ++_generation;
-    _testMode = false;
-    _looping = true;
+    await _stopAll();
+    final int token = _generation;
+    _testMode = test;
     _playing = true;
-    _crossfading = false;
 
     try {
-      final (AudioPlayer a, AudioPlayer b) = await _ensurePlayers();
+      final AudioPlayer laco = await _ensureLaco();
       if (token != _generation) return;
+      if (!includeStartup) {
+        await laco.setVolume(_ganho);
+        await laco.resume();
+        return;
+      }
 
-      await Future.wait(<Future<void>>[a.stop(), b.stop()]);
-      await a.setVolume(_volume);
-      await b.setVolume(0);
-      await a.seek(includeStartup ? Duration.zero : _loopStart);
-      await b.seek(_loopStart);
+      final AudioPlayer partida = await _ensurePartida();
+      if (token != _generation) return;
+      await partida.setVolume(_ganho);
+      await partida.resume();
 
-      _active = a;
-      _standby = b;
-      await a.resume();
+      // O laço entra onde o painel passa a repetir, subindo em seno enquanto
+      // a partida (já gravada com a saída em cosseno) desce.
+      _timer = Timer(_entradaDoLaco, () => unawaited(_entrarNoLaco(laco, token)));
     } catch (_) {
-      _looping = false;
       _playing = false;
+      _testMode = false;
       _lastError = 'Não foi possível reproduzir o som do motor.';
     }
   }
 
-  Future<void> _crossfadeLoop(AudioPlayer current) async {
-    if (!_looping || _crossfading || current != _active) return;
-    final AudioPlayer? next = _standby;
-    if (next == null) return;
-
-    _crossfading = true;
-    final int token = _generation;
-
+  Future<void> _entrarNoLaco(AudioPlayer laco, int token) async {
+    if (token != _generation) return;
     try {
-      await next.stop();
-      await next.setVolume(0);
-      await next.seek(_loopStart);
-      await next.resume();
-
-      const int steps = 8;
-      const Duration step = Duration(milliseconds: 18);
-      for (int i = 1; i <= steps; i++) {
-        if (!_looping || token != _generation) return;
-        final double t = i / steps;
-        await current.setVolume(_volume * (1 - t));
-        await next.setVolume(_volume * t);
-        await Future<void>.delayed(step);
+      await laco.setVolume(0);
+      await laco.resume();
+      const int passos = 10;
+      final int passoMs = _sobreposicao.inMilliseconds ~/ passos;
+      for (int i = 1; i <= passos; i++) {
+        await Future<void>.delayed(Duration(milliseconds: passoMs));
+        if (token != _generation) return;
+        await laco.setVolume(_ganho * math.sin(i / passos * math.pi / 2));
       }
-
-      if (!_looping || token != _generation) return;
-      await current.stop();
-      await current.setVolume(0);
-      await current.seek(_loopStart);
-
-      _active = next;
-      _standby = current;
-      await next.setVolume(_volume);
     } catch (_) {
       _lastError = 'Houve uma falha ao manter o som contínuo.';
-      _looping = false;
-      _playing = false;
-      await _stopAll(incrementGeneration: false);
-    } finally {
-      if (token == _generation) {
-        _crossfading = false;
-      }
     }
   }
 
   Future<void> _playShutdown() async {
     _lastError = null;
+    _timer?.cancel();
     final int token = ++_generation;
-    _testMode = false;
-    _looping = false;
     _playing = true;
-    _crossfading = false;
 
     try {
-      final (AudioPlayer a, AudioPlayer b) = await _ensurePlayers();
+      final AudioPlayer parada = await _ensureParada();
       if (token != _generation) return;
-      await Future.wait(<Future<void>>[a.stop(), b.stop()]);
-      await a.setVolume(_volume);
-      await a.seek(_shutdownStart);
-      _active = a;
-      _standby = b;
-      await a.resume();
+      await parada.setVolume(_ganho);
+      await parada.seek(Duration.zero);
+      await parada.resume();
+      // O laço some em ~50 ms enquanto os estalos de desligar começam.
+      final AudioPlayer? laco = _playerLaco;
+      if (laco != null) {
+        for (final double fator in <double>[0.6, 0.3, 0.1]) {
+          await laco.setVolume(_ganho * fator);
+          await Future<void>.delayed(const Duration(milliseconds: 16));
+        }
+        await laco.stop();
+      }
+      await _playerPartida?.stop();
     } catch (_) {
       _playing = false;
+      _testMode = false;
       _lastError = 'Não foi possível reproduzir o som de desligamento.';
     }
+    notifyListeners();
   }
 
-  Future<(AudioPlayer, AudioPlayer)> _ensurePlayers() async {
-    if (_playerA != null && _playerB != null) {
-      return (_playerA!, _playerB!);
-    }
-
-    final AudioPlayer a = AudioPlayer();
-    final AudioPlayer b = AudioPlayer();
-
-    await a.setReleaseMode(ReleaseMode.stop);
-    await b.setReleaseMode(ReleaseMode.stop);
-    await a.setSource(_sample);
-    await b.setSource(_sample);
-    await a.setVolume(_volume);
-    await b.setVolume(0);
-
-    _positionA = a.onPositionChanged.listen(
-      (Duration position) => _onPosition(a, position),
-    );
-    _positionB = b.onPositionChanged.listen(
-      (Duration position) => _onPosition(b, position),
-    );
-    _completeA = a.onPlayerComplete.listen((_) => _onComplete(a));
-    _completeB = b.onPlayerComplete.listen((_) => _onComplete(b));
-
-    _playerA = a;
-    _playerB = b;
-    _active = a;
-    _standby = b;
-    return (a, b);
+  Future<AudioPlayer> _ensureLaco() async {
+    final AudioPlayer? pronto = _playerLaco;
+    if (pronto != null) return pronto;
+    final AudioPlayer player = AudioPlayer();
+    // SoundPool: o trecho fica decodificado na memória e o Android repete sem
+    // emenda. (O MediaPlayer faz uma pausa ao voltar ao início do arquivo.)
+    await player.setPlayerMode(PlayerMode.lowLatency);
+    await player.setReleaseMode(ReleaseMode.loop);
+    await player.setSource(_laco);
+    _playerLaco = player;
+    return player;
   }
 
-  void _onPosition(AudioPlayer player, Duration position) {
-    if (_looping &&
-        !_crossfading &&
-        player == _active &&
-        position >= _crossfadeAt) {
-      unawaited(_crossfadeLoop(player));
-    }
+  Future<AudioPlayer> _ensurePartida() async {
+    final AudioPlayer? pronto = _playerPartida;
+    if (pronto != null) return pronto;
+    final AudioPlayer player = AudioPlayer();
+    await player.setPlayerMode(PlayerMode.lowLatency);
+    await player.setReleaseMode(ReleaseMode.stop);
+    await player.setSource(_partida);
+    _playerPartida = player;
+    return player;
   }
 
-  void _onComplete(AudioPlayer player) {
-    if (player != _active) return;
-    if (_testMode) {
+  Future<AudioPlayer> _ensureParada() async {
+    final AudioPlayer? pronto = _playerParada;
+    if (pronto != null) return pronto;
+    final AudioPlayer player = AudioPlayer();
+    await player.setReleaseMode(ReleaseMode.stop);
+    await player.setSource(_parada);
+    _fimDaParada = player.onPlayerComplete.listen((_) {
+      _playing = false;
       _testMode = false;
-      _playing = false;
       notifyListeners();
-      return;
-    }
-    if (!_looping) {
-      _playing = false;
-      notifyListeners();
-    }
+    });
+    _playerParada = player;
+    return player;
   }
 
-  Future<void> _stopAll({bool incrementGeneration = true}) async {
-    if (incrementGeneration) {
-      _generation++;
-    }
-    _looping = false;
+  Future<void> _stopAll() async {
+    _generation++;
+    _timer?.cancel();
+    _timer = null;
     _testMode = false;
     _playing = false;
-    _crossfading = false;
-
-    final List<Future<void>> stops = <Future<void>>[];
-    if (_playerA != null) stops.add(_playerA!.stop());
-    if (_playerB != null) stops.add(_playerB!.stop());
-    if (stops.isNotEmpty) {
-      await Future.wait(stops);
-    }
+    await Future.wait(<Future<void>>[
+      for (final AudioPlayer? player in <AudioPlayer?>[_playerPartida, _playerLaco, _playerParada])
+        if (player != null) player.stop(),
+    ]);
   }
 
   @override
   void dispose() {
-    _positionA?.cancel();
-    _positionB?.cancel();
-    _completeA?.cancel();
-    _completeB?.cancel();
-    _playerA?.dispose();
-    _playerB?.dispose();
+    _timer?.cancel();
+    _fimDaParada?.cancel();
+    _playerPartida?.dispose();
+    _playerLaco?.dispose();
+    _playerParada?.dispose();
     super.dispose();
   }
 }
