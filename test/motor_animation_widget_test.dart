@@ -25,10 +25,46 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
 
     expect(find.byKey(const ValueKey<String>('motor_animation_paint')), findsOneWidget);
-    expect(find.text('Motor desligado'), findsOneWidget);
+    expect(find.text('Desconectado'), findsOneWidget);
     expect(find.textContaining('Rotação de placa:'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
+  testWidgets('desconexão interrompe imediatamente a animação do motor', (
+    WidgetTester tester,
+  ) async {
+    final MotorControlController controller =
+        MotorControlController(loadSettings: false)
+          ..isConnected = true;
+
+    controller.handlePayloadForTest(
+      'iotmotor/esp32-01/telemetry',
+      '{"relays":[true,false,false,false],"motor_running":true}',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MotorAnimationCard(
+            controller: controller,
+            startType: MotorCommandType.directStart,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.textContaining('Motor '), findsOneWidget);
+
+    controller.isConnected = false;
+    controller.notifyListeners();
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(find.text('Desconectado'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
 }
