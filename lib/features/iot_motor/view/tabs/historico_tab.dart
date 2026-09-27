@@ -441,7 +441,7 @@ class HistoricoTab extends StatelessWidget {
     }
 
     if (sample.frequency != null) {
-      chips.add(_MetricChip(label: 'Freq.', color: AppTheme.brandBlue));
+      chips.add(_MetricChip(label: 'Frequência', color: AppTheme.brandBlue));
     }
 
     if (sample.energy != null) {
@@ -451,7 +451,7 @@ class HistoricoTab extends StatelessWidget {
     if (sample.vibration != null) {
       chips.add(
         _MetricChip(
-          label: 'Vibra.',
+          label: 'Vibração',
           color: AppTheme.vibrationAccent,
         ),
       );
@@ -459,7 +459,7 @@ class HistoricoTab extends StatelessWidget {
 
     if (sample.temperature != null) {
       chips.add(
-        _MetricChip(label: 'Temp.', color: AppTheme.temperatureAccent),
+        _MetricChip(label: 'Temperatura', color: AppTheme.temperatureAccent),
       );
     }
 
@@ -639,7 +639,7 @@ class HistoricoTab extends StatelessWidget {
               ),
               _FilterOption(
                 MotorControlController.historyMetricFrequency,
-                'Freq.',
+                'Frequência',
               ),
               _FilterOption(
                 MotorControlController.historyMetricEnergy,
@@ -647,11 +647,11 @@ class HistoricoTab extends StatelessWidget {
               ),
               _FilterOption(
                 MotorControlController.historyMetricVibration,
-                'Vibra.',
+                'Vibração',
               ),
               _FilterOption(
                 MotorControlController.historyMetricTemperature,
-                'Temp.',
+                'Temperatura',
               ),
             ],
             onSelected: controller.setHistoryMetricFilter,
