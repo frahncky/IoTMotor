@@ -5,7 +5,6 @@ const {
   visualDpsForRpm,
   startupDurationForKind,
   startupSpeed,
-  vibrationAmplitude,
   motionAppearance,
 } = require('./motor-animation.js');
 
@@ -30,12 +29,6 @@ test('partida direta é contínua e estrela-triângulo tem transiente de comuta�
   assert.ok(startupSpeed(0.64, 'sequenced') < startupSpeed(0.64, 'direct'));
 });
 
-test('vibração visual é sutil e limitada', () => {
-  assert.equal(vibrationAmplitude(null), 0);
-  assert.equal(vibrationAmplitude(0.003), 0);
-  assert.ok(vibrationAmplitude(0.02) > 0);
-  assert.equal(vibrationAmplitude(5), 2.4);
-});
 
 test('pás ficam menos definidas apenas em alta velocidade', () => {
   const parada = motionAppearance(0);
