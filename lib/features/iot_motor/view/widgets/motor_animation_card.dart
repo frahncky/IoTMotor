@@ -66,9 +66,14 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     if (dt < 0) dt += 1;
     dt = dt.clamp(0.0, 0.064).toDouble();
 
-    final bool running = widget.controller.isMotorRunning;
+    final bool connected = widget.controller.isConnected;
+    final bool running = connected && widget.controller.isMotorRunning;
     final double startupSeconds = _startupSeconds(widget.startType);
-    if (running) {
+    if (!connected) {
+      // Sem telemetria ao vivo, não animamos o último estado conhecido.
+      _startupElapsed = 0;
+      _speed = 0;
+    } else if (running) {
       _startupElapsed += dt;
       _speed = math.min(1.0, _speed + dt / startupSeconds).toDouble();
     } else {
@@ -135,18 +140,25 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
 
   @override
   Widget build(BuildContext context) {
-    final bool running = widget.controller.isMotorRunning;
+    final bool connected = widget.controller.isConnected;
+    final bool running = connected && widget.controller.isMotorRunning;
     final MotorInfo? info = widget.controller.motorInfo;
     final double? temperature = widget.controller.latestSample?.temperature;
     final double rpm = info?.rpm ?? 1750;
-    final String status = running
-        ? (_speed < 0.95 ? 'Motor partindo' : 'Motor ligado')
-        : (_speed > 0.03 ? 'Motor desacelerando' : 'Motor desligado');
+    final String status = !connected
+        ? 'Desconectado'
+        : running
+            ? (_speed < 0.95 ? 'Motor partindo' : 'Motor ligado')
+            : (_speed > 0.03 ? 'Motor desacelerando' : 'Motor desligado');
 
     return SizedBox(
       width: double.infinity,
       child: GlassPanel(
-        tint: running ? AppTheme.online : AppTheme.brandBlue,
+        tint: running
+            ? AppTheme.online
+            : connected
+                ? AppTheme.brandBlue
+                : AppTheme.offline,
         padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
@@ -178,7 +190,11 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                       height: 10,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: running ? AppTheme.online : AppTheme.labelSoft,
+                        color: running
+                            ? AppTheme.online
+                            : connected
+                                ? AppTheme.labelSoft
+                                : AppTheme.offline,
                         boxShadow: running
                             ? <BoxShadow>[
                                 BoxShadow(
