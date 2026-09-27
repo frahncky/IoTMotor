@@ -11,7 +11,6 @@ import '../../models/telemetry_sample.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/motor_animation_card.dart';
-import '../widgets/motor_usage_strip.dart';
 import '../widgets/telemetry_chart.dart';
 import 'grandezas_tab.dart';
 
@@ -234,7 +233,7 @@ class _InicioTabState extends State<InicioTab> {
                         selectedStartType: selectedStartType,
                       ),
                     ),
-                    MotorUsageStrip(controller: widget.controller),
+                    const SizedBox(height: 8),
                     DelayedReveal(
                       delay: const Duration(milliseconds: 240),
                       child: _buildChartsPanel(context, sample: sample),
@@ -277,8 +276,7 @@ class _InicioTabState extends State<InicioTab> {
                               selectedStartType: selectedStartType,
                             ),
                           ),
-                          MotorUsageStrip(controller: widget.controller),
-                          const SizedBox(height: 8),
+                                const SizedBox(height: 8),
                           Expanded(
                             child: DelayedReveal(
                               delay: const Duration(milliseconds: 240),

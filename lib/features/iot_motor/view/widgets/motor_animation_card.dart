@@ -7,6 +7,7 @@ import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
 import '../../models/motor_info.dart';
 import 'glass_panel.dart';
+import 'motor_usage_strip.dart';
 
 /// Representação vetorial nativa do motor para a tela Início.
 ///
@@ -151,8 +152,8 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool compact = constraints.maxWidth < 600;
             final Widget drawing = SizedBox(
-              width: compact ? 150 : 220,
-              height: compact ? 82 : 96,
+              width: compact ? 150 : 210,
+              height: compact ? 86 : 120,
               child: CustomPaint(
                 key: const ValueKey<String>('motor_animation_paint'),
                 painter: _MotorPainter(
@@ -190,10 +191,12 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      status,
-                      key: const ValueKey<String>('motor_animation_status'),
-                      style: Theme.of(context).textTheme.titleMedium,
+                    Flexible(
+                      child: Text(
+                        status,
+                        key: const ValueKey<String>('motor_animation_status'),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                     ),
                   ],
                 ),
@@ -210,12 +213,42 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
               ],
             );
 
+            final Widget uso = MotorUsageStrip(controller: widget.controller);
+
+            if (compact) {
+              // Em tela estreita, carga e avisos vão numa linha própria,
+              // embaixo do desenho, ainda dentro do cartão.
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      drawing,
+                      const SizedBox(width: 12),
+                      Expanded(child: details),
+                    ],
+                  ),
+                  uso,
+                ],
+              );
+            }
+
             return Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
                 drawing,
                 const SizedBox(width: 12),
-                Expanded(child: details),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      details,
+                      uso,
+                    ],
+                  ),
+                ),
               ],
             );
           },
@@ -240,10 +273,12 @@ class _MotorPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double scale = math.min(size.width / 340, size.height / 165).toDouble();
+    // Desenho em 304 x 172 unidades, escalado sem distorcer.
+    const double largura = 304, altura = 172;
+    final double scale = math.min(size.width / largura, size.height / altura).toDouble();
     final Offset origin = Offset(
-      (size.width - 340 * scale) / 2,
-      (size.height - 165 * scale) / 2,
+      (size.width - largura * scale) / 2,
+      (size.height - altura * scale) / 2,
     );
     canvas.save();
     canvas.translate(origin.dx, origin.dy);
@@ -253,7 +288,7 @@ class _MotorPainter extends CustomPainter {
       ..color = Colors.black.withValues(alpha: 0.30)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
     canvas.drawOval(
-      Rect.fromCenter(center: const Offset(169, 143), width: 260, height: 22),
+      Rect.fromCenter(center: const Offset(154, 160), width: 236, height: 18),
       shadow,
     );
 
@@ -271,11 +306,11 @@ class _MotorPainter extends CustomPainter {
           bodyBase,
           Color.lerp(bodyBase, Colors.black, 0.34)!,
         ],
-      ).createShader(const Rect.fromLTWH(65, 46, 190, 85));
+      ).createShader(const Rect.fromLTWH(64, 42, 164, 108));
 
     final RRect bodyRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(67, 48, 188, 82),
-      const Radius.circular(24),
+      const Rect.fromLTWH(66, 44, 160, 104),
+      const Radius.circular(28),
     );
     canvas.drawRRect(bodyRect, body);
 
@@ -288,35 +323,35 @@ class _MotorPainter extends CustomPainter {
     final Paint fin = Paint()
       ..color = const Color(0xFF0C4054).withValues(alpha: 0.80)
       ..strokeWidth = 4;
-    for (double x = 83; x <= 225; x += 18) {
-      canvas.drawLine(Offset(x, 56), Offset(x, 123), fin);
+    for (double x = 84; x <= 210; x += 16) {
+      canvas.drawLine(Offset(x, 55), Offset(x, 137), fin);
     }
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(119, 25, 74, 31),
+        const Rect.fromLTWH(114, 20, 64, 30),
         const Radius.circular(7),
       ),
       Paint()..color = const Color(0xFF2A6B83),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(127, 17, 58, 13),
+        const Rect.fromLTWH(121, 12, 50, 12),
         const Radius.circular(5),
       ),
       Paint()..color = const Color(0xFF173E50),
     );
 
     canvas.drawOval(
-      const Rect.fromLTWH(42, 57, 49, 67),
+      const Rect.fromLTWH(36, 50, 60, 92),
       Paint()..color = const Color(0xFF154A60),
     );
     canvas.drawOval(
-      const Rect.fromLTWH(49, 64, 30, 53),
+      const Rect.fromLTWH(44, 60, 44, 72),
       Paint()..color = const Color(0xFF071F2A),
     );
 
-    final Offset fanCenter = const Offset(64, 90);
+    final Offset fanCenter = const Offset(66, 96);
     canvas.save();
     canvas.translate(fanCenter.dx, fanCenter.dy);
     canvas.rotate(angleDegrees * math.pi / 180);
@@ -328,8 +363,8 @@ class _MotorPainter extends CustomPainter {
       canvas.rotate(i * math.pi * 2 / 5);
       final Path p = Path()
         ..moveTo(1, -3)
-        ..quadraticBezierTo(8, -21, 17, -22)
-        ..quadraticBezierTo(19, -9, 5, 4)
+        ..quadraticBezierTo(9, -25, 20, -26)
+        ..quadraticBezierTo(22, -10, 6, 4)
         ..close();
       canvas.drawPath(p, blade);
       canvas.restore();
@@ -342,11 +377,11 @@ class _MotorPainter extends CustomPainter {
     canvas.restore();
 
     canvas.drawOval(
-      const Rect.fromLTWH(236, 50, 63, 80),
+      const Rect.fromLTWH(212, 42, 70, 108),
       Paint()..color = const Color(0xFF246C85),
     );
     canvas.drawOval(
-      const Rect.fromLTWH(249, 61, 38, 58),
+      const Rect.fromLTWH(226, 56, 42, 80),
       Paint()..color = const Color(0xFF0C3444),
     );
 
@@ -357,16 +392,16 @@ class _MotorPainter extends CustomPainter {
           Color(0xFFE8F0F2),
           Color(0xFF788D96),
         ],
-      ).createShader(const Rect.fromLTWH(272, 83, 58, 14));
+      ).createShader(const Rect.fromLTWH(262, 89, 34, 14));
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(271, 83, 58, 14),
+        const Rect.fromLTWH(262, 89, 34, 14),
         const Radius.circular(6),
       ),
       shaft,
     );
 
-    final Offset shaftEnd = const Offset(329, 90);
+    final Offset shaftEnd = const Offset(296, 96);
     canvas.drawCircle(
       shaftEnd,
       7,
@@ -388,14 +423,14 @@ class _MotorPainter extends CustomPainter {
     final Paint foot = Paint()..color = const Color(0xFF0D3C4D);
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(78, 126, 54, 20),
+        const Rect.fromLTWH(80, 140, 50, 20),
         const Radius.circular(4),
       ),
       foot,
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(190, 126, 54, 20),
+        const Rect.fromLTWH(164, 140, 50, 20),
         const Radius.circular(4),
       ),
       foot,
@@ -403,7 +438,7 @@ class _MotorPainter extends CustomPainter {
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        const Rect.fromLTWH(126, 77, 58, 34),
+        const Rect.fromLTWH(118, 76, 56, 40),
         const Radius.circular(4),
       ),
       Paint()..color = const Color(0xFFB8C4C8),
@@ -411,8 +446,8 @@ class _MotorPainter extends CustomPainter {
     final Paint plateLine = Paint()
       ..color = const Color(0xFF65757B)
       ..strokeWidth = 2;
-    for (double y = 84; y <= 103; y += 6) {
-      canvas.drawLine(Offset(133, y), Offset(175, y), plateLine);
+    for (double y = 84; y <= 108; y += 6) {
+      canvas.drawLine(Offset(125, y), Offset(167, y), plateLine);
     }
 
     canvas.restore();
