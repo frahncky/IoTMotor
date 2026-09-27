@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/motor_info.dart';
 import '../models/motor_app_settings.dart';
+import '../models/data_acquisition_config.dart';
 import '../models/board_alarm.dart';
 import '../models/device_names.dart';
 import '../models/motor_command_type.dart';
@@ -373,6 +374,7 @@ class MotorControlController extends ChangeNotifier {
   static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
   static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
   static const Duration _historyPersistDelay = Duration(milliseconds: 700);
+  static const int maxChartPoints = 120;
   static const Duration _alertsPersistDelay = Duration(milliseconds: 350);
   static const List<MotorCommandType> _defaultStartTypes = <MotorCommandType>[
     MotorCommandType.directStart,
@@ -430,12 +432,23 @@ class MotorControlController extends ChangeNotifier {
   int remoteHistoryRetentionDays =
       MotorAppSettings.defaultRemoteHistoryRetentionDays;
 
+  /// Configuração efetiva publicada pelas placas. O ESP32-01 é autoridade
+  /// para o PZEM; o ESP32-S3 é autoridade para janela RMS, gráfico e registro.
+  DataAcquisitionConfig dataAcquisitionConfig = const DataAcquisitionConfig();
+  bool dataAcquisitionSynchronized = false;
+  final Map<String, Map<String, dynamic>> _dataConfigByDevice =
+      <String, Map<String, dynamic>>{};
+  final Map<String, DateTime> _lastChartSampleByDevice = <String, DateTime>{};
+  final Map<String, DateTime> _lastRecordSampleByDevice = <String, DateTime>{};
+
   String connectionMessage = 'Desconectado';
   String statusMessage = 'Aguardando conexão e dados.';
   MotorCommandType? lastCommandType;
   DateTime? lastCommandAt;
 
   final Map<String, List<TelemetrySample>> _historyByDevice =
+      <String, List<TelemetrySample>>{};
+  final Map<String, List<TelemetrySample>> _chartByDevice =
       <String, List<TelemetrySample>>{};
   final Map<String, TelemetrySample> _latestByDevice =
       <String, TelemetrySample>{};
@@ -477,7 +490,7 @@ class MotorControlController extends ChangeNotifier {
 
   UnmodifiableListView<TelemetrySample> get history =>
       UnmodifiableListView<TelemetrySample>(
-        _recebeuDadoAtual ? _buildCombinedHistory() : <TelemetrySample>[]
+        _recebeuDadoAtual ? _buildCombinedChartHistory() : <TelemetrySample>[],
       );
 
   UnmodifiableListView<TelemetryHistoryEntry> get historyEntries =>
@@ -875,6 +888,11 @@ class MotorControlController extends ChangeNotifier {
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
+    _chartByDevice.clear();
+    _lastChartSampleByDevice.clear();
+    _lastRecordSampleByDevice.clear();
+    _dataConfigByDevice.clear();
+    dataAcquisitionSynchronized = false;
     // Uso, dados do motor, versões e histórico voltam (retidos) na próxima conexão.
     _motorUsageByDevice.clear();
     _motorInfoByDevice.clear();
@@ -1886,6 +1904,10 @@ class MotorControlController extends ChangeNotifier {
       _notify();
       return;
     }
+    if (topic.endsWith('/data_config')) {
+      _applyDataAcquisitionPayload(deviceIdDoTopico, payload);
+      return;
+    }
     if (topic.endsWith('/capabilities')) {
       try {
         final Object? dados = jsonDecode(payload);
@@ -1960,6 +1982,7 @@ class MotorControlController extends ChangeNotifier {
     _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
 
+    _addSampleToChart(deviceId: deviceId, sample: sample);
     _addSampleToHistory(deviceId: deviceId, sample: sample);
 
     final TelemetryAlert? alert = _evaluateTelemetryAlerts(
@@ -1975,9 +1998,9 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
-  List<TelemetrySample> _buildCombinedHistory() {
+  List<TelemetrySample> _buildCombinedChartHistory() {
     final List<TelemetrySample> merged =
-        _historyByDevice.values
+        _chartByDevice.values
             .expand((List<TelemetrySample> entries) => entries)
             .toList();
     merged.sort(
@@ -2043,11 +2066,43 @@ class MotorControlController extends ChangeNotifier {
     return removed;
   }
 
+  void _addSampleToChart({
+    required String deviceId,
+    required TelemetrySample sample,
+  }) {
+    final DateTime agora = DateTime.now();
+    final DateTime? anterior = _lastChartSampleByDevice[deviceId];
+    if (anterior != null &&
+        agora.difference(anterior).inMilliseconds <
+            dataAcquisitionConfig.chartIntervalMs) {
+      return;
+    }
+    _lastChartSampleByDevice[deviceId] = agora;
+    final List<TelemetrySample> serie = _chartByDevice.putIfAbsent(
+      deviceId,
+      () => <TelemetrySample>[],
+    );
+    serie.add(sample);
+    if (serie.length > maxChartPoints) {
+      serie.removeAt(0);
+    }
+  }
+
   void _addSampleToHistory({
     required String deviceId,
     required TelemetrySample sample,
     bool persist = true,
   }) {
+    if (persist) {
+      final DateTime agora = DateTime.now();
+      final DateTime? anterior = _lastRecordSampleByDevice[deviceId];
+      if (anterior != null &&
+          agora.difference(anterior).inMilliseconds <
+              dataAcquisitionConfig.recordIntervalMs) {
+        return;
+      }
+      _lastRecordSampleByDevice[deviceId] = agora;
+    }
     final List<TelemetrySample> deviceHistory = _historyByDevice.putIfAbsent(
       deviceId,
       () => <TelemetrySample>[],
