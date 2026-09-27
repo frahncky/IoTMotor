@@ -137,15 +137,16 @@ void main() {
     expect(find.text('Aplicar local'), findsOneWidget);
     expect(find.text('Aplicar no ESP32'), findsOneWidget);
 
-    await tester.ensureVisible(find.widgetWithText(Tab, 'Alertas'));
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.tap(find.widgetWithText(Tab, 'Alertas'));
+    final BuildContext settingsTabsContext =
+        tester.element(find.byType(TabBar));
+    final TabController settingsTabs =
+        DefaultTabController.of(settingsTabsContext);
+
+    settingsTabs.animateTo(4);
     await tester.pump(const Duration(milliseconds: 900));
     expect(find.text('Alertas de Telemetria'), findsOneWidget);
 
-    await tester.ensureVisible(find.widgetWithText(Tab, 'Telemetria'));
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.tap(find.widgetWithText(Tab, 'Telemetria'));
+    settingsTabs.animateTo(5);
     await tester.pump(const Duration(milliseconds: 900));
     expect(find.text('Formato da Telemetria'), findsOneWidget);
   });
