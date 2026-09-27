@@ -321,6 +321,10 @@ class MotorControlController extends ChangeNotifier {
     // Só grava depois de ler o que estava salvo, senão os valores padrão
     // sobrescreveriam o arquivo assim que o app abrisse.
     _settingsRestored = true;
+    if (_settingsPersistRequestedBeforeRestore) {
+      _settingsPersistRequestedBeforeRestore = false;
+      _scheduleSettingsPersist();
+    }
     await Future.wait([
       loadPersistedHistory(),
       loadPersistedAlerts(),
@@ -395,6 +399,7 @@ class MotorControlController extends ChangeNotifier {
   bool _startTypesLoaded = false;
   bool _settingsLoaded = false;
   bool _settingsRestored = false;
+  bool _settingsPersistRequestedBeforeRestore = false;
   /// Perfil MQTT que montou esta tela (vazio fora do app com perfis).
   String activeProfileId = '';
   bool _historyLoaded = false;
@@ -3040,7 +3045,11 @@ class MotorControlController extends ChangeNotifier {
   }
 
   void _scheduleSettingsPersist() {
-    if (_disposed || !_settingsRestored) {
+    if (_disposed) {
+      return;
+    }
+    if (!_settingsRestored) {
+      _settingsPersistRequestedBeforeRestore = true;
       return;
     }
     _settingsPersistTimer?.cancel();
