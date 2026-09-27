@@ -47,6 +47,9 @@
   /// Versão do firmware de cada placa (retido).
   String get capabilitiesWildcardTopic => '$topicPrefix/+/capabilities';
 
+  /// Configuração técnica de aquisição/telemetria publicada pelas placas.
+  String get dataConfigWildcardTopic => '$topicPrefix/+/data_config';
+
   /// Histórico por hora guardado na placa de sensores, um tópico por dia.
   String get historyWildcardTopic => '$topicPrefix/+/history/+';
 }
