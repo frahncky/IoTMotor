@@ -2200,18 +2200,27 @@ class MotorControlController extends ChangeNotifier {
     return removed;
   }
 
+  bool get _hasRemoteSamplingPolicy {
+    for (final Map<String, dynamic> data in _dataConfigByDevice.values) {
+      if ('${data['role'] ?? ''}' == 'sensor') return true;
+    }
+    return false;
+  }
+
   void _addSampleToChart({
     required String deviceId,
     required TelemetrySample sample,
   }) {
-    final DateTime agora = DateTime.now();
-    final DateTime? anterior = _lastChartSampleByDevice[deviceId];
-    if (anterior != null &&
-        agora.difference(anterior).inMilliseconds <
-            dataAcquisitionConfig.chartIntervalMs) {
-      return;
+    final DateTime instante = sample.timestamp;
+    if (_hasRemoteSamplingPolicy) {
+      final DateTime? anterior = _lastChartSampleByDevice[deviceId];
+      if (anterior != null &&
+          instante.difference(anterior).inMilliseconds <
+              dataAcquisitionConfig.chartIntervalMs) {
+        return;
+      }
+      _lastChartSampleByDevice[deviceId] = instante;
     }
-    _lastChartSampleByDevice[deviceId] = agora;
     final List<TelemetrySample> serie = _chartByDevice.putIfAbsent(
       deviceId,
       () => <TelemetrySample>[],
@@ -2227,15 +2236,15 @@ class MotorControlController extends ChangeNotifier {
     required TelemetrySample sample,
     bool persist = true,
   }) {
-    if (persist) {
-      final DateTime agora = DateTime.now();
+    if (persist && _hasRemoteSamplingPolicy) {
+      final DateTime instante = sample.timestamp;
       final DateTime? anterior = _lastRecordSampleByDevice[deviceId];
       if (anterior != null &&
-          agora.difference(anterior).inMilliseconds <
+          instante.difference(anterior).inMilliseconds <
               dataAcquisitionConfig.recordIntervalMs) {
         return;
       }
-      _lastRecordSampleByDevice[deviceId] = agora;
+      _lastRecordSampleByDevice[deviceId] = instante;
     }
     final List<TelemetrySample> deviceHistory = _historyByDevice.putIfAbsent(
       deviceId,
