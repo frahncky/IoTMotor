@@ -97,6 +97,8 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
               label: Text(
                 otaEmAndamento && widget.controller.boardsToUpdate.isEmpty
                     ? 'Atualizando firmware…'
+                    : conectado && widget.controller.boardsToUpdate.isEmpty
+                    ? 'Sem atualização disponível'
                     : 'Atualizar firmware',
               ),
             ),
