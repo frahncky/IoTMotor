@@ -131,11 +131,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                         child: _buildMotorPanel(context),
                       ),
                       _buildTabScrollView(
-                        key: 'settings_acquisition',
-                        delay: const Duration(milliseconds: 180),
-                        child: _buildAcquisitionPanel(context),
-                      ),
-                      _buildTabScrollView(
                         key: 'settings_profiles',
                         delay: const Duration(milliseconds: 180),
                         child: _buildProfilesPanel(context),
@@ -160,6 +155,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                         key: 'settings_telemetry',
                         delay: const Duration(milliseconds: 180),
                         child: _buildTelemetryFormatPanel(context),
+                      ),
+                      _buildTabScrollView(
+                        key: 'settings_acquisition',
+                        delay: const Duration(milliseconds: 180),
+                        child: _buildAcquisitionPanel(context),
                       ),
                     ],
                   ),
@@ -213,12 +213,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
           Tab(
             height: 48,
             iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.speed_rounded),
-            text: 'Aquisição',
-          ),
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
             icon: Icon(Icons.account_tree_rounded),
             text: 'Perfis',
           ),
@@ -239,6 +233,12 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
             iconMargin: EdgeInsets.only(bottom: 2),
             icon: Icon(Icons.data_object_rounded),
             text: 'Telemetria',
+          ),
+          Tab(
+            height: 48,
+            iconMargin: EdgeInsets.only(bottom: 2),
+            icon: Icon(Icons.speed_rounded),
+            text: 'Aquisição',
           ),
         ],
       ),
