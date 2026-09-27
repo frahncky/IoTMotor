@@ -141,19 +141,18 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     final String status = running
         ? (_speed < 0.95 ? 'Motor partindo' : 'Motor ligado')
         : (_speed > 0.03 ? 'Motor desacelerando' : 'Motor desligado');
-    final String partida = widget.startType.label;
 
     return SizedBox(
       width: double.infinity,
       child: GlassPanel(
         tint: running ? AppTheme.online : AppTheme.brandBlue,
-        padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+        padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final bool compact = constraints.maxWidth < 600;
             final Widget drawing = SizedBox(
-              width: compact ? double.infinity : 300,
-              height: compact ? 128 : 142,
+              width: compact ? 150 : 220,
+              height: compact ? 82 : 96,
               child: CustomPaint(
                 key: const ValueKey<String>('motor_animation_paint'),
                 painter: _MotorPainter(
@@ -198,12 +197,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Partida: $partida',
-                  key: const ValueKey<String>('motor_animation_start_type'),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                const SizedBox(height: 4),
                 Text(
                   'Rotação de placa: ${rpm.round()} rpm',
                   style: Theme.of(context).textTheme.bodySmall,
@@ -216,20 +210,11 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
               ],
             );
 
-            if (compact) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  drawing,
-                  const SizedBox(height: 4),
-                  details,
-                ],
-              );
-            }
             return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
                 drawing,
-                const SizedBox(width: 18),
+                const SizedBox(width: 12),
                 Expanded(child: details),
               ],
             );
