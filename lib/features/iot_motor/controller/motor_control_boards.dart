@@ -227,8 +227,148 @@ extension MotorControlBoards on MotorControlController {
   /// sem o tópico `capabilities`) também entra.
   List<String> get boardsToUpdate => <String>[
     for (final String placa in maintenanceBoards)
-      if (firmwareOf(placa)?.atualizar ?? true) placa,
+      if (!isFirmwareUpdating(placa) &&
+          (firmwareOf(placa)?.atualizar ?? true))
+        placa,
   ];
+
+  /// Placas que estão em OTA ou acabaram de voltar dela.
+  List<String> get firmwareUpdateDeviceIds {
+    final List<String> placas = _firmwareUpdatesByDevice.keys.toList()..sort();
+    return placas;
+  }
+
+  bool isFirmwareUpdating(String deviceId) =>
+      _firmwareUpdatesByDevice[deviceId]?.active ?? false;
+
+  bool firmwareUpdateSucceeded(String deviceId) =>
+      _firmwareUpdatesByDevice[deviceId]?.phase == 'completed';
+
+  /// Texto curto para a UI enquanto a OTA acontece. O estado não vira
+  /// "desconectado" só porque a placa reiniciou como parte da atualização.
+  String? firmwareUpdateLabel(String deviceId) {
+    final _FirmwareUpdateProgress? p = _firmwareUpdatesByDevice[deviceId];
+    if (p == null) return null;
+    switch (p.phase) {
+      case 'requested':
+        return 'Atualizando firmware… aguardando confirmação da placa';
+      case 'downloading':
+        return 'Atualizando firmware… download e gravação em andamento';
+      case 'reconnecting':
+        return 'Atualizando firmware… reiniciando e reconectando';
+      case 'verifying':
+        return 'Atualizando firmware… conectado, confirmando versão';
+      case 'completed':
+        return 'Atualizado · Conectado · firmware ${p.installedVersion ?? p.expectedVersion}';
+      default:
+        return null;
+    }
+  }
+
+  String _firmwareExpectedFor(String deviceId) {
+    final String atual = firmwareByDevice[deviceId] ?? '';
+    final int indice =
+        atual.startsWith('s3-') || deviceId == 'esp32-02' ? 1 : 0;
+    return firmwarePublicado[indice];
+  }
+
+  void _iniciarAtualizacaoFirmware(String deviceId, String seq) {
+    _firmwareUpdatesByDevice[deviceId] = _FirmwareUpdateProgress(
+      seq: seq,
+      expectedVersion: _firmwareExpectedFor(deviceId),
+      startedAt: DateTime.now(),
+    );
+  }
+
+  /// O primeiro ACK só confirma que o download começou. Uma falha pode chegar
+  /// depois com o mesmo seq, por isso o acompanhamento continua até a placa
+  /// reiniciar e publicar a versão esperada em capabilities.
+  void _tratarRespostaDeAtualizacao(String deviceId, String payload) {
+    final _FirmwareUpdateProgress? p = _firmwareUpdatesByDevice[deviceId];
+    if (p == null || !p.active) return;
+    try {
+      final Object? bruto = jsonDecode(payload);
+      if (bruto is! Map<String, dynamic> ||
+          '${bruto['seq'] ?? ''}' != p.seq ||
+          '${bruto['action'] ?? ''}' != 'update') {
+        return;
+      }
+      final String motivo = '${bruto['reason'] ?? ''}'.trim();
+      if (bruto['accepted'] == true) {
+        p.phase = 'downloading';
+        p.changedAt = DateTime.now();
+        statusMessage =
+            '${nomeDaPlaca(deviceId)}: atualizando firmware… download e gravação em andamento.';
+      } else {
+        _firmwareUpdatesByDevice.remove(deviceId);
+        _pendingMessage =
+            'Atualização de ${nomeDaPlaca(deviceId)} falhou'
+            '${motivo.isEmpty ? '.' : ': $motivo.'}';
+        statusMessage = _pendingMessage!;
+      }
+      _notify();
+    } catch (_) {
+      // ACK ilegível: a placa continua sendo acompanhada pelo status/capabilities.
+    }
+  }
+
+  void _tratarStatusDeAtualizacao(String deviceId, String payload) {
+    final _FirmwareUpdateProgress? p = _firmwareUpdatesByDevice[deviceId];
+    if (p == null || !p.active) return;
+    final String estado = payload.trim().toLowerCase();
+    if (estado == 'offline') {
+      p.phase = 'reconnecting';
+      p.changedAt = DateTime.now();
+      statusMessage =
+          '${nomeDaPlaca(deviceId)}: atualizando firmware… reiniciando e reconectando.';
+      return;
+    }
+    if (estado == 'online' &&
+        (p.phase == 'reconnecting' || p.phase == 'downloading')) {
+      p.phase = 'verifying';
+      p.changedAt = DateTime.now();
+      statusMessage =
+          '${nomeDaPlaca(deviceId)}: conectado novamente; confirmando a versão do firmware.';
+    }
+  }
+
+  void _tratarFirmwarePublicado(String deviceId, String firmware) {
+    final _FirmwareUpdateProgress? p = _firmwareUpdatesByDevice[deviceId];
+    if (p == null || !p.active || firmware != p.expectedVersion) return;
+    p
+      ..phase = 'completed'
+      ..installedVersion = firmware
+      ..changedAt = DateTime.now();
+    statusMessage =
+        '${nomeDaPlaca(deviceId)}: Atualizado · Conectado · firmware $firmware.';
+  }
+
+  bool _pruneFirmwareUpdates() {
+    final DateTime agora = DateTime.now();
+    bool mudou = false;
+    for (final MapEntry<String, _FirmwareUpdateProgress> entry
+        in _firmwareUpdatesByDevice.entries.toList()) {
+      final _FirmwareUpdateProgress p = entry.value;
+      if (p.phase == 'completed') {
+        if (agora.difference(p.changedAt) >
+            MotorControlController._firmwareUpdatedVisibleFor) {
+          _firmwareUpdatesByDevice.remove(entry.key);
+          mudou = true;
+        }
+        continue;
+      }
+      if (agora.difference(p.startedAt) >
+          MotorControlController._firmwareUpdateTimeout) {
+        _firmwareUpdatesByDevice.remove(entry.key);
+        _pendingMessage =
+            'Atualização de ${nomeDaPlaca(entry.key)} não foi confirmada. '
+            'Verifique a conexão e a versão do firmware.';
+        statusMessage = _pendingMessage!;
+        mudou = true;
+      }
+    }
+    return mudou;
+  }
 
   /// Pede a cada placa de [deviceIds], no tópico dela, que abra o portal de
   /// Wi-Fi (`wifi_portal`) ou que se atualize pela internet (`update`).
@@ -257,8 +397,11 @@ extension MotorControlBoards on MotorControlController {
           '${nomeDaPlaca(placa)}: ${action == 'update' && maintenanceBoards.contains(placa) ? 'já está em dia' : 'saiu do ar'}',
     ];
     for (final String placa in alvos) {
-      if (_service.sendMaintenanceCommand(action, deviceId: placa)) {
+      final String? seq =
+          _service.sendMaintenanceCommand(action, deviceId: placa);
+      if (seq != null) {
         enviados.add(nomeDaPlaca(placa));
+        if (action == 'update') _iniciarAtualizacaoFirmware(placa, seq);
       } else {
         falhas.add('${nomeDaPlaca(placa)}: '
             '${_service.seal.impedimento(placa) ?? 'sem conexão com o broker'}');
@@ -274,4 +417,21 @@ extension MotorControlBoards on MotorControlController {
     if (falhas.isNotEmpty) _pendingMessage = 'Pedido não enviado. ${falhas.join('; ')}.';
     _notify();
   }
+}
+
+class _FirmwareUpdateProgress {
+  _FirmwareUpdateProgress({
+    required this.seq,
+    required this.expectedVersion,
+    required this.startedAt,
+  }) : changedAt = startedAt;
+
+  final String seq;
+  final String expectedVersion;
+  final DateTime startedAt;
+  DateTime changedAt;
+  String phase = 'requested';
+  String? installedVersion;
+
+  bool get active => phase != 'completed';
 }
