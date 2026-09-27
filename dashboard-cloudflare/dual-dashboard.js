@@ -86,7 +86,9 @@ function pill(message,kind=''){text('connectionText',message);$('connection').cl
 function topic(device,kind){return `${state.config.prefix}/${device}/${kind}`;}
 function freshness(which){return state.connected&&state.subscribed&&state[which].at>0&&Date.now()-state[which].at<TELEMETRY_STALE_MS;}
 // Conexao do dispositivo: telemetria recente prevalece; senao usa o status retido/LWT mais novo.
-function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now()}){
+function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now(),firmwareState=''}) {
+ if(firmwareState==='updating')return {label:'atualizando firmware',kind:'wait'};
+ if(firmwareState==='updated')return {label:'atualizado · conectado',kind:'live'};
  if(!brokerOk)return {label:'broker desconectado',kind:''};
  const fresh=at>0&&now-at<TELEMETRY_STALE_MS,st=String(status||'').trim().toLowerCase();
  if(st==='offline'&&statusAt>=at)return {label:'desconectado',kind:'error'};
@@ -96,11 +98,18 @@ function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now()}){
  return {label:at?'sem dados há mais de 6 s':'sem sinal',kind:at?'error':''};
 }
 function renderDevice(id,which,name){
- const s=state[which],info=deviceConnection({brokerOk:state.connected&&state.subscribed,status:s.status,statusAt:s.statusAt,at:s.at});
- const demo=info.kind==='live'&&s.sample?.demo?' · SIMULADO':'';
- text(id,`${name} · ${info.label}${demo}`);$(id).className=`source ${info.kind}`.trim();
+ const s=state[which];
  const ident=which==='command'?state.config.commandDevice:state.config.sensorDevice;
- $(id).title=`${ident} · ${s.at?`última telemetria ${new Date(s.at).toLocaleTimeString('pt-BR')}`:'nenhuma telemetria recebida'}`;
+ const firmware=window.iotmotorFirmwareStatus?.(ident)||null;
+ const info=deviceConnection({
+  brokerOk:state.connected&&state.subscribed,
+  status:s.status,statusAt:s.statusAt,at:s.at,
+  firmwareState:firmware?.state||''
+ });
+ const demo=info.kind==='live'&&s.sample?.demo&&!firmware?' · SIMULADO':'';
+ text(id,`${name} · ${info.label}${demo}`);$(id).className=`source ${info.kind}`.trim();
+ const ota=firmware?.phase?` · OTA: ${firmware.phase}`:'';
+ $(id).title=`${ident} · ${s.at?`última telemetria ${new Date(s.at).toLocaleTimeString('pt-BR')}`:'nenhuma telemetria recebida'}${ota}`;
 }
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
 function motorVisualState({brokerReady,commandFresh,motorOn}){
