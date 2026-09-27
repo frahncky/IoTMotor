@@ -69,10 +69,10 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     final double startupSeconds = _startupSeconds(widget.startType);
     if (running) {
       _startupElapsed += dt;
-      _speed = math.min(1, _speed + dt / startupSeconds);
+      _speed = math.min(1.0, _speed + dt / startupSeconds).toDouble();
     } else {
       _startupElapsed = 0;
-      _speed = math.max(0, _speed - dt / 3.6);
+      _speed = math.max(0.0, _speed - dt / 3.6).toDouble();
     }
 
     double effectiveSpeed = _smoothstep(_speed);
@@ -255,7 +255,7 @@ class _MotorPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final double scale = math.min(size.width / 340, size.height / 165);
+    final double scale = math.min(size.width / 340, size.height / 165).toDouble();
     final Offset origin = Offset(
       (size.width - 340 * scale) / 2,
       (size.height - 165 * scale) / 2,
