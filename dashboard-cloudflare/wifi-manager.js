@@ -280,11 +280,9 @@ if (typeof document !== 'undefined') (() => {
     const livre = connected && Boolean(placa) && !pendenteDe(dev) && noAr();
     $('apSaveBtn').disabled = !livre || (!$('apOpen').checked && !placa.pubkey);
     $('apOpenNow').disabled = !livre;
-    // Sem capabilities ainda permitimos atualizar (pode ser firmware antigo).
-    // Se a versão já é a publicada, o botão fica desativado.
-    const precisaAtualizar = minha?.atualizar ?? true;
-    $('wifiUpdateFw').disabled =
-      !connected || Boolean(pendenteDe(dev)) || !noAr() || !precisaAtualizar;
+    // Atualizar firmware fica sempre clicável. O clique explica se a
+    // placa está offline, em dia ou já atualizando, em vez de deixar o botão cinza.
+    $('wifiUpdateFw').disabled = false;
     $('wifiRestart').disabled = !connected || Boolean(pendenteDe(dev)) || !noAr();
   }
   let apMostrada = '';
@@ -386,6 +384,29 @@ if (typeof document !== 'undefined') (() => {
 
   $('wifiUpdateFw').addEventListener('click', () => {
     const dev = dispositivos[selecionado];
+    const p = pendenteDe(dev);
+    const indice = dispositivos.indexOf(dev);
+    const minha = indice >= 0 && versoes[dev] !== undefined
+      ? situacaoFirmware(versoes[dev], FIRMWARE_PUBLICADO[indice], indice === 0)
+      : null;
+
+    if (!connected || !client?.connected) {
+      aviso('Conecte ao MQTT para atualizar o firmware.');
+      return;
+    }
+    if (p?.acao === 'update') {
+      aviso(`Atualização de ${nomeDaPlaca().toLowerCase()} já está em andamento.`);
+      return;
+    }
+    if (estados[dev] === 'offline') {
+      aviso(`${nomeDaPlaca()} está offline. Aguarde a placa reconectar para atualizar.`);
+      return;
+    }
+    if (minha && !minha.atualizar) {
+      aviso(`${nomeDaPlaca()}: firmware já está atualizado (${versoes[dev]}).`);
+      return;
+    }
+
     if (!confirm(`A placa ${dev} vai baixar o firmware publicado no GitHub e reiniciar (cerca de 1 minuto fora do ar).\n\n` +
                  'A placa de comandos recusa se houver contatores ligados.\n\nContinuar?')) return;
     delete atualizados[dev];
