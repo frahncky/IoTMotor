@@ -73,7 +73,10 @@ function abaWifi() {
     device_id: placa, connected: 'IFMA_IOT', max: 8,
     networks: [{ssid: 'IFMA_IOT', open: true}]
   }));
-  return {no, cliente, enviar, redes};
+  return {
+    no, cliente, enviar, redes,
+    firmwareStatus: dev => contexto.window.iotmotorFirmwareStatus?.(dev) || null
+  };
 }
 
 test('placa offline nao aparece como conectada: a lista retida fica no broker', () => {
@@ -198,6 +201,7 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
     accepted: true, reason: 'baixando firmware'
   }));
   assert.match(h.no('wifiFirmware').textContent, /Atualizando firmware/);
+  assert.equal(h.firmwareStatus('esp32-01')?.state, 'updating');
   h.enviar('iotmotor/esp32-01/status', 'offline');
   assert.match(h.no('wifiStatus').textContent, /Atualizando firmware.*reiniciando e reconectando/);
   assert.doesNotMatch(h.no('wifiStatus').textContent, /desligada ou fora da rede/);
@@ -209,6 +213,7 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
   assert.match(h.no('wifiFeedback').textContent, /Atualização .*concluída/);
   assert.match(h.no('wifiFirmware').textContent, /Atualizado · Conectado/);
   assert.match(h.no('wifiStatus').textContent, /Atualizado · Conectado/);
+  assert.equal(h.firmwareStatus('esp32-01')?.state, 'updated');
 });
 
 test('OTA de uma placa não bloqueia o envio de atualização para a outra', () => {
