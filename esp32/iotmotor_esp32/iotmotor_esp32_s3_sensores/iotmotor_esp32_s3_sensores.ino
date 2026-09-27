@@ -24,6 +24,7 @@
 #define PORTAL_NOME "IoTMotor-esp32-02"
 constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
+#include "watchdog.h"
 #include "wifi_portal.h"
 #include "alarm_list.h"
 #include "comando_seguro.h"
@@ -565,7 +566,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.10-vibracao";
+  doc["firmware_version"]="s3-sensors-1.11-ota-seguro";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -932,6 +933,7 @@ void setup() {
   if(!conectarWifiS3(5000))
     Serial.println("[S3/Wi-Fi] nenhuma rede entrou no boot; continuara tentando");
   Serial.printf("[S3/boot] %s broker=%s:%u\n",DEVICE_ID,MQTT_HOST,MQTT_PORT);
+  watchdog::iniciar();  // Depois das esperas longas do boot (Wi-Fi).
 }
 
 void loop() {

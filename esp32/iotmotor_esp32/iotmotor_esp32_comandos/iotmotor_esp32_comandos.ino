@@ -139,6 +139,7 @@ void aplicarEstadoRele(uint8_t indice) {
 #define PORTAL_NOME "IoTMotor-esp32-01"
 constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "ota_update.h"
+#include "watchdog.h"
 #include "wifi_portal.h"
 // Modo instrumentacao: o LCD e os comandos consultam o estado, entao ele e
 // declarado antes dos cabecalhos que o usam.
@@ -425,7 +426,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v16-desarme";
+  doc["firmware_version"] = "v17-ota-seguro";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -673,6 +674,7 @@ void setup() {
   for (uint8_t i = 0; i < LCD_LINHAS; ++i) lcdCache[i][0] = '\0';
   atualizarLcd();
   ultimaAtualizacaoLcd = millis();
+  watchdog::iniciar();  // Depois das esperas longas do boot (Wi-Fi, portal).
 }
 
 void loop() {

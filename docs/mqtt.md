@@ -152,7 +152,7 @@ e também podem pedir explicitamente que o ESP32-01 a republique.
 **`capabilities`**
 
 ```json
-{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v16-desarme","fields":["voltage","current","power","energy","frequency","pf"]}
+{"device_id":"esp32-01","role":"actuator_mqtt","firmware_version":"v17-ota-seguro","fields":["voltage","current","power","energy","frequency","pf"]}
 ```
 
 **`motor_info`**: dados da placa do motor. Todos são opcionais; campo ausente é

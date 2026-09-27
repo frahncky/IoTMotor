@@ -11,6 +11,7 @@
 //   a senha em AES-GCM, com o SSID como dado autenticado.
 //
 // Mantenha este arquivo identico nas pastas dos dois firmwares.
+#include "watchdog.h"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
@@ -260,7 +261,10 @@ inline bool tentarRede(const Rede& rede, uint32_t esperaMs) {
   if (*rede.senha) WiFi.begin(rede.ssid, rede.senha);
   else WiFi.begin(rede.ssid);
   const unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaMs) delay(100);
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaMs) {
+    watchdog::alimentar();
+    delay(100);
+  }
   return WiFi.status() == WL_CONNECTED;
 }
 
@@ -293,7 +297,10 @@ inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
   WiFi.disconnect(false, false);
   WiFi.begin();
   const unsigned long inicio = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - inicio < curta) delay(100);
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < curta) {
+    watchdog::alimentar();
+    delay(100);
+  }
   if (WiFi.status() != WL_CONNECTED) return false;
   const String ssid = WiFi.SSID(), senha = WiFi.psk();
   const int ja = indiceDe(ssid.c_str());

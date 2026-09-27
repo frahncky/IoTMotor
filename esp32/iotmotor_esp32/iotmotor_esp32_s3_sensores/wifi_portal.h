@@ -12,12 +12,14 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include "wifi_store.h"
+#include "watchdog.h"
 
 // Abre a rede propria por "segundos". Retorna true se uma rede foi cadastrada.
 inline bool abrirPortalDeRede(uint16_t segundos) {
   const bool comSenha = *wifistore::apSenha;
   Serial.printf("[WiFi] abrindo a rede da placa \"%s\" (%s) por %u s\n", wifistore::apNome,
                 comSenha ? "com senha" : "aberta", segundos);
+  watchdog::pausar();  // Fica ate "segundos" esperando alguem cadastrar a rede.
   WiFiManager portal;
   portal.setConfigPortalTimeout(segundos);
   portal.setConfigPortalBlocking(true);
@@ -25,11 +27,13 @@ inline bool abrirPortalDeRede(uint16_t segundos) {
   portal.setBreakAfterConfig(true);
   if (!portal.startConfigPortal(wifistore::apNome, comSenha ? wifistore::apSenha : nullptr)) {
     Serial.println("[WiFi] rede da placa encerrada sem cadastro");
+    watchdog::retomar();
     return false;
   }
   // Mesmo se a nova rede ainda nao conectou, ela entra no topo da lista.
   const bool ok = wifistore::adicionar(WiFi.SSID().c_str(), WiFi.psk().c_str(), 0);
   Serial.printf("[WiFi] rede %s %s na lista da placa\n", WiFi.SSID().c_str(),
                 ok ? "gravada" : "NAO gravada (lista cheia?)");
+  watchdog::retomar();
   return ok;
 }

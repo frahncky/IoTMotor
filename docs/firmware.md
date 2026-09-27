@@ -41,6 +41,7 @@ desta placa**) ou o app (**Configurações › Atualizar firmware**). O comando
 3. reiniciar com a versão nova, em cerca de 1 minuto.
 
 - A URL é **fixa no firmware** ([`ota_update.h`](../esp32/iotmotor_esp32/iotmotor_esp32_comandos/ota_update.h)). O comando só dispara a atualização e não escolhe de onde baixar, porque o broker é público.
+- A placa **confere o certificado** do GitHub com os certificados raiz da Mozilla que já vêm no core ESP32. Numa rede com DNS ou Wi-Fi falso, o download é recusado em vez de gravar outro programa. A data dos certificados não é conferida, então a placa atualiza mesmo sem hora do NTP.
 - O quadro de comando **recusa** atualizar com saídas ligadas: pare o motor antes.
 - Se falhar, o motivo volta no `command_ack` e a placa continua na versão antiga.
 
@@ -163,6 +164,20 @@ Dependem da hora:
 | `ota_update.h` | as duas | Atualização pela internet |
 | `relogio.h` | as duas | Hora por NTP |
 | `mqtt_websocket_client.h` | as duas | MQTT sobre WebSocket (porta 8080) |
+| `watchdog.h` | as duas | Vigia do `loop()`: travou, a placa reinicia |
 
-Os arquivos marcados "as duas" são **idênticos** nas duas pastas (o CI confere
-todos, menos o `relogio.h`). Mude nas duas ao mesmo tempo.
+Os arquivos marcados "as duas" são **idênticos** nas duas pastas: o CI falha se
+qualquer arquivo com o mesmo nome nas duas pastas for diferente. Mude nas duas
+ao mesmo tempo.
+
+## Vigia do loop (watchdog)
+
+Se o `loop()` ficar mais de 60 s sem voltar, a placa reinicia sozinha. Travado,
+o quadro também deixaria de rodar a proteção que desliga as saídas quando o
+MQTT/Wi-Fi cai; reiniciando, as saídas voltam para o repouso logo no boot.
+
+- As tentativas de Wi-Fi alimentam o vigia enquanto esperam.
+- O download do OTA e a rede própria da placa (que levam minutos e só rodam com
+  as saídas paradas) pausam o vigia.
+- O motivo do último reinício aparece no Serial (`[BOOT] motivo do ultimo
+  reinicio: watchdog de tarefa`).
