@@ -40,6 +40,7 @@ class MotorSoundService extends ChangeNotifier {
   Timer? _timer;
 
   bool _enabled = false;
+  bool _foreground = true;
   double _volume = 0.70;
   bool? _lastMotorOn;
   bool _baselinePending = true;
@@ -49,6 +50,7 @@ class MotorSoundService extends ChangeNotifier {
   String? _lastError;
 
   bool get enabled => _enabled;
+  bool get foreground => _foreground;
   double get volume => _volume;
   int get volumePercent => (_volume * 100).round();
   bool get playing => _playing;
@@ -66,6 +68,23 @@ class MotorSoundService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// O áudio só pode tocar enquanto o app estiver em primeiro plano.
+  ///
+  /// Ao sair do app, qualquer áudio é interrompido imediatamente e o próximo
+  /// estado recebido vira uma nova referência. Assim, ao voltar com o motor já
+  /// ligado, retomamos apenas o som contínuo, sem simular uma nova partida.
+  Future<void> setForeground(bool value) async {
+    if (_foreground == value) return;
+    _foreground = value;
+
+    if (!value) {
+      _baselinePending = true;
+      await _stopAll();
+    }
+
+    notifyListeners();
+  }
+
   Future<void> setEnabled(bool value) async {
     if (_enabled == value) return;
     _enabled = value;
@@ -74,7 +93,7 @@ class MotorSoundService extends ChangeNotifier {
 
     if (!value) {
       await _stopAll();
-    } else if (_lastMotorOn == true && !_baselinePending) {
+    } else if (_foreground && _lastMotorOn == true && !_baselinePending) {
       await _startContinuous(includeStartup: false);
     }
     notifyListeners();
@@ -97,6 +116,19 @@ class MotorSoundService extends ChangeNotifier {
     required bool hasConfirmedState,
     required bool motorOn,
   }) async {
+    if (!_foreground) {
+      if (connected && hasConfirmedState) {
+        _lastMotorOn = motorOn;
+      } else {
+        _lastMotorOn = null;
+      }
+      _baselinePending = true;
+      if (_playing || _testMode) {
+        await _stopAll();
+      }
+      return;
+    }
+
     if (!connected || !hasConfirmedState) {
       _baselinePending = true;
       _lastMotorOn = null;
@@ -138,6 +170,7 @@ class MotorSoundService extends ChangeNotifier {
 
   /// Teste local, como o do painel: partida, 5 s ligado e desligamento.
   Future<void> testSound() async {
+    if (!_foreground) return;
     await _startContinuous(includeStartup: true, test: true);
     if (!_testMode) return;
     final int token = _generation;
@@ -154,6 +187,7 @@ class MotorSoundService extends ChangeNotifier {
   }
 
   Future<void> _startContinuous({required bool includeStartup, bool test = false}) async {
+    if (!_foreground) return;
     _lastError = null;
     await _stopAll();
     final int token = _generation;
@@ -202,6 +236,10 @@ class MotorSoundService extends ChangeNotifier {
   }
 
   Future<void> _playShutdown() async {
+    if (!_foreground) {
+      await _stopAll();
+      return;
+    }
     _lastError = null;
     _timer?.cancel();
     final int token = ++_generation;
