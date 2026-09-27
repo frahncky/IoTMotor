@@ -7,6 +7,7 @@
 | 🔌 [Hardware](hardware.md) | Quem monta | Lista de materiais, pinos das duas placas, LED, buzzer |
 | 🔧 [Firmware](firmware.md) | Quem grava as placas | Primeira gravação, OTA, versões, partições, Wi-Fi, senha de comando |
 | 📐 [Vibração](vibracao.md) | Quem mede/valida | De LSB a mm/s RMS, filtros, RMS, montagem, faixa útil, validação e limites |
+| 🔊 [Áudio do motor](audio.md) | Quem mantém a interface | Origem Pixabay, arquivo-base, processamento, loop e arquivos derivados do app |
 | 🛠️ [Desenvolvimento](desenvolvimento.md) | Quem programa | Estrutura, testes, simuladores, CI, publicação do painel, do firmware e do app |
 
 ## Visão geral
