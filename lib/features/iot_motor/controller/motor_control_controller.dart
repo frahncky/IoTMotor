@@ -317,14 +317,17 @@ class MotorControlController extends ChangeNotifier {
     if (loadSettings) {
       await loadPersistedSettings();
     }
-    await _lerSenhaDeComando();
-    // Só grava depois de ler o que estava salvo, senão os valores padrão
-    // sobrescreveriam o arquivo assim que o app abrisse.
+    // A configuração MQTT já pode ser persistida assim que o arquivo local
+    // terminou de ser restaurado. Não deve esperar o cofre da senha de comando:
+    // em alguns aparelhos/plugins essa leitura é mais lenta e uma edição feita
+    // logo ao abrir o app poderia ser perdida.
     _settingsRestored = true;
     if (_settingsPersistRequestedBeforeRestore) {
       _settingsPersistRequestedBeforeRestore = false;
-      _scheduleSettingsPersist();
+      await _persistSettings();
     }
+
+    await _lerSenhaDeComando();
     await Future.wait([
       loadPersistedHistory(),
       loadPersistedAlerts(),
