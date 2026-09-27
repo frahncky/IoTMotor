@@ -79,6 +79,28 @@ jobs:
             echo "keyAlias=$ANDROID_KEY_ALIAS"
             echo "keyPassword=$ANDROID_KEY_PASSWORD"
           } > android/key.properties
+      - name: Version and name of this app build
+        # Cada atualizacao do app tem numero (pubspec.yaml) e nome
+        # (lib/app/versao.dart). Na PR que muda o app, o numero tem de subir.
+        run: |
+          VERSAO="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          NOME="$(sed -n "s/^const String nomeDaVersao = '\(.*\)';$/\1/p" lib/app/versao.dart)"
+          if [ -z "$VERSAO" ] || [ -z "$NOME" ]; then
+            echo "::error::Versao ($VERSAO) ou nome ($NOME) ausente: confira pubspec.yaml e lib/app/versao.dart."
+            exit 1
+          fi
+          echo "VERSAO_APP=$VERSAO" >> "$GITHUB_ENV"
+          echo "NOME_APP=$NOME" >> "$GITHUB_ENV"
+          echo "Versao do app: $VERSAO — $NOME"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch -q --depth=1 origin "${{ github.base_ref }}"
+            BASE="$(git show FETCH_HEAD:pubspec.yaml | grep '^version:' | awk '{print $2}' | cut -d+ -f1)"
+            MAIOR="$(printf '%s\n%s\n' "$BASE" "$VERSAO" | sort -V | tail -1)"
+            if [ "$VERSAO" = "$BASE" ] || [ "$MAIOR" != "$VERSAO" ]; then
+              echo "::error::Esta PR muda o app: suba o version do pubspec.yaml (hoje $VERSAO, main $BASE) e troque o nomeDaVersao em lib/app/versao.dart."
+              exit 1
+            fi
+          fi
       - name: Run app tests
         # Sem isto o APK sairia compilando mesmo com teste quebrado.
         run: flutter test
@@ -127,6 +149,7 @@ jobs:
           cat > dist/app-latest.json <<JSON
           {
             "version": "${VERSAO}",
+            "name": "${NOME_APP}",
             "build": "${IOTMOTOR_BUILD}",
             "commit": "${GITHUB_SHA::7}",
             "apk": "https://github.com/${GITHUB_REPOSITORY}/releases/download/app-latest/IoTMotor.apk"
@@ -137,4 +160,14 @@ jobs:
             gh release create app-latest --title 'App Android (ultimo build da main)' \
               --notes 'APK atualizado automaticamente a cada commit na main. Usado pela verificacao de atualizacao dentro do app.'
           gh release upload app-latest dist/IoTMotor.apk dist/app-latest.json --clobber
-          gh release edit app-latest --notes "Build de ${GITHUB_SHA::7} em $(date -u '+%Y-%m-%d %H:%M UTC')."
+          gh release edit app-latest --notes "IoTMotor ${VERSAO_APP} — ${NOME_APP}. Build de ${GITHUB_SHA::7} em $(date -u '+%Y-%m-%d %H:%M UTC')."
+          # Release com nome para cada versao (historico de versoes do app).
+          TAG="app-v${VERSAO_APP}"
+          TITULO="IoTMotor ${VERSAO_APP} — ${NOME_APP}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/IoTMotor.apk --clobber
+            gh release edit "$TAG" --title "$TITULO"
+          else
+            gh release create "$TAG" dist/IoTMotor.apk --target "$GITHUB_SHA" --title "$TITULO" \
+              --notes "Versao ${VERSAO_APP} do app Android: ${NOME_APP}. Build de ${GITHUB_SHA::7}. Para atualizar pelo proprio app, use Configuracoes > Atualizar este app."
+          fi

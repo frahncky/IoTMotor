@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/providers/esp_local_comm_provider.dart';
 import '../../../../app/providers/mqtt_profiles_provider.dart';
 import '../../../../app/providers/motor_sound_provider.dart';
 import '../../../../app/theme/app_theme.dart';
+import '../../../../app/versao.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/device_names.dart';
 import '../../models/mqtt_connection_config.dart';
@@ -1051,6 +1053,14 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                 ),
               ),
             ),
+        // Versão instalada do app, com o nome dela.
+        FutureBuilder<PackageInfo>(
+          future: PackageInfo.fromPlatform(),
+          builder: (BuildContext context, AsyncSnapshot<PackageInfo> pacote) => Text(
+            'App: versão ${pacote.data?.version ?? '…'} — $nomeDaVersao.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.bodySoft),
+          ),
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 10,
@@ -1107,6 +1117,12 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     );
   }
 
+  /// "2.1.0 — Alertas no celular"; sem o número de build, que só o CI usa.
+  static String _comNome(String versao, String nome) {
+    final String numero = versao.split('+').first;
+    return nome.isEmpty ? numero : '$numero — $nome';
+  }
+
   /// Verifica, baixa e entrega o APK ao instalador do Android, sem navegador.
   ///
   /// O sistema sempre pede a confirmação final: nenhum app se instala sozinho.
@@ -1120,7 +1136,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'O app já está na versão publicada (${info.publishedVersion}).',
+              'O app já está na versão publicada (${_comNome(info.publishedVersion, info.publishedName)}).',
             ),
           ),
         );
@@ -1132,8 +1148,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
             (BuildContext dialogContext) => AlertDialog(
               title: const Text('Nova versão do app'),
               content: Text(
-                'Publicada: ${info.publishedVersion} (build ${info.publishedBuild}, commit ${info.commit}).\n'
-                'Instalada: ${info.installedVersion}'
+                'Publicada: ${_comNome(info.publishedVersion, info.publishedName)} (build ${info.publishedBuild}, commit ${info.commit}).\n'
+                'Instalada: ${_comNome(info.installedVersion, nomeDaVersao)}'
                 '${info.installedBuild.isEmpty ? " (sem selo de build)" : " (build ${info.installedBuild})"}.\n\n'
                 'O app baixa a versão nova e abre a instalação do Android. '
                 'Na primeira vez, autorize "instalar apps desconhecidos".',
