@@ -114,7 +114,8 @@ if (typeof document !== 'undefined') (() => {
     const meiaNoite = new Date(x0); meiaNoite.setHours(24, 0, 0, 0);
     for (let t = meiaNoite.getTime(); t < agora; t += DIA_MS) {
       grafico.append(svg('line', {x1: x(t), x2: x(t), y1: T, y2: H - B, class: 'gridline'}));
-      grafico.append(svg('text', {x: x(t) + 3, y: H - 8},
+      // Sem rótulo colado na borda direita: ele sairia cortado.
+      if (x(t) + 40 < W) grafico.append(svg('text', {x: x(t) + 3, y: H - 8},
         new Date(t).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})));
     }
     for (const v of [min, max]) grafico.append(svg('text', {x: 4, y: y(v) + 4}, numeroBr(v, g.barras ? 0 : g.casas)));
