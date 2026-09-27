@@ -310,6 +310,16 @@ baixa o APK e o Android pede a confirmação.
 com TLS desligado: é o mesmo caminho das placas e passa em rede que bloqueia
 MQTT. Cada celular usa um *client id* próprio; dois aparelhos com o mesmo id se
 derrubam no broker.
+
+Na barra superior e em **Configurações › Conexão**, o app resume separadamente
+hardware e interfaces de comando:
+
+- **Dispositivos:** `2 · Quadro 1 · Sensores 1`;
+- **Clientes:** `2 · App 1 · Web 1`.
+
+Os clientes App/Web anunciam presença a cada 3 s; quem deixa de anunciar sai da
+contagem após aproximadamente 10 s. As duas placas não entram em **Clientes**:
+elas aparecem somente em **Dispositivos**.
 **Testar caminhos de conexão** mostra qual endereço passa na rede em que você
 está.
 
