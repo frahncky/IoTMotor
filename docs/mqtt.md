@@ -48,7 +48,7 @@ caminho dos bytes.
 
 | Tópico | Quem publica | Retido | Conteúdo |
 | --- | --- | :---: | --- |
-| `iotmotor/<placa>/telemetry` | placa, a cada 1 s | | Medições e estado ([quadro](#telemetria-do-quadro-de-comando), [sensores](#telemetria-dos-sensores-do-motor)) |
+| `iotmotor/<placa>/telemetry` | placa, conforme `publish_ms` (padrão 1 s) | | Medições e estado ([quadro](#telemetria-do-quadro-de-comando), [sensores](#telemetria-dos-sensores-do-motor)) |
 | `iotmotor/<placa>/status` | placa | ✔ | `online` / `offline` (texto puro; `offline` é a última vontade da conexão) |
 | `iotmotor/<placa>/capabilities` | placa | ✔ | Versão do firmware e grandezas publicadas |
 | `iotmotor/<placa>/command` | painel, app | | [Comandos](#como-enviar-um-comando) |
@@ -57,6 +57,7 @@ caminho dos bytes.
 | `iotmotor/<placa>/wifi` | placa | ✔ | Redes Wi-Fi gravadas (sem senhas) |
 | `iotmotor/esp32-01/profiles` | quadro | ✔ | Partidas gravadas |
 | `iotmotor/esp32-01/motor_info` | quadro | ✔ | Dados da placa do motor e manutenção |
+| `iotmotor/system/acquisition` | quadro | ✔ | Configuração única de aquisição, publicação, gráficos e registro |
 | `iotmotor/esp32-02/alarms` | sensores | ✔ | Lista de alarmes |
 | `iotmotor/esp32-02/alarm_log` | sensores | ✔ | Últimos 10 disparos |
 | `iotmotor/esp32-02/history/<0..6>` | sensores | ✔ | Histórico por hora, um tópico por dia |
@@ -66,8 +67,9 @@ os alarmes de corrente, tensão e partidas tocam no LED e no buzzer dela.
 
 ## Telemetria do quadro de comando
 
-`iotmotor/esp32-01/telemetry`, a cada segundo. Campos sem leitura válida são
-omitidos, nunca inventados.
+`iotmotor/esp32-01/telemetry`, conforme `publish_ms` da configuração de aquisição
+(padrão 1 s). Campos sem leitura válida são omitidos, nunca inventados. O PZEM
+é lido separadamente conforme `pzem_read_ms`.
 
 | Campo | Tipo | Significado |
 | --- | --- | --- |
@@ -96,7 +98,9 @@ omitidos, nunca inventados.
 
 ## Telemetria dos sensores do motor
 
-`iotmotor/esp32-02/telemetry`, a cada segundo.
+`iotmotor/esp32-02/telemetry`, conforme o mesmo `publish_ms` publicado pelo
+ESP32-01 (padrão 1 s). A aquisição física da vibração continua fixa em 1000 Hz,
+com janela RMS de 1 s.
 
 | Campo | Tipo | Significado |
 | --- | --- | --- |
@@ -105,7 +109,7 @@ omitidos, nunca inventados.
 | `vibration_axis` | texto | Eixo do MPU6050 com a maior velocidade: `x`, `y` ou `z` |
 | `temperature` | número | °C do DS18B20 |
 | `mpu_ok`, `temperature_ok` | booleano | Cada sensor respondendo |
-| `sample_count` | número | Amostras do MPU6050 no último segundo (cerca de 1000) |
+| `sample_count` | número | Amostras usadas na janela RMS mais recente do MPU6050 (cerca de 1000) |
 | `alarm_enabled` | booleano | Interruptor geral dos alarmes |
 | `alarm_active` | booleano | Algum alarme disparado ou sensor faltando |
 | `alarms_firing` | lista | IDs dos alarmes disparados agora |
@@ -117,6 +121,33 @@ omitidos, nunca inventados.
 
 O broker guarda a última mensagem de cada um destes tópicos e entrega assim que
 alguém assina. É por isso que o painel e o app abrem já preenchidos.
+
+**`system/acquisition`**: configuração única do sistema, publicada pelo
+ESP32-01 e retida no broker. O ESP32-01 também grava os quatro intervalos
+ajustáveis em NVS.
+
+```json
+{"v":1,"source":"esp32-01","revision":7,
+ "pzem_read_ms":1000,"publish_ms":2000,"chart_ms":5000,"record_ms":5000,
+ "vibration_hz":1000,"vibration_window_ms":1000,
+ "history_bucket_s":3600,"history_retention_days":7}
+```
+
+| Campo | Significado |
+| --- | --- |
+| `revision` | Revisão crescente da configuração gravada |
+| `pzem_read_ms` | Intervalo de leitura elétrica do PZEM, 1000–10000 ms |
+| `publish_ms` | Intervalo de publicação MQTT das duas placas, 1000–60000 ms |
+| `chart_ms` | Janela temporal dos pontos dos gráficos, de `publish_ms` até 60000 ms |
+| `record_ms` | Cadência lógica de registro local, de `publish_ms` até 600000 ms |
+| `vibration_hz` | Frequência física fixa da aquisição de vibração: 1000 Hz |
+| `vibration_window_ms` | Janela RMS fixa da vibração: 1000 ms |
+| `history_bucket_s` | Consolidação fixa do histórico da placa: 3600 s |
+| `history_retention_days` | Retenção fixa do histórico da placa: 7 dias |
+
+As relações válidas são `pzem_read_ms <= publish_ms <= chart_ms` e
+`publish_ms <= record_ms`. Painel e app carregam a mensagem retida ao conectar
+e também podem pedir explicitamente que o ESP32-01 a republique.
 
 **`capabilities`**
 
@@ -226,6 +257,8 @@ mosquitto_pub -h test.mosquitto.org -t iotmotor/esp32-01/command \
 | `motor_info_set` | `motor` | Grava os dados do motor (formato de `motor_info`, sem os campos `maint_done_*`) |
 | `maintenance_done` | — | Registra a manutenção agora: o lembrete volta a contar do horímetro atual |
 | `motor_counters_reset` | — | Zera horímetro, partidas e a contagem da manutenção. Só com o motor parado |
+| `acquisition_config_get` | — | Republica `iotmotor/system/acquisition` com a configuração oficial gravada no ESP32-01 |
+| `acquisition_config_set` | `config` | Valida, grava em NVS, incrementa `revision` e republica a configuração de aquisição |
 
 **Condições do `start`.** A placa recusa se:
 
@@ -240,6 +273,16 @@ partida, contados a partir do comando. Todas as saídas caem sozinhas quando:
 
 - passa a duração máxima do ensaio (padrão 5 min);
 - a rede fica fora por mais que `link_grace` (padrão 15 s).
+
+**Validação do `acquisition_config_set`:**
+
+- `pzem_read_ms`: 1000 a 10000 ms;
+- `publish_ms`: 1000 a 60000 ms;
+- `pzem_read_ms <= publish_ms`;
+- `chart_ms`: de `publish_ms` até 60000 ms;
+- `record_ms`: de `publish_ms` até 600000 ms.
+
+Os campos fixos de vibração e histórico não são alterados por esse comando.
 
 **Validação do `motor_info_set`:**
 
