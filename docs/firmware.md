@@ -89,6 +89,37 @@ senha, só aceitam comando cifrado com AES-256-GCM ([formato](mqtt.md#comandos-c
 - O painel e o app mostram o campo **Senha de comando** sozinhos assim que uma placa passa a exigir. A telemetria traz `secure: true`.
 - Se a senha se perder, a saída é regravar as placas por cabo.
 
+## Aquisição e sincronização dos dados
+
+A configuração de aquisição é centralizada no **ESP32-01**. Ela fica gravada em
+NVS, no namespace `iot-acq`, e é publicada de forma retida em
+`iotmotor/system/acquisition`. Painel web, app e ESP32-S3 usam essa mensagem
+como configuração oficial.
+
+Os parâmetros ajustáveis são:
+
+| Campo | Faixa | Função |
+| --- | --- | --- |
+| `pzem_read_ms` | 1 a 10 s | Intervalo de leitura elétrica do PZEM no ESP32-01 |
+| `publish_ms` | 1 a 60 s | Intervalo de publicação MQTT das duas placas |
+| `chart_ms` | de `publish_ms` até 60 s | Janela temporal usada pelos gráficos |
+| `record_ms` | de `publish_ms` até 10 min | Cadência lógica de registro no painel/app |
+
+Regras: `pzem_read_ms <= publish_ms <= chart_ms` e
+`publish_ms <= record_ms`.
+
+A vibração não acompanha esses intervalos de aquisição elétrica: o MPU6050
+continua sendo lido a **1000 Hz**, com janela RMS fixa de **1 s**. Também são
+fixos o histórico consolidado em janelas de 1 h e a retenção de 7 dias.
+
+Quando `publish_ms` muda, o ESP32-S3 recebe o tópico retido e passa a publicar
+sua telemetria na mesma cadência. `chart_ms` e `record_ms` são preservados
+pelo ESP32-01 para que web e app usem a mesma política.
+
+A configuração pode ser consultada e alterada pelos comandos
+`acquisition_config_get` e `acquisition_config_set`, descritos em
+[Referência MQTT](mqtt.md#comandos-do-quadro-de-comando).
+
 ## Hora das medições
 
 As duas placas acertam o relógio por NTP assim que entram na rede (`relogio.h`),

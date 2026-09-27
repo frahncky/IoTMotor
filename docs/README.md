@@ -2,8 +2,8 @@
 
 | Documento | Para quem | O que tem |
 | --- | --- | --- |
-| 📘 [Guia de uso](guia-de-uso.md) | Quem opera a bancada | Conectar, dar partida, alarmes, dados do motor, manutenção, histórico, atualizar as placas, app |
-| 📡 [Referência MQTT](mqtt.md) | Quem integra outro sistema | Tópicos, campos da telemetria, mensagens retidas, cada comando e os motivos de recusa |
+| 📘 [Guia de uso](guia-de-uso.md) | Quem opera a bancada | Conectar, dar partida, aquisição sincronizada, alarmes, dados do motor, manutenção, histórico, atualizar as placas e app |
+| 📡 [Referência MQTT](mqtt.md) | Quem integra outro sistema | Tópicos, telemetria, configuração de aquisição, mensagens retidas, comandos e motivos de recusa |
 | 🔌 [Hardware](hardware.md) | Quem monta | Lista de materiais, pinos das duas placas, LED, buzzer |
 | 🔧 [Firmware](firmware.md) | Quem grava as placas | Primeira gravação, OTA, versões, partições, Wi-Fi, senha de comando |
 | 🛠️ [Desenvolvimento](desenvolvimento.md) | Quem programa | Estrutura, testes, simuladores, CI, publicação do painel, do firmware e do app |
@@ -20,6 +20,7 @@ flowchart LR
     S -. mede .- M
 ```
 
-- O **quadro de comando** mede a energia (PZEM-004T), aciona os contatores e guarda as partidas, os dados do motor e o horímetro.
+- O **quadro de comando** mede a energia (PZEM-004T), aciona os contatores, guarda as partidas, os dados do motor e o horímetro e é a autoridade da configuração de aquisição sincronizada.
 - A **placa de sensores** mede vibração e temperatura, cuida dos alarmes (LED e buzzer) e guarda o histórico de 7 dias.
-- O **painel** e o **app** só leem e comandam pelo broker. Tudo o que precisa sobreviver fica gravado nas placas.
+- O **painel** e o **app** trocam telemetria e comandos pelo broker; as configurações operacionais que precisam valer para todo o sistema ficam gravadas nas placas.
+- A configuração de aquisição fica gravada no ESP32-01 e é compartilhada com web, app e ESP32-S3; a vibração permanece em 1000 Hz com janela RMS de 1 s.
