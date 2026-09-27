@@ -105,11 +105,11 @@ com janela RMS de 1 s.
 | Campo | Tipo | Significado |
 | --- | --- | --- |
 | `device_id`, `seq`, `ts`, `secure` | | Como no quadro |
-| `vibration_mms` | número | Vibração: velocidade RMS em mm/s (ISO 10816-3), 10 Hz a ~180 Hz, no pior eixo (`s3-sensors-1.10` em diante) |
+| `vibration_mms` | número | Velocidade de vibração RMS em mm/s, faixa útil aproximada de 10 a 180 Hz, maior valor entre X/Y/Z (`s3-sensors-1.10` em diante); veja [metodologia](vibracao.md) |
 | `vibration_axis` | texto | Eixo do MPU6050 com a maior velocidade: `x`, `y` ou `z` |
 | `temperature` | número | °C do DS18B20 |
 | `mpu_ok`, `temperature_ok` | booleano | Cada sensor respondendo |
-| `sample_count` | número | Amostras usadas na janela RMS mais recente do MPU6050 (cerca de 1000) |
+| `sample_count` | número | Amostras úteis usadas na janela RMS mais recente; janelas com menos de 500 não são aceitas como válidas |
 | `alarm_enabled` | booleano | Interruptor geral dos alarmes |
 | `alarm_active` | booleano | Algum alarme disparado ou sensor faltando |
 | `alarms_firing` | lista | IDs dos alarmes disparados agora |

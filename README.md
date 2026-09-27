@@ -26,7 +26,7 @@ Painel web, app Android e dois ESP32 integrados por MQTT.
 | | |
 | --- | --- |
 | ⚡ **Monitoramento elétrico** | Tensão, corrente, potências, fator de potência, frequência e energia pelo PZEM-004T. |
-| 🌡️ **Condição do motor** | Temperatura por DS18B20 e vibração por MPU6050, com velocidade RMS em mm/s, classificação de condição e alarmes configuráveis. |
+| 🌡️ **Condição do motor** | Temperatura por DS18B20 e vibração por MPU6050, com velocidade RMS em mm/s, tendência de condição, alarmes configuráveis e metodologia documentada. |
 | ⏱️ **Aquisição sincronizada** | O ESP32-01 centraliza os intervalos de leitura elétrica, publicação MQTT, pontos dos gráficos e registro; web, app e ESP32-S3 usam a mesma configuração. |
 | ▶️ **Comando e partidas** | Acionamento remoto e perfis como partida direta e estrela-triângulo, gravados no quadro de comando. |
 | 🧾 **Uso e manutenção** | Dados de placa, carga em % da corrente nominal, horímetro, partidas e lembrete de manutenção. |
@@ -111,6 +111,7 @@ docs/                   Documentação técnica e imagens
 | 📡 [Referência MQTT](docs/mqtt.md) | Tópicos, telemetria e comandos |
 | 🔌 [Hardware](docs/hardware.md) | Materiais e ligações das duas placas |
 | 🔧 [Firmware](docs/firmware.md) | Gravar, atualizar e configurar as placas |
+| 📐 [Vibração](docs/vibracao.md) | Cálculo de mm/s RMS, filtros, montagem, validação e limitações |
 | 🛠️ [Desenvolvimento](docs/desenvolvimento.md) | Estrutura, testes, CI e publicação |
 
 ## 🎓 Escopo do projeto

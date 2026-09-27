@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 360" role="img" aria-labelledby="title desc">
+<title id="title">Cadeia de processamento da vibração</title>
+<desc id="desc">Fluxo do MPU6050 até a velocidade RMS em milímetros por segundo.</desc>
+<rect width="1400" height="360" rx="24" fill="#f7fafc"/>
+<style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#153746}.h{font-size:24px;font-weight:700}.s{font-size:17px}.box{fill:#fff;stroke:#2c6275;stroke-width:2}.accent{fill:#fff7e6;stroke:#c88719;stroke-width:2}.arrow{stroke:#315d6f;stroke-width:3;fill:none;marker-end:url(#a)}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#315d6f"/></marker></defs>
+<text x="50" y="48" class="h">Da aceleração do MPU6050 à velocidade RMS em mm/s</text>
+<g transform="translate(40,105)">
+<rect class="box" width="150" height="105" rx="14"/><text x="75" y="38" text-anchor="middle" class="h">MPU6050</text><text x="75" y="70" text-anchor="middle" class="s">XYZ · ±4 g</text><text x="75" y="94" text-anchor="middle" class="s">1000 Hz</text>
+</g>
+<path class="arrow" d="M195 157H235"/>
+<g transform="translate(240,105)">
+<rect class="box" width="160" height="105" rx="14"/><text x="80" y="35" text-anchor="middle" class="h">Conversão</text><text x="80" y="68" text-anchor="middle" class="s">LSB → g</text><text x="80" y="92" text-anchor="middle" class="s">g → m/s²</text>
+</g>
+<path class="arrow" d="M405 157H445"/>
+<g transform="translate(450,105)">
+<rect class="accent" width="170" height="105" rx="14"/><text x="85" y="34" text-anchor="middle" class="h">HPF 1</text><text x="85" y="67" text-anchor="middle" class="s">Butterworth</text><text x="85" y="91" text-anchor="middle" class="s">2ª ordem · 8 Hz</text>
+</g>
+<path class="arrow" d="M625 157H665"/>
+<g transform="translate(670,105)">
+<rect class="box" width="165" height="105" rx="14"/><text x="82.5" y="34" text-anchor="middle" class="h">Integração</text><text x="82.5" y="67" text-anchor="middle" class="s">trapezoidal</text><text x="82.5" y="91" text-anchor="middle" class="s">a(t) → v(t)</text>
+</g>
+<path class="arrow" d="M840 157H880"/>
+<g transform="translate(885,105)">
+<rect class="accent" width="170" height="105" rx="14"/><text x="85" y="34" text-anchor="middle" class="h">HPF 2</text><text x="85" y="67" text-anchor="middle" class="s">Butterworth</text><text x="85" y="91" text-anchor="middle" class="s">reduz deriva</text>
+</g>
+<path class="arrow" d="M1060 157H1100"/>
+<g transform="translate(1105,105)">
+<rect class="box" width="125" height="105" rx="14"/><text x="62.5" y="34" text-anchor="middle" class="h">RMS</text><text x="62.5" y="67" text-anchor="middle" class="s">janela</text><text x="62.5" y="91" text-anchor="middle" class="s">de 1 s</text>
+</g>
+<path class="arrow" d="M1235 157H1270"/>
+<g transform="translate(1275,105)">
+<rect class="box" width="95" height="105" rx="14"/><text x="47.5" y="34" text-anchor="middle" class="h">Saída</text><text x="47.5" y="67" text-anchor="middle" class="s">maior</text><text x="47.5" y="91" text-anchor="middle" class="s">X/Y/Z</text>
+</g>
+<text x="700" y="275" text-anchor="middle" class="s">A telemetria publica vibration_mms e vibration_axis; a frequência MQTT não altera a aquisição física de 1000 Hz.</text>
+</svg>

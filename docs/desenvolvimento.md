@@ -31,7 +31,7 @@ lib/                    App Flutter
     view/                 Abas Início, Histórico, Alertas e Configurações
 test/                   Testes do app (flutter test)
 tool/                   Simuladores das placas em Dart
-docs/                   Esta documentação
+docs/                   Documentação técnica, incluindo vibracao.md e imagens SVG
 ```
 
 ## Rodar o painel localmente
@@ -142,6 +142,7 @@ telemetria, que não é cifrada.
 - [ ] Se mudar `pzem_read_ms`, `publish_ms`, `chart_ms` ou `record_ms`, mantenha as validações equivalentes no firmware, web e app.
 - [ ] O ESP32-01 continua sendo a fonte oficial: grava em NVS e publica `<prefixo>/system/acquisition` como mensagem retida.
 - [ ] O ESP32-S3 deve continuar assinando a configuração e aplicar somente a cadência de publicação; a aquisição de vibração fica em 1000 Hz / janela RMS de 1 s.
+- [ ] Mudou `vibracao.h`? Atualize [vibracao.md](vibracao.md), especialmente filtros, taxa, janela, critérios de validade e faixa útil.
 - [ ] Gráficos não devem criar amostras sintéticas. A janela temporal deve usar dados realmente recebidos.
 - [ ] Atualize [mqtt.md](mqtt.md), [guia-de-uso.md](guia-de-uso.md) e [firmware.md](firmware.md) quando o contrato mudar.
 
