@@ -205,7 +205,8 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
 
   Widget _buildAppBarContent(MotorControlController controller) {
     final String tickerText =
-        'Dispositivos conectados: ${controller.connectedDevicesSummary} | '
+        'Dispositivos: ${controller.devicesPresenceSummary} | '
+        'Clientes: ${controller.commandClientsSummary} | '
         'Broker: ${controller.brokerStatusLabel} | '
         'Telemetria: ${controller.telemetryStatusSummary} | '
         'Alertas: ${controller.alertStatusSummary} |';
