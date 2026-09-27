@@ -21,8 +21,40 @@ class MotorControlPage extends ConsumerStatefulWidget {
   ConsumerState<MotorControlPage> createState() => _MotorControlPageState();
 }
 
-class _MotorControlPageState extends ConsumerState<MotorControlPage> {
+class _MotorControlPageState extends ConsumerState<MotorControlPage>
+    with WidgetsBindingObserver {
   int _selectedTab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(ref.read(motorSoundServiceProvider).setForeground(true));
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool foreground = state == AppLifecycleState.resumed;
+    final sound = ref.read(motorSoundServiceProvider);
+    unawaited(sound.setForeground(foreground));
+
+    if (foreground) {
+      final controller = ref.read(motorControlControllerProvider);
+      unawaited(
+        sound.syncConfirmedState(
+          connected: controller.isConnected,
+          hasConfirmedState: controller.benchRelays != null,
+          motorOn: controller.isMotorRunning,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
