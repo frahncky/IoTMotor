@@ -11,7 +11,7 @@ dashboard-cloudflare/   Painel web: HTML e JavaScript puros, sem build
   local-controls.js       Partidas gravadas no quadro (lista e editor)
   remote-controls.js      Ligar/Desligar, segurança do ensaio, modo instrumentação
   motor-animation.js      Desenho animado do motor
-  motor-sound.js          Som do motor (simulação local)
+  motor-sound.js          Som do motor (gravação Pixabay + síntese de fallback)
   hardware-mirror.js      Espelho do LCD e dos contatores (só leitura)
   alarm-controls.js       Alarmes da placa e alarmes sugeridos
   motor-info.js           Dados do motor e manutenção
@@ -31,7 +31,7 @@ lib/                    App Flutter
     view/                 Abas Início, Histórico, Alertas e Configurações
 test/                   Testes do app (flutter test)
 tool/                   Simuladores das placas em Dart
-docs/                   Documentação técnica, incluindo vibracao.md e imagens SVG
+docs/                   Documentação técnica, incluindo vibracao.md, audio.md e imagens SVG
 ```
 
 ## Rodar o painel localmente
@@ -153,3 +153,7 @@ telemetria, que não é cifrada.
 - [ ] Comando novo? Documente em [mqtt.md](mqtt.md). Placa antiga responde `unknown_action`, e o painel traduz isso em "atualize a placa".
 - [ ] Campo novo na telemetria do quadro? A placa de sensores lê essa telemetria: confira se o tamanho cabe (ela aceita até 1800 bytes).
 - [ ] Confira que as duas placas compilam na PR (`esp32-compile.yml`).
+
+## Proveniência do áudio do motor
+
+A gravação-base `dashboard-cloudflare/motor-ligado.mp3` foi obtida no Pixabay, a partir da busca de efeitos sonoros **electric motor**. A origem, licença, processamento e arquivos derivados do app estão registrados em [audio.md](audio.md) e em [../THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
