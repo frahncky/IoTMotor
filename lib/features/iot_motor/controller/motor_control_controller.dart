@@ -1877,6 +1877,141 @@ class MotorControlController extends ChangeNotifier {
   void handlePayloadForTest(String topic, String payload) =>
       _handlePayload(topic, payload);
 
+  void _applyDataAcquisitionPayload(String deviceId, String payload) {
+    if (deviceId.isEmpty) return;
+    try {
+      final Object? decoded = jsonDecode(payload);
+      if (decoded is! Map<String, dynamic>) return;
+      _dataConfigByDevice[deviceId] = decoded;
+
+      Map<String, dynamic>? command;
+      Map<String, dynamic>? sensor;
+      for (final Map<String, dynamic> data in _dataConfigByDevice.values) {
+        final String role = '${data['role'] ?? ''}';
+        if (role == 'command') command = data;
+        if (role == 'sensor') sensor = data;
+      }
+
+      DataAcquisitionConfig next = dataAcquisitionConfig;
+      if (command != null) {
+        next = next.copyWith(
+          pzemIntervalMs:
+              DataAcquisitionConfig.readInt(command, 'pzem_interval_ms') ??
+              next.pzemIntervalMs,
+        );
+      }
+      if (sensor != null) {
+        next = next.copyWith(
+          mqttIntervalMs:
+              DataAcquisitionConfig.readInt(sensor, 'mqtt_interval_ms') ??
+              next.mqttIntervalMs,
+          vibrationWindowMs:
+              DataAcquisitionConfig.readInt(sensor, 'vibration_window_ms') ??
+              next.vibrationWindowMs,
+          chartIntervalMs:
+              DataAcquisitionConfig.readInt(sensor, 'chart_interval_ms') ??
+              next.chartIntervalMs,
+          recordIntervalMs:
+              DataAcquisitionConfig.readInt(sensor, 'record_interval_ms') ??
+              next.recordIntervalMs,
+        );
+      }
+      dataAcquisitionConfig = next;
+
+      final int? mqttCommand =
+          command == null
+              ? null
+              : DataAcquisitionConfig.readInt(command, 'mqtt_interval_ms');
+      final int? mqttSensor =
+          sensor == null
+              ? null
+              : DataAcquisitionConfig.readInt(sensor, 'mqtt_interval_ms');
+      dataAcquisitionSynchronized =
+          command != null &&
+          sensor != null &&
+          mqttCommand != null &&
+          mqttCommand == mqttSensor;
+      _notify();
+    } catch (_) {
+      // A placa republica o estado retido; payload ilegivel e ignorado.
+    }
+  }
+
+  /// Grava a mesma política técnica nas duas placas. Os clientes não assumem
+  /// sucesso: o estado só fica sincronizado quando os dois data_config retidos
+  /// voltam do firmware.
+  Future<bool> applyDataAcquisitionConfig(DataAcquisitionConfig config) async {
+    final String? erro = config.validationMessage;
+    if (erro != null) {
+      _pendingMessage = erro;
+      _notify();
+      return false;
+    }
+    if (!isConnected) {
+      _pendingMessage = 'Conecte-se ao MQTT para sincronizar a aquisição.';
+      _notify();
+      return false;
+    }
+
+    final String commandDevice = _benchDeviceId ?? 'esp32-01';
+    String sensorDevice = alarmsDeviceId ?? '';
+    if (sensorDevice.isEmpty) {
+      for (final MapEntry<String, Map<String, dynamic>> entry
+          in _dataConfigByDevice.entries) {
+        if ('${entry.value['role'] ?? ''}' == 'sensor') {
+          sensorDevice = entry.key;
+          break;
+        }
+      }
+    }
+    if (sensorDevice.isEmpty) sensorDevice = 'esp32-02';
+
+    final String? cmdSeq = _service.sendRawCommand(
+      deviceId: commandDevice,
+      action: 'data_config_set',
+      body: <String, dynamic>{
+        'pzem_interval_ms': config.pzemIntervalMs,
+        'mqtt_interval_ms': config.mqttIntervalMs,
+      },
+    );
+    final String? sensorSeq = _service.sendRawCommand(
+      deviceId: sensorDevice,
+      action: 'data_config_set',
+      body: <String, dynamic>{
+        'mqtt_interval_ms': config.mqttIntervalMs,
+        'vibration_window_ms': config.vibrationWindowMs,
+        'chart_interval_ms': config.chartIntervalMs,
+        'record_interval_ms': config.recordIntervalMs,
+      },
+    );
+    if (cmdSeq == null || sensorSeq == null) {
+      _pendingMessage =
+          _service.seal.impedimento(commandDevice) ??
+          _service.seal.impedimento(sensorDevice) ??
+          'Não foi possível enviar a configuração para as duas placas.';
+      _notify();
+      return false;
+    }
+    dataAcquisitionSynchronized = false;
+    statusMessage = 'Configuração enviada; aguardando confirmação das duas placas.';
+    _notify();
+    return true;
+  }
+
+  void requestDataAcquisitionConfig() {
+    if (!isConnected) return;
+    final String commandDevice = _benchDeviceId ?? 'esp32-01';
+    final String sensorDevice = alarmsDeviceId ?? 'esp32-02';
+    _service.sendRawCommand(
+      deviceId: commandDevice,
+      action: 'data_config_list',
+    );
+    _service.sendRawCommand(
+      deviceId: sensorDevice,
+      action: 'data_config_list',
+    );
+  }
+
   void _handlePayload(String topic, String payload) {
     // Partidas e respostas não dependem da configuração ativa: o dispositivo
     // vem do próprio tópico (prefixo/dispositivo/profiles).
