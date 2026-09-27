@@ -101,7 +101,14 @@ if (typeof document !== 'undefined') (() => {
   const topico = (dev, tipo) => `${prefixo}/${dev}/${tipo}`;
   const atual = () => placas[dispositivos[selecionado]];
   const nomeDaPlaca = () => selecionado === 0 ? 'Quadro de comando' : 'Sensores do motor';
-  const aviso = texto => { $('wifiFeedback').textContent = texto; };
+  const aviso = texto => {
+    $('wifiFeedback').textContent = texto;
+    const pertoDosBotoes = $('wifiActionFeedback');
+    if (pertoDosBotoes) {
+      pertoDosBotoes.textContent = texto;
+      pertoDosBotoes.hidden = !texto;
+    }
+  };
   const pendenteDe = dev => pendentes[dev] || null;
   const limparPendente = dev => {
     const p = pendentes[dev];
