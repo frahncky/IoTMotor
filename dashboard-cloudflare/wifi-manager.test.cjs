@@ -73,7 +73,10 @@ function abaWifi() {
     device_id: placa, connected: 'IFMA_IOT', max: 8,
     networks: [{ssid: 'IFMA_IOT', open: true}]
   }));
-  return {no, cliente, enviar, redes};
+  return {
+    no, cliente, enviar, redes,
+    firmwareStatus: dev => contexto.window.iotmotorFirmwareStatus?.(dev) || null
+  };
 }
 
 test('placa offline nao aparece como conectada: a lista retida fica no broker', () => {
@@ -84,7 +87,9 @@ test('placa offline nao aparece como conectada: a lista retida fica no broker', 
   h.enviar('iotmotor/esp32-01/status', 'offline');
   assert.match(h.no('wifiStatus').textContent, /desligada ou fora da rede agora/);
   assert.match(h.no('wifiStatus').textContent, /última informação recebida/);
-  assert.equal(h.no('wifiUpdateFw').disabled, true, 'sem placa no ar, nao ha o que comandar');
+  assert.equal(h.no('wifiUpdateFw').disabled, false, 'o botão OTA continua clicável offline');
+  h.no('wifiUpdateFw').fire('click');
+  assert.match(h.no('wifiFeedback').textContent, /está offline/i);
   assert.equal(h.no('wifiAddBtn').disabled, true);
   assert.equal(h.no('wifiList').children[0].className, '', 'nao marca a rede como a atual');
 
@@ -155,6 +160,9 @@ test('versão do firmware: em dia, desatualizada ou não informada', () => {
   h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({device_id: 'esp32-01', firmware_version: FIRMWARE_PUBLICADO[0]}));
   h.enviar('iotmotor/esp32-02/capabilities', JSON.stringify({device_id: 'esp32-02', firmware_version: 's3-velho'}));
   assert.match(h.no('wifiFirmware').textContent, /em dia/);
+  assert.equal(h.no('wifiUpdateFw').disabled, false, 'firmware atual mantém botão clicável');
+  h.no('wifiUpdateFw').fire('click');
+  assert.match(h.no('wifiFeedback').textContent, /já está atualizado/i);
   assert.equal(h.no('wifiDev0').dataset.update, 'false');
   assert.equal(h.no('wifiDev1').dataset.update, 'true');
   assert.equal(h.no('tabBtn-wifi').dataset.update, 'true', 'a aba Wi-Fi mostra que há atualização');
@@ -183,7 +191,9 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
     accepted: true, reason: 'baixando firmware'
   }));
   assert.match(h.no('wifiFeedback').textContent, /Aguardando reinício|download confirmado/);
-  assert.equal(h.no('wifiUpdateFw').disabled, true);
+  assert.equal(h.no('wifiUpdateFw').disabled, false, 'OTA em andamento mantém o botão clicável');
+  h.no('wifiUpdateFw').fire('click');
+  assert.match(h.no('wifiFeedback').textContent, /já está em andamento/i);
 
   h.enviar('iotmotor/esp32-01/command_ack', JSON.stringify({
     device_id: 'esp32-01', seq: comando.seq, action: 'update',
@@ -198,6 +208,7 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
     accepted: true, reason: 'baixando firmware'
   }));
   assert.match(h.no('wifiFirmware').textContent, /Atualizando firmware/);
+  assert.equal(h.firmwareStatus('esp32-01')?.state, 'updating');
   h.enviar('iotmotor/esp32-01/status', 'offline');
   assert.match(h.no('wifiStatus').textContent, /Atualizando firmware.*reiniciando e reconectando/);
   assert.doesNotMatch(h.no('wifiStatus').textContent, /desligada ou fora da rede/);
@@ -209,6 +220,7 @@ test('atualização só termina quando a placa volta com a versão nova e falha 
   assert.match(h.no('wifiFeedback').textContent, /Atualização .*concluída/);
   assert.match(h.no('wifiFirmware').textContent, /Atualizado · Conectado/);
   assert.match(h.no('wifiStatus').textContent, /Atualizado · Conectado/);
+  assert.equal(h.firmwareStatus('esp32-01')?.state, 'updated');
 });
 
 test('OTA de uma placa não bloqueia o envio de atualização para a outra', () => {
@@ -230,7 +242,9 @@ test('OTA de uma placa não bloqueia o envio de atualização para a outra', () 
     device_id: 'esp32-01', seq: cmd1.seq, action: 'update',
     accepted: true, reason: 'baixando firmware'
   }));
-  assert.equal(h.no('wifiUpdateFw').disabled, true, 'a placa 1 fica ocupada');
+  assert.equal(h.no('wifiUpdateFw').disabled, false, 'a placa 1 continua com botão clicável');
+  h.no('wifiUpdateFw').fire('click');
+  assert.match(h.no('wifiFeedback').textContent, /já está em andamento/i);
 
   h.no('wifiDev1').fire('click');
   assert.equal(h.no('wifiUpdateFw').disabled, false, 'a placa 2 continua disponível');

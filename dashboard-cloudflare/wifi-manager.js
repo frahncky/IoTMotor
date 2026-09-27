@@ -112,6 +112,31 @@ if (typeof document !== 'undefined') (() => {
     for (const dev of Object.keys(pendentes)) limparPendente(dev);
   };
 
+  // Estado OTA compartilhado com o painel principal. Assim os indicadores
+  // "Quadro de comando" e "Sensores do motor" não continuam dizendo apenas
+  // "conectado" enquanto uma atualização está em andamento.
+  const OTA_CONCLUIDA_VISIVEL_MS = 30000;
+  function estadoFirmwareCompartilhado(dev) {
+    if (!connected) return null;
+    const p = pendenteDe(dev);
+    if (p?.acao === 'update') {
+      return {state: 'updating', phase: p.fase, label: 'atualizando firmware'};
+    }
+    const concluida = atualizados[dev];
+    if (concluida &&
+        estados[dev] !== 'offline' &&
+        Date.now() - concluida.em <= OTA_CONCLUIDA_VISIVEL_MS) {
+      return {
+        state: 'updated',
+        phase: 'completed',
+        label: 'atualizado · conectado',
+        version: concluida.version
+      };
+    }
+    return null;
+  }
+  window.iotmotorFirmwareStatus = estadoFirmwareCompartilhado;
+
   function lerConfiguracao() {
     const url = new URL(String($('broker').value || 'wss://test.mosquitto.org:8081').trim());
     const p = String($('prefix').value || 'iotmotor').trim().replace(/^\/+|\/+$/g, '');
@@ -255,8 +280,9 @@ if (typeof document !== 'undefined') (() => {
     const livre = connected && Boolean(placa) && !pendenteDe(dev) && noAr();
     $('apSaveBtn').disabled = !livre || (!$('apOpen').checked && !placa.pubkey);
     $('apOpenNow').disabled = !livre;
-    // Disponivel mesmo sem lista: e assim que uma placa com firmware antigo a recebe.
-    $('wifiUpdateFw').disabled = !connected || Boolean(pendenteDe(dev)) || !noAr();
+    // Atualizar firmware fica sempre clicável. O clique explica se a
+    // placa está offline, em dia ou já atualizando, em vez de deixar o botão cinza.
+    $('wifiUpdateFw').disabled = false;
     $('wifiRestart').disabled = !connected || Boolean(pendenteDe(dev)) || !noAr();
   }
   let apMostrada = '';
@@ -358,6 +384,29 @@ if (typeof document !== 'undefined') (() => {
 
   $('wifiUpdateFw').addEventListener('click', () => {
     const dev = dispositivos[selecionado];
+    const p = pendenteDe(dev);
+    const indice = dispositivos.indexOf(dev);
+    const minha = indice >= 0 && versoes[dev] !== undefined
+      ? situacaoFirmware(versoes[dev], FIRMWARE_PUBLICADO[indice], indice === 0)
+      : null;
+
+    if (!connected || !client?.connected) {
+      aviso('Conecte ao MQTT para atualizar o firmware.');
+      return;
+    }
+    if (p?.acao === 'update') {
+      aviso(`Atualização de ${nomeDaPlaca().toLowerCase()} já está em andamento.`);
+      return;
+    }
+    if (estados[dev] === 'offline') {
+      aviso(`${nomeDaPlaca()} está offline. Aguarde a placa reconectar para atualizar.`);
+      return;
+    }
+    if (minha && !minha.atualizar) {
+      aviso(`${nomeDaPlaca()}: firmware já está atualizado (${versoes[dev]}).`);
+      return;
+    }
+
     if (!confirm(`A placa ${dev} vai baixar o firmware publicado no GitHub e reiniciar (cerca de 1 minuto fora do ar).\n\n` +
                  'A placa de comandos recusa se houver contatores ligados.\n\nContinuar?')) return;
     delete atualizados[dev];

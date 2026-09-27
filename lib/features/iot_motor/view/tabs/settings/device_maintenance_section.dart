@@ -70,23 +70,9 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
               label: const Text('Cadastrar Wi-Fi'),
             ),
             OutlinedButton.icon(
-              // Vai para cada placa no ar com firmware diferente do publicado.
-              // Se todas as placas elegíveis já estão em OTA, fica desabilitado
-              // mostrando o progresso; a outra placa continua independente.
-              onPressed:
-                  conectado && widget.controller.boardsToUpdate.isNotEmpty
-                      ? () => _confirmarManutencao(
-                        context,
-                        action: 'update',
-                        placas: widget.controller.boardsToUpdate,
-                        titulo: 'Atualizar firmware',
-                        texto:
-                            'Vai atualizar: ${widget.controller.boardsToUpdate.map(nomeDaPlaca).join(' e ')}.\n\n'
-                            'Cada placa baixa o firmware publicado no GitHub e reinicia '
-                            '(cerca de 1 minuto fora do ar). O quadro de comando só aceita '
-                            'com o motor parado.',
-                      )
-                      : null,
+              // O botão permanece clicável. Se não houver OTA aplicável,
+              // o toque explica o motivo em vez de deixar o controle cinza.
+              onPressed: () => _acaoAtualizarFirmware(context),
               icon:
                   otaEmAndamento && widget.controller.boardsToUpdate.isEmpty
                       ? const SizedBox.square(
@@ -117,6 +103,45 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
           ],
         ),
       ],
+    );
+  }
+
+  Future<void> _acaoAtualizarFirmware(BuildContext context) async {
+    if (!widget.controller.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Conecte ao MQTT para atualizar o firmware.')),
+      );
+      return;
+    }
+
+    final List<String> atualizando = widget.controller.firmwareUpdateDeviceIds
+        .where(widget.controller.isFirmwareUpdating)
+        .toList(growable: false);
+    final List<String> alvos = widget.controller.boardsToUpdate;
+
+    if (alvos.isEmpty) {
+      final String mensagem =
+          atualizando.isNotEmpty
+              ? 'Atualização em andamento: ${atualizando.map(nomeDaPlaca).join(' e ')}.'
+              : widget.controller.maintenanceBoards.isEmpty
+              ? 'Nenhuma placa está conectada agora.'
+              : 'O firmware das placas conectadas já está atualizado.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(mensagem)),
+      );
+      return;
+    }
+
+    await _confirmarManutencao(
+      context,
+      action: 'update',
+      placas: alvos,
+      titulo: 'Atualizar firmware',
+      texto:
+          'Vai atualizar: ${alvos.map(nomeDaPlaca).join(' e ')}.\n\n'
+          'Cada placa baixa o firmware publicado no GitHub e reinicia '
+          '(cerca de 1 minuto fora do ar). O quadro de comando só aceita '
+          'com o motor parado.',
     );
   }
 

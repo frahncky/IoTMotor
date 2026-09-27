@@ -65,7 +65,7 @@ extension MotorControlDevices on MotorControlController {
     if (isFirmwareUpdating(deviceId)) {
       return 'atualizando firmware';
     }
-    if (firmwareUpdateSucceeded(deviceId)) {
+    if (firmwareUpdateSucceeded(deviceId) && _isDeviceConnected(deviceId)) {
       return 'atualizado · conectado';
     }
     if (isBusy && !isConnected) {
