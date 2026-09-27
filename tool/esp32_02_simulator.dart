@@ -11,7 +11,7 @@ const int _defaultPort = 1883;
 const String _defaultTopicPrefix = 'iotmotor';
 const String _defaultDeviceId = 'esp32-02';
 const int _defaultIntervalMs = 1000;
-const Set<String> _supportedFields = <String>{'vibration', 'temperature'};
+const Set<String> _supportedFields = <String>{'vibration_mms', 'temperature'};
 
 Future<void> main(List<String> args) async {
   if (args.contains('--help') || args.contains('-h')) {
@@ -177,16 +177,17 @@ Future<void> main(List<String> args) async {
     }
 
     final bool wantsAll = requestedFields.isEmpty;
+    // Vibração em mm/s RMS (ISO 10816), como a placa real publica.
     final double vibration =
         motorOn
             ? _clamp(
-              0.38 +
-                  (sin(simPhase * 2.4).abs() * 0.24) +
-                  _rand(random, -0.05, 0.05),
-              0.12,
-              1.2,
+              1.6 +
+                  (sin(simPhase * 2.4).abs() * 1.0) +
+                  _rand(random, -0.3, 0.3),
+              0.6,
+              5.0,
             )
-            : _clamp(0.04 + _rand(random, -0.02, 0.02), 0.0, 0.12);
+            : _clamp(0.1 + _rand(random, -0.05, 0.05), 0.0, 0.3);
 
     final double targetTemp = motorOn ? 47.0 : 29.0;
     simulatedTemp = _clamp(
@@ -204,8 +205,8 @@ Future<void> main(List<String> args) async {
       'mode': motorMode,
     };
 
-    if (wantsAll || requestedFields.contains('vibration')) {
-      payload['vibration'] = double.parse(vibration.toStringAsFixed(3));
+    if (wantsAll || requestedFields.contains('vibration_mms')) {
+      payload['vibration_mms'] = double.parse(vibration.toStringAsFixed(2));
     }
     if (wantsAll || requestedFields.contains('temperature')) {
       payload['temperature'] = double.parse(simulatedTemp.toStringAsFixed(2));
@@ -216,7 +217,7 @@ Future<void> main(List<String> args) async {
     }
 
     final bool hasMetrics =
-        payload.containsKey('vibration') || payload.containsKey('temperature');
+        payload.containsKey('vibration_mms') || payload.containsKey('temperature');
     if (!hasMetrics) {
       return null;
     }
@@ -487,7 +488,7 @@ String _normalizePrefix(String raw) {
 }
 
 void _printUsage() {
-  stdout.writeln('Simulador MQTT esp32-02 (vibration + temperature)');
+  stdout.writeln('Simulador MQTT esp32-02 (vibration_mms + temperature)');
   stdout.writeln('');
   stdout.writeln('Uso:');
   stdout.writeln('  dart run tool/esp32_02_simulator.dart [opcoes]');
