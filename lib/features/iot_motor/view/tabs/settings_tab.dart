@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../app/providers/esp_local_comm_provider.dart';
 import '../../../../app/providers/mqtt_profiles_provider.dart';
+import '../../../../app/providers/motor_sound_provider.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/device_names.dart';
@@ -463,6 +464,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     final MaintenanceStatus? manutencao = controller.maintenanceStatus;
     final bool disponivel =
         controller.isConnected && controller.motorDeviceId != null;
+    final sound = ref.watch(motorSoundServiceProvider);
 
     final List<Widget> dados = <Widget>[];
     void chip(String rotulo, String valor) {
@@ -582,6 +584,92 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                 icon: const Icon(Icons.restart_alt_rounded),
                 label: const Text('Zerar horímetro e partidas'),
               ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Divider(color: AppTheme.inputBorder.withValues(alpha: 0.35)),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Icon(Icons.volume_up_rounded, color: AppTheme.brandMint),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Som do motor',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Switch(
+                value: sound.enabled,
+                onChanged: (bool value) {
+                  sound.setEnabled(value);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Usa o mesmo som da página web e acompanha o estado confirmado do motor.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: AppTheme.bodySoft,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              const Icon(Icons.volume_down_rounded, size: 18),
+              Expanded(
+                child: Slider(
+                  value: sound.volume,
+                  min: 0,
+                  max: 1,
+                  divisions: 20,
+                  label: '${sound.volumePercent}%',
+                  onChanged: (double value) {
+                    sound.setVolume(value);
+                  },
+                ),
+              ),
+              SizedBox(
+                width: 46,
+                child: Text(
+                  '${sound.volumePercent}%',
+                  textAlign: TextAlign.end,
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              OutlinedButton.icon(
+                onPressed: controller.isBenchMotorOn
+                    ? null
+                    : () {
+                        if (sound.testing) {
+                          sound.stopTest();
+                        } else {
+                          sound.testSound();
+                        }
+                      },
+                icon: Icon(
+                  sound.testing
+                      ? Icons.stop_circle_outlined
+                      : Icons.play_circle_outline_rounded,
+                ),
+                label: Text(sound.testing ? 'Parar teste' : 'Testar som'),
+              ),
+              if (sound.lastError != null)
+                Text(
+                  sound.lastError!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppTheme.danger,
+                  ),
+                ),
             ],
           ),
         ],
