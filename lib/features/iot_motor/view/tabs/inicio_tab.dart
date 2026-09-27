@@ -102,9 +102,9 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
     group: _TelemetryGroup.mecanica,
     label: 'Vibra.',
     title: 'Vibra.',
-    unit: 'g',
+    unit: 'mm/s',
     color: AppTheme.vibrationAccent,
-    decimalDigits: 3,
+    decimalDigits: 2,
     readValue: (TelemetrySample sample) => sample.vibration,
   ),
   _TelemetryPlot(

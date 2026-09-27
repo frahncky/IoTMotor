@@ -21,7 +21,7 @@ class _Grandeza {
 final List<_Grandeza> _grandezas = <_Grandeza>[
   _Grandeza('Corrente', 'A', 2, (BoardHistoryHour h) => h.currentAvg, (BoardHistoryHour h) => h.currentMax),
   _Grandeza('Temperatura', '°C', 1, (BoardHistoryHour h) => h.temperatureAvg, (BoardHistoryHour h) => h.temperatureMax),
-  _Grandeza('Vibração', 'g', 3, (BoardHistoryHour h) => h.vibrationAvg, (BoardHistoryHour h) => h.vibrationMax),
+  _Grandeza('Vibração', 'mm/s', 2, (BoardHistoryHour h) => h.vibrationAvg, (BoardHistoryHour h) => h.vibrationMax),
   _Grandeza('Tensão', 'V', 1, (BoardHistoryHour h) => h.voltageAvg, null),
   _Grandeza('Tempo ligado', 'min/h', 0, (BoardHistoryHour h) => h.minutesOn.toDouble(), null, barras: true),
 ];

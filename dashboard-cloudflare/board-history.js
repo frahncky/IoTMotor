@@ -5,13 +5,15 @@
 //
 // Linha de cada hora: [hora, corrente média, corrente máx, tensão média,
 // temperatura média, temperatura máx, vibração média, vibração máx, minutos
-// ligado], em centésimos de A, décimos de V e °C e milésimos de g.
+// ligado], em centésimos de A, décimos de V e °C e centésimos de mm/s. Dias
+// gravados pelo firmware antigo trazem a vibração em milésimos de g (sem
+// "vib": "mm/s"); essa vibração fica de fora, porque não vira mm/s sem a rotação.
 
 const HORA_MS = 3600000, DIA_MS = 24 * HORA_MS, DIAS = 7;
 const GRANDEZAS_HISTORICO = [
   {id: 'corrente', nome: 'Corrente', unidade: 'A', media: 1, maximo: 2, escala: 100, casas: 2, cor: '#ffc46a'},
   {id: 'temperatura', nome: 'Temperatura', unidade: '°C', media: 4, maximo: 5, escala: 10, casas: 1, cor: '#f69d84'},
-  {id: 'vibracao', nome: 'Vibração RMS', unidade: 'g', media: 6, maximo: 7, escala: 1000, casas: 3, cor: '#e6b2d4'},
+  {id: 'vibracao', nome: 'Vibração RMS', unidade: 'mm/s', media: 6, maximo: 7, escala: 100, casas: 2, cor: '#e6b2d4', soMms: true},
   {id: 'tensao', nome: 'Tensão', unidade: 'V', media: 3, maximo: null, escala: 10, casas: 1, cor: '#65c7e8'},
   {id: 'ligado', nome: 'Tempo ligado', unidade: 'min/h', media: 8, maximo: null, escala: 1, casas: 0, cor: '#83d8a2', barras: true}
 ];
@@ -20,7 +22,7 @@ const GRANDEZAS_HISTORICO = [
 function lerDia(dados) {
   if (!dados || !Number.isInteger(dados.day) || dados.day <= 0 || !Array.isArray(dados.hours)) return null;
   const horas = dados.hours.filter(l => Array.isArray(l) && l.length >= 9 && Number.isInteger(l[0]) && l[0] >= 0 && l[0] < 24);
-  return {dia: dados.day, horas};
+  return {dia: dados.day, horas, vibracaoMms: dados.vib === 'mm/s'};
 }
 
 // Pontos de uma grandeza nos últimos 7 dias, em ordem: {t (ms), media, maximo}.
@@ -28,7 +30,7 @@ function serieDoHistorico(dias, grandeza, agoraMs) {
   const inicio = agoraMs - DIAS * DIA_MS;
   const pontos = [];
   for (const d of dias) {
-    if (!d) continue;
+    if (!d || (grandeza.soMms && !d.vibracaoMms)) continue;
     for (const l of d.horas) {
       const t = (d.dia * 24 + l[0]) * HORA_MS;
       if (t < inicio - HORA_MS || t > agoraMs) continue;

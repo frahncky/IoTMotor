@@ -64,11 +64,11 @@ void main() {
 
     await tester.tap(find.text('Mec\u00e2nica'));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Vibra. (g)'), findsOneWidget);
+    expect(find.text('Vibra. (mm/s)'), findsOneWidget);
     expect(find.text('Temp. (\u00b0C)'), findsOneWidget);
     expect(find.text('Ativa (W)'), findsNothing);
 
-    await tester.tap(find.text('Vibra. (g)'));
+    await tester.tap(find.text('Vibra. (mm/s)'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Temp.'), findsOneWidget);

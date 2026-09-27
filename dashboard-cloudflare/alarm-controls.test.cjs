@@ -66,7 +66,7 @@ function setup() {
     alarm_enabled: true, alarm_active: false, mpu_ok: true, temperature_ok: true, ...extra
   }, retain);
   const PADRAO = [
-    {id: 'vib', field: 'vibration_peak', board: 'sensors', above: true, limit: 0.5, on: true, firing: false},
+    {id: 'vib', field: 'vibration_mms', board: 'sensors', above: true, limit: 4.5, on: true, firing: false},
     {id: 'temp', field: 'temperature', board: 'sensors', above: true, limit: 60, on: true, firing: false}
   ];
   const alarms = (client, lista = PADRAO, max = 8) => send(client, 'alarms', {alarms: lista, max}, true);
@@ -99,8 +99,8 @@ test('a lista retida da placa vira as linhas editaveis do painel', () => {
   h.alarms(c);
   assert.equal(h.node('alarmeResumo').textContent, '2 de 8 alarmes gravados na placa.');
   assert.equal(h.linhas().length, 2);
-  assert.equal(h.parte(h.linhas()[0], 'nome').textContent, 'Vibração (pico) (g) acima de');
-  assert.equal(h.parte(h.linhas()[0], 'limite').value, '0.5');
+  assert.equal(h.parte(h.linhas()[0], 'nome').textContent, 'Vibração (RMS) (mm/s) acima de');
+  assert.equal(h.parte(h.linhas()[0], 'limite').value, '4.5');
   assert.equal(h.node('alarmeAddBtn').disabled, false);
   // Lista cheia: nao ha espaco para outro alarme na placa.
   h.alarms(c, [h.PADRAO[0]], 1);
@@ -164,7 +164,8 @@ test('o campo do limite pode ser apagado e digitado sem a lista atropelar', () =
 test('adiciona alarme de corrente do quadro de comando e recusa limite fora da faixa', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c); h.alarms(c);
-  assert.equal(h.node('alarmeGrandeza').options.length, 9);
+  assert.equal(h.node('alarmeGrandeza').options.length, 10);
+  assert.equal(h.node('alarmeGrandeza').options[0].value, 'vibration_mms', 'mm/s vem primeiro');
   h.node('alarmeGrandeza').value = 'current';
   h.node('alarmeLimite').value = '500';
   h.node('alarmeAddForm').fire('submit');
@@ -388,7 +389,7 @@ test('alarmes ativos tambem lista os avisos do painel sem repetir o que a placa 
   h.telemetry(c); h.alarms(c);
   const avisos = [
     {kind: 'near', field: 'temperature', level: 'warn', text: 'Temperatura alta: 56.0 °C (limite 60 °C)'},
-    {kind: 'over', field: 'vibration_peak', level: 'alarm', text: 'Vibração (pico) alta: 0.70 g (limite 0.5 g)'},
+    {kind: 'over', field: 'vibration_mms', level: 'alarm', text: 'Vibração RMS alta: 5.00 mm/s (limite 4.5 mm/s)'},
     {kind: 'missing', field: 'temperature', level: 'warn', text: 'Temperatura sem leitura'},
     {kind: 'missing', field: 'pzem', level: 'warn', text: 'Medições elétricas (PZEM) sem leitura'},
     {kind: 'no-data', field: 'command', level: 'warn', text: 'Quadro de comando sem dados'},
@@ -398,7 +399,7 @@ test('alarmes ativos tambem lista os avisos do painel sem repetir o que a placa 
   h.telemetry(c, {alarm_active: true, alarms_firing: ['vib'], temperature_ok: false});
   const textos = h.node('alarmeAtivosLista').children.map(li => `${li.children[0].textContent}|${li.children[1].textContent}`);
   assert.deepEqual(textos, [
-    'Vibração (pico) (g) acima de 0.5|disparado',
+    'Vibração (RMS) (mm/s) acima de 4.5|disparado',
     'Falha de sensor: temperatura sem leitura (DS18B20)|falha',
     'Temperatura alta: 56.0 °C (limite 60 °C)|atenção',
     'Medições elétricas (PZEM) sem leitura|sem leitura',

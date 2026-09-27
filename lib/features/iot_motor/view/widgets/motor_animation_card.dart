@@ -222,7 +222,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                 // Desarme automático: por que o motor parou.
                 if (desarme != null && connected && !running)
                   Text(
-                    'Desligado pelo alarme de ${(alarmQuantityFor(desarme)?.label ?? desarme).toLowerCase()}',
+                    'Desligado pelo alarme de ${(alarmQuantityFor(desarme)?.label ?? desarme).toLowerCase().replaceAll(' (rms)', '')}',
                     key: const ValueKey<String>('motor_desarme'),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppTheme.danger,

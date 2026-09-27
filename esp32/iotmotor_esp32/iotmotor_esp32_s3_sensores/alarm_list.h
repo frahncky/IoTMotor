@@ -20,7 +20,7 @@ constexpr uint32_t VALIDADE_MS = 15000;  // Leitura mais velha que isso e ignora
 
 struct Alarme {
   char id[MAX_ID_ALARME + 1] = "";
-  char campo[MAX_CAMPO + 1] = "";  // voltage, current, power, vibration, temperature...
+  char campo[MAX_CAMPO + 1] = "";  // voltage, current, power, vibration_mms, temperature...
   bool doQuadro = false;           // true = vem do ESP32 de comandos.
   bool acima = true;               // true = dispara acima do limite.
   float limite = 0;
@@ -184,7 +184,7 @@ inline void semear(float vibracao, float temperatura) {
   total = 0;
   Alarme vib;
   strcpy(vib.id, "vib");
-  strcpy(vib.campo, "vibration_peak");
+  strcpy(vib.campo, "vibration_mms");
   vib.limite = vibracao;
   lista[total++] = vib;
   Alarme temp;
@@ -213,7 +213,18 @@ inline void carregar(float vibracaoPadrao, float temperaturaPadrao) {
       }
     }
   }
-  if (!total) semear(vibracaoPadrao, temperaturaPadrao);
+  if (!total) {
+    semear(vibracaoPadrao, temperaturaPadrao);
+  } else {
+    // Vibracao passou a ser em mm/s (ISO 10816). O alarme de fabrica antigo,
+    // nunca mexido (pico 0,5 g), vira o novo padrao; os editados ficam.
+    const int vib = indiceDe("vib");
+    if (vib >= 0 && !strcmp(lista[vib].campo, "vibration_peak") && fabsf(lista[vib].limite - 0.5f) < 1e-4f) {
+      strcpy(lista[vib].campo, "vibration_mms");
+      lista[vib].limite = vibracaoPadrao;
+      gravar();
+    }
+  }
   Serial.printf("[ALARMES] %u na placa\n", total);
 }
 
@@ -228,11 +239,18 @@ inline void receberMedidasDoQuadro(JsonVariantConst entrada, uint32_t agora) {
 
 // Valor atual de um campo, se houver leitura valida e recente.
 inline bool valorDe(const Alarme& alarme, uint32_t agora, bool mpuOk, bool tempOk,
-                    float vibracaoRms, float vibracaoPico, float temperatura, float& saida) {
+                    float vibracaoRms, float vibracaoPico, float vibracaoMms, float temperatura,
+                    float& saida) {
   if (alarme.doQuadro) {
     if (!medidasDoQuadroEm || agora - medidasDoQuadroEm > VALIDADE_MS) return false;
     if (!medidasDoQuadro[alarme.campo].is<float>()) return false;
     saida = medidasDoQuadro[alarme.campo].as<float>();
+    return true;
+  }
+  // Velocidade RMS em mm/s (ISO 10816); NAN enquanto a janela nao tem leitura.
+  if (!strcmp(alarme.campo, "vibration_mms")) {
+    if (!mpuOk || !isfinite(vibracaoMms)) return false;
+    saida = vibracaoMms;
     return true;
   }
   if (!strcmp(alarme.campo, "vibration_peak") || !strcmp(alarme.campo, "vibration")) {
@@ -251,14 +269,14 @@ inline bool valorDe(const Alarme& alarme, uint32_t agora, bool mpuOk, bool tempO
 // Avalia todos e devolve true se algum disparou. 'utc' vem do relogio da placa
 // (0 enquanto o NTP nao responde) e so serve para carimbar o registro.
 inline bool avaliar(uint32_t agora, bool mpuOk, bool tempOk, float vibracaoRms,
-                    float vibracaoPico, float temperatura, uint32_t utc = 0) {
+                    float vibracaoPico, float vibracaoMms, float temperatura, uint32_t utc = 0) {
   bool algum = false;
   for (uint8_t i = 0; i < total; ++i) {
     Alarme& a = lista[i];
     float valor = 0;
     const bool antes = a.disparado;
     a.disparado = a.habilitado &&
-                  valorDe(a, agora, mpuOk, tempOk, vibracaoRms, vibracaoPico, temperatura, valor) &&
+                  valorDe(a, agora, mpuOk, tempOk, vibracaoRms, vibracaoPico, vibracaoMms, temperatura, valor) &&
                   (a.acima ? valor > a.limite : valor < a.limite);
     if (a.disparado && !antes) anotarInicio(a, valor, agora, utc);
     else if (!a.disparado && antes) anotarFim(a, agora, utc);

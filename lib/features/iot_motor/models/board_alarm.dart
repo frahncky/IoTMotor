@@ -18,7 +18,7 @@ class BoardAlarm {
 
   final String id;
 
-  /// `voltage`, `current`, `power`, `vibration_peak`, `temperature`...
+  /// `voltage`, `current`, `power`, `vibration_mms`, `temperature`...
   final String field;
 
   /// `true` quando a grandeza vem do quadro de comando, não dos sensores.
@@ -130,9 +130,18 @@ class AlarmQuantity {
 }
 
 const List<AlarmQuantity> kAlarmQuantities = <AlarmQuantity>[
+  // Vibração pelo padrão de máquinas elétricas (ISO 10816-3): velocidade RMS.
+  AlarmQuantity(
+    field: 'vibration_mms',
+    label: 'Vibração (RMS)',
+    unit: 'mm/s',
+    fromCommandBoard: false,
+    min: 0.1,
+    max: 50,
+  ),
   AlarmQuantity(
     field: 'vibration_peak',
-    label: 'Vibração (pico)',
+    label: 'Aceleração (pico)',
     unit: 'g',
     fromCommandBoard: false,
     min: 0.02,
@@ -140,7 +149,7 @@ const List<AlarmQuantity> kAlarmQuantities = <AlarmQuantity>[
   ),
   AlarmQuantity(
     field: 'vibration',
-    label: 'Vibração (RMS)',
+    label: 'Aceleração (RMS)',
     unit: 'g',
     fromCommandBoard: false,
     min: 0.01,

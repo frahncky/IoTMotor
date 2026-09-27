@@ -1651,7 +1651,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                     label: 'Vibração máxima',
                     controllerField: controller.vibrationMaxController,
                     keyboardType: TextInputType.number,
-                    suffixText: 'g',
+                    suffixText: 'mm/s',
                     validator:
                         (String? value) =>
                             MqttSettingsValidators.validateDecimal(
@@ -1756,15 +1756,15 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
               ),
             ),
             child: SelectableText(
-              '{"voltage":220.4,"current":3.9,"power":858,"pf":0.98,"frequency":60,"energy":1.234,"vibration":0.12,"temperature":37.8}\n'
+              '{"voltage":220.4,"current":3.9,"power":858,"pf":0.98,"frequency":60,"energy":1.234,"vibration_mms":2.1,"temperature":37.8}\n'
               'ou\n'
               '{"voltage":220.4}\n'
               '{"current":3.9}\n'
               '{"power":858,"pf":0.98,"frequency":60,"energy":1.234}\n'
-              '{"vibration":0.12}\n'
+              '{"vibration_mms":2.1}\n'
               '{"temperature":37.8}\n'
               'ou\n'
-              '{"data":{"voltage":"220.4","current":"3.9","power":"858","pf":"0.98","frequency":"60","energy":"1.234","vibration":"0.12","temperature":"37.8"}}',
+              '{"data":{"voltage":"220.4","current":"3.9","power":"858","pf":"0.98","frequency":"60","energy":"1.234","vibration_mms":"2.1","temperature":"37.8"}}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 fontFamily: 'monospace',
                 color: AppTheme.inkSoft,

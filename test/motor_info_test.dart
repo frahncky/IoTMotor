@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:iotmotor/features/iot_motor/models/motor_info.dart';
+import 'package:iotmotor/features/iot_motor/models/telemetry_sample.dart';
 
 void main() {
   test('dupla tensão: corrente e tensão da ligação em uso', () {
@@ -48,8 +49,39 @@ void main() {
     expect(horas, hasLength(1));
     expect(horas.first.currentAvg, 9.12);
     expect(horas.first.temperatureMax, 48);
-    expect(horas.first.vibrationAvg, 0.031);
+    // Dia do firmware antigo (sem "vib"): vibração em g fica de fora.
+    expect(horas.first.vibrationAvg, isNull);
     expect(horas.first.minutesOn, 45);
     expect(horas.first.time.toUtc(), DateTime.utc(2024, 10, 4, 10));
+    final BoardHistoryHour mms = BoardHistoryHour.parseDay(
+      '{"day":20000,"v":1,"vib":"mm/s","hours":[[10,912,1034,2201,452,480,231,455,45]]}',
+    ).single;
+    expect(mms.vibrationAvg, 2.31);
+    expect(mms.vibrationMax, 4.55);
+  });
+
+  test('vibração medida em mm/s: zona direta, sem precisar da rotação', () {
+    expect(VibrationSeverity.zone(0.5, null)!.label, 'Boa');
+    expect(VibrationSeverity.zone(2.3, 5)!.label, 'Alerta');
+    expect(VibrationSeverity.zone(2.3, 50)!.label, 'Aceitável');
+    expect(VibrationSeverity.zone(12, 500)!.label, 'Crítica');
+    expect(VibrationSeverity.zone(2.3, 5)!.estimada, isFalse);
+    expect(VibrationSeverity.of(0.01, 1800, 5)!.estimada, isTrue);
+    expect(VibrationSeverity.zone(double.nan, 5), isNull);
+  });
+
+  test('telemetria: vibration_mms é a vibração; vibration (g) vira aceleração', () {
+    final TelemetrySample s = TelemetrySample.tryParsePayload(
+      '{"device_id":"esp32-02","vibration":0.12,"vibration_mms":2.5}',
+    )!;
+    expect(s.vibration, 2.5);
+    expect(s.accelerationG, 0.12);
+    final TelemetrySample antigo = TelemetrySample.tryParsePayload('{"vibration":0.12}')!;
+    expect(antigo.vibration, isNull);
+    expect(antigo.accelerationG, 0.12);
+    // Histórico guardado no celular volta com as duas grandezas separadas.
+    final TelemetrySample volta = TelemetrySample.fromStoredMap(s.toStoredMap())!;
+    expect(volta.vibration, 2.5);
+    expect(volta.accelerationG, 0.12);
   });
 }

@@ -11,6 +11,7 @@ class TelemetrySample {
     this.frequency,
     this.energy,
     this.vibration,
+    this.accelerationG,
     this.temperature,
     this.motorOn,
     this.mode,
@@ -26,7 +27,13 @@ class TelemetrySample {
   final double? powerFactor;
   final double? frequency;
   final double? energy;
+  /// Vibração pelo padrão de máquinas elétricas (ISO 10816-3): velocidade
+  /// RMS em mm/s, medida pela placa de sensores (campo `vibration_mms`).
   final double? vibration;
+
+  /// Aceleração dinâmica RMS em g (campo `vibration`). O firmware de sensores
+  /// antigo só manda esta; serve para estimar a velocidade pela rotação.
+  final double? accelerationG;
   final double? temperature;
   final bool? motorOn;
   final String? mode;
@@ -86,7 +93,8 @@ class TelemetrySample {
       'energia',
       'kwh',
     ]);
-    final double? vibration = _readDouble(source, const <String>[
+    final double? vibration = _readDouble(source, const <String>['vibration_mms']);
+    final double? accelerationG = _readDouble(source, const <String>[
       'vibration',
       'vibracao',
       'vib',
@@ -115,6 +123,7 @@ class TelemetrySample {
         frequency == null &&
         energy == null &&
         vibration == null &&
+        accelerationG == null &&
         temperature == null &&
         motorOn == null &&
         mode == null) {
@@ -142,6 +151,7 @@ class TelemetrySample {
       frequency: frequency,
       energy: energy,
       vibration: vibration,
+      accelerationG: accelerationG,
       temperature: temperature,
       motorOn: motorOn,
       mode: mode,
@@ -166,7 +176,8 @@ class TelemetrySample {
       if (powerFactor != null) 'pf': powerFactor,
       if (frequency != null) 'frequency': frequency,
       if (energy != null) 'energy': energy,
-      if (vibration != null) 'vibration': vibration,
+      if (vibration != null) 'vibration_mms': vibration,
+      if (accelerationG != null) 'vibration': accelerationG,
       if (temperature != null) 'temperature': temperature,
       if (motorOn != null) 'motor_on': motorOn,
       if (mode != null && mode!.trim().isNotEmpty) 'mode': mode,

@@ -63,7 +63,7 @@ class MotorControlController extends ChangeNotifier {
     voltageMinController = TextEditingController(text: '190');
     voltageMaxController = TextEditingController(text: '240');
     currentMaxController = TextEditingController(text: '10');
-    vibrationMaxController = TextEditingController(text: '1.5');
+    vibrationMaxController = TextEditingController(text: '4.5');
     temperatureMaxController = TextEditingController(text: '70');
 
     // Sem isto, digitar broker, porta, client ID, prefixo, usuário ou limites
@@ -139,10 +139,18 @@ class MotorControlController extends ChangeNotifier {
   /// Última telemetria do quadro de comando com a corrente medida.
   double? get benchCurrent => _benchDeviceId == null ? null : _latestByDevice[_benchDeviceId]?.current;
 
-  /// Vibração RMS (g) da placa de sensores na última telemetria.
+  /// Vibração RMS (mm/s, ISO 10816) da placa de sensores na última telemetria.
   double? get sensorVibration {
     for (final TelemetrySample amostra in _latestByDevice.values) {
       if (amostra.vibration != null) return amostra.vibration;
+    }
+    return null;
+  }
+
+  /// Aceleração RMS (g) da placa de sensores: firmware antigo, sem mm/s.
+  double? get sensorAccelerationG {
+    for (final TelemetrySample amostra in _latestByDevice.values) {
+      if (amostra.accelerationG != null) return amostra.accelerationG;
     }
     return null;
   }
@@ -2196,6 +2204,8 @@ class MotorControlController extends ChangeNotifier {
     DateTime? energyAt;
     double? vibration;
     DateTime? vibrationAt;
+    double? accelerationG;
+    DateTime? accelerationAt;
     double? temperature;
     DateTime? temperatureAt;
     bool? motorOn;
@@ -2251,6 +2261,12 @@ class MotorControlController extends ChangeNotifier {
         vibrationAt = sample.timestamp;
       }
 
+      if (sample.accelerationG != null &&
+          (accelerationAt == null || sample.timestamp.isAfter(accelerationAt))) {
+        accelerationG = sample.accelerationG;
+        accelerationAt = sample.timestamp;
+      }
+
       if (sample.temperature != null &&
           (temperatureAt == null || sample.timestamp.isAfter(temperatureAt))) {
         temperature = sample.temperature;
@@ -2278,6 +2294,7 @@ class MotorControlController extends ChangeNotifier {
         frequency == null &&
         energy == null &&
         vibration == null &&
+        accelerationG == null &&
         temperature == null &&
         motorOn == null &&
         mode == null) {
@@ -2293,6 +2310,7 @@ class MotorControlController extends ChangeNotifier {
       frequency: frequency,
       energy: energy,
       vibration: vibration,
+      accelerationG: accelerationG,
       temperature: temperature,
       motorOn: motorOn,
       mode: mode,
@@ -2516,11 +2534,11 @@ class MotorControlController extends ChangeNotifier {
         metricKey: 'vibration',
         title: 'Vibração elevada',
         metricLabel: 'vibração',
-        unit: 'g',
+        unit: 'mm/s',
         value: sample.vibration,
         limit: _readThreshold(vibrationMaxController),
         severity: TelemetryAlertSeverity.warning,
-        digits: 3,
+        digits: 2,
       ),
     );
     capture(
