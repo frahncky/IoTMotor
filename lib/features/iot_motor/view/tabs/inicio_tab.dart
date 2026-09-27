@@ -10,6 +10,7 @@ import '../../models/motor_command_type.dart';
 import '../../models/telemetry_sample.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
+import '../widgets/motor_animation_card.dart';
 import '../widgets/motor_usage_strip.dart';
 import '../widgets/telemetry_chart.dart';
 import 'grandezas_tab.dart';
@@ -218,6 +219,14 @@ class _InicioTabState extends State<InicioTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     DelayedReveal(
+                      delay: const Duration(milliseconds: 160),
+                      child: MotorAnimationCard(
+                        controller: widget.controller,
+                        startType: selectedStartType,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DelayedReveal(
                       delay: const Duration(milliseconds: 200),
                       child: _buildCommandPanel(
                         context,
@@ -252,6 +261,14 @@ class _InicioTabState extends State<InicioTab> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
+                          DelayedReveal(
+                            delay: const Duration(milliseconds: 160),
+                            child: MotorAnimationCard(
+                              controller: widget.controller,
+                              startType: selectedStartType,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                           DelayedReveal(
                             delay: const Duration(milliseconds: 200),
                             child: _buildCommandPanel(
