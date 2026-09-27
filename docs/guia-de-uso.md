@@ -38,7 +38,7 @@ na rede da escola.
 
 ![Painel com o motor ligado](images/painel.png)
 
-- **Quadro de comando:** escolha da partida, os botões **Ligar**, **Desligar todos** e **Somente medição**, e o estado de CNT 1 a CNT 4.
+- **Quadro de comando:** escolha da partida, os botões **Ligar**, **Desligar** e **Somente medição**, e o estado de CNT 1 a CNT 4.
 - **Diagnóstico:** o desenho do motor e, abaixo dele, as medições principais:
   - corrente e **carga em %**, quando a corrente nominal está cadastrada;
   - vibração com a classificação **ISO 10816**, quando a rotação está cadastrada;
