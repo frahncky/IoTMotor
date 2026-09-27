@@ -13,6 +13,7 @@ import '../../models/motor_info.dart';
 import '../../models/telemetry_alert.dart';
 import '../../services/app_update_service.dart';
 import '../../services/mqtt_path_check.dart';
+import '../widgets/alertas_no_celular_panel.dart';
 import '../widgets/connection_path_dialog.dart';
 import '../../services/mqtt_settings_validators.dart';
 import '../widgets/delayed_reveal.dart';
@@ -126,7 +127,13 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       _buildTabScrollView(
                         key: 'settings_alerts',
                         delay: const Duration(milliseconds: 180),
-                        child: _buildAlertPanel(context),
+                        child: Column(
+                          children: <Widget>[
+                            AlertasNoCelularPanel(controller: controller),
+                            const SizedBox(height: 12),
+                            _buildAlertPanel(context),
+                          ],
+                        ),
                       ),
                       _buildTabScrollView(
                         key: 'settings_telemetry',

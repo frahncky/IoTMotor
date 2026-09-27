@@ -119,9 +119,14 @@ class MqttMotorService {
     return '';
   }
 
-  Future<MqttConnectResult> connect(MqttConnectionConfig config) async {
-    await disconnect(silent: true);
-
+  /// Cliente MQTT pronto para conectar em [config], pelo mesmo caminho do app
+  /// (WebSocket para ws:// e wss://, TLS, IPv4 primeiro). O serviço de alertas
+  /// usa o mesmo, com outro [clientId].
+  static Future<MqttServerClient> criarCliente(
+    MqttConnectionConfig config, {
+    String? clientId,
+  }) async {
+    final String id = clientId ?? config.clientId;
     // ws:// e wss:// passam por WebSocket. É o caminho que funciona em rede
     // que bloqueia as portas MQTT: as placas usam ws://...:8080 por isso.
     final bool porWebSocket = MqttSettingsValidators.brokerUsaWebSocket(
@@ -135,7 +140,7 @@ class MqttMotorService {
     );
     final MqttServerClient client = MqttServerClient.withPort(
       servidor,
-      config.clientId,
+      id,
       config.port,
     );
     client.logging(on: false);
@@ -149,14 +154,21 @@ class MqttMotorService {
     } else {
       client.secure = config.useTls;
     }
+    client.connectionMessage = MqttConnectMessage()
+        .withClientIdentifier(id)
+        .startClean()
+        .withWillQos(MqttQos.atMostOnce);
+    return client;
+  }
+
+  Future<MqttConnectResult> connect(MqttConnectionConfig config) async {
+    await disconnect(silent: true);
+
+    final MqttServerClient client = await criarCliente(config);
     client.onConnected = _handleConnected;
     client.onDisconnected = _handleDisconnected;
     client.onAutoReconnect = _handleAutoReconnect;
     client.onAutoReconnected = _handleAutoReconnected;
-    client.connectionMessage = MqttConnectMessage()
-        .withClientIdentifier(config.clientId)
-        .startClean()
-        .withWillQos(MqttQos.atMostOnce);
 
     _client = client;
     _activeConfig = config;
