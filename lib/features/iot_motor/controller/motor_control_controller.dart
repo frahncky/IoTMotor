@@ -147,14 +147,6 @@ class MotorControlController extends ChangeNotifier {
     return null;
   }
 
-  /// Aceleração RMS (g) da placa de sensores: firmware antigo, sem mm/s.
-  double? get sensorAccelerationG {
-    for (final TelemetrySample amostra in _latestByDevice.values) {
-      if (amostra.accelerationG != null) return amostra.accelerationG;
-    }
-    return null;
-  }
-
   /// Versão do firmware informada por cada placa.
   final Map<String, String> firmwareByDevice = <String, String>{};
 
@@ -2204,8 +2196,6 @@ class MotorControlController extends ChangeNotifier {
     DateTime? energyAt;
     double? vibration;
     DateTime? vibrationAt;
-    double? accelerationG;
-    DateTime? accelerationAt;
     double? temperature;
     DateTime? temperatureAt;
     bool? motorOn;
@@ -2261,12 +2251,6 @@ class MotorControlController extends ChangeNotifier {
         vibrationAt = sample.timestamp;
       }
 
-      if (sample.accelerationG != null &&
-          (accelerationAt == null || sample.timestamp.isAfter(accelerationAt))) {
-        accelerationG = sample.accelerationG;
-        accelerationAt = sample.timestamp;
-      }
-
       if (sample.temperature != null &&
           (temperatureAt == null || sample.timestamp.isAfter(temperatureAt))) {
         temperature = sample.temperature;
@@ -2294,7 +2278,6 @@ class MotorControlController extends ChangeNotifier {
         frequency == null &&
         energy == null &&
         vibration == null &&
-        accelerationG == null &&
         temperature == null &&
         motorOn == null &&
         mode == null) {
@@ -2310,7 +2293,6 @@ class MotorControlController extends ChangeNotifier {
       frequency: frequency,
       energy: energy,
       vibration: vibration,
-      accelerationG: accelerationG,
       temperature: temperature,
       motorOn: motorOn,
       mode: mode,

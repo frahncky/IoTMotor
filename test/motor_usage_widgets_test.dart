@@ -25,7 +25,7 @@ void main() {
     service.emit('iotmotor/esp32-01/telemetry',
         '{"device_id":"esp32-01","relays":[true,false,true,false],"current":6.3,"voltage":220,'
         '"run_s_total":7560000,"starts_today":3,"session_s":725}');
-    service.emit('iotmotor/esp32-02/telemetry', '{"device_id":"esp32-02","vibration":0.03,"temperature":31}');
+    service.emit('iotmotor/esp32-02/telemetry', '{"device_id":"esp32-02","vibration_mms":1.2,"temperature":31}');
     final int hoje = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 86400000;
     service.emit('iotmotor/esp32-02/history/${hoje % 7}',
         '{"device_id":"esp32-02","day":$hoje,"v":1,"hours":[[0,912,1034,2201,452,480,31,55,45]]}');
@@ -49,7 +49,7 @@ void main() {
       ),
     ));
     expect(find.text('Carga 50%'), findsOneWidget);
-    expect(find.textContaining('mm/s · Aceitável'), findsOneWidget);
+    expect(find.text('Vibração 1,20 mm/s RMS · Aceitável'), findsOneWidget);
     expect(find.textContaining('Horímetro 2100,0 h · 3 partidas hoje'), findsOneWidget);
     expect(find.textContaining('Manutenção vencida há 100 h'), findsOneWidget);
     expect(find.textContaining('Quadro de comando: firmware v11-velho'), findsOneWidget);

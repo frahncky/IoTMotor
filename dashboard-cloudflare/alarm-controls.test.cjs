@@ -164,7 +164,8 @@ test('o campo do limite pode ser apagado e digitado sem a lista atropelar', () =
 test('adiciona alarme de corrente do quadro de comando e recusa limite fora da faixa', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c); h.alarms(c);
-  assert.equal(h.node('alarmeGrandeza').options.length, 10);
+  assert.equal(h.node('alarmeGrandeza').options.length, 8);
+  assert.ok(!h.node('alarmeGrandeza').options.some(o => /Acelera/.test(o.textContent)), 'sem aceleração em g');
   assert.equal(h.node('alarmeGrandeza').options[0].value, 'vibration_mms', 'mm/s vem primeiro');
   h.node('alarmeGrandeza').value = 'current';
   h.node('alarmeLimite').value = '500';

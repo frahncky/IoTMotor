@@ -66,12 +66,11 @@ potência do motor (sem potência cadastrada, vale a das máquinas pequenas, at�
 A faixa medida vai de 10 Hz a cerca de 180 Hz (limite do MPU6050), onde está o
 que pesa num motor de 2 ou 4 polos: 1× e 2× a rotação (desbalanceamento,
 desalinhamento, folga). Serve para acompanhar a condição do motor, mas não
-substitui um analisador de vibração. A aceleração em g continua disponível
-(gráfico **Aceleração RMS** e alarmes de aceleração).
+substitui um analisador de vibração.
 
-Com o firmware de sensores antigo (antes da `s3-sensors-1.9`), a placa só manda
-a aceleração em g; o painel e o app então estimam os mm/s pela rotação
-cadastrada.
+Só a vibração é mostrada: a aceleração em g não aparece no painel, no app nem
+nos alarmes. O firmware de sensores antigo (antes da `s3-sensors-1.10`) só
+mandava aceleração; com ele a vibração fica sem leitura até atualizar a placa.
 
 ## Dar partida no motor
 
@@ -131,7 +130,7 @@ Todos são opcionais e aceitam vírgula ou ponto.
 | Tipo | Trifásico ou monofásico |
 | Ligação em uso | Aparece com duas tensões: **Triângulo** ou **Estrela** |
 | Potência (cv) | Escolher a faixa da ISO 10816 |
-| Rotação (rpm) | Estimar mm/s com o firmware de sensores antigo |
+| Rotação (rpm) | Velocidade da animação do motor |
 | Fator de serviço | Referência de sobrecarga |
 | Manutenção a cada (h de uso) | Lembrete de manutenção pelo horímetro |
 
@@ -170,16 +169,16 @@ As grandezas disponíveis são:
 
 | Placa | Grandezas |
 | --- | --- |
-| Sensores do motor | vibração RMS (mm/s), aceleração (pico e RMS, em g), temperatura |
+| Sensores do motor | vibração RMS (mm/s), temperatura |
 | Quadro de comando | tensão, corrente, potência, frequência, fator de potência, partidas na última hora |
 
 As grandezas do quadro também disparam o LED e o buzzer da placa de sensores,
 porque ela ouve o quadro pelo broker.
 
 Na primeira vez, a placa vem com dois alarmes: vibração acima de 4,5 mm/s RMS e
-temperatura acima de 60 °C. Quem já tinha o alarme de fábrica antigo (pico de
-0,5 g, nunca editado) passa automaticamente para 4,5 mm/s ao atualizar a placa;
-alarmes editados ficam como estavam.
+temperatura acima de 60 °C. Ao atualizar a placa, os alarmes antigos de
+aceleração em g viram alarmes de vibração de 4,5 mm/s (ligado/desligado e
+desarme ficam como estavam); ajuste o limite se quiser outro.
 
 O que o LED indica está em [Hardware › O que o LED indica](hardware.md#o-que-o-led-indica).
 
@@ -305,4 +304,5 @@ quando um alarme da placa dispara, **mesmo fechado**.
 | **Ligar** recusado | Veja o motivo na mensagem: modo instrumentação ligado, saída já ligada, partida em andamento ou placa reiniciada (tente de novo) |
 | Histórico da placa vazio | A placa de sensores precisa do firmware com histórico e da hora da internet. A primeira hora aparece quando termina |
 | Carga em % não aparece | Cadastre a corrente nominal em **Dados do motor**. A carga só aparece com o motor ligado |
-| Vibração sem classificação ISO | A classificação só aparece com o motor ligado. Com firmware de sensores antigo, cadastre a rotação (rpm) ou atualize a placa |
+| Vibração sem classificação ISO | A classificação só aparece com o motor ligado |
+| Vibração sem leitura | Atualize a placa de sensores (`s3-sensors-1.10` em diante) e confira o MPU6050 (I2C a 400 kHz: fios curtos) |

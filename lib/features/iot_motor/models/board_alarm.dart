@@ -140,22 +140,6 @@ const List<AlarmQuantity> kAlarmQuantities = <AlarmQuantity>[
     max: 50,
   ),
   AlarmQuantity(
-    field: 'vibration_peak',
-    label: 'Aceleração (pico)',
-    unit: 'g',
-    fromCommandBoard: false,
-    min: 0.02,
-    max: 8,
-  ),
-  AlarmQuantity(
-    field: 'vibration',
-    label: 'Aceleração (RMS)',
-    unit: 'g',
-    fromCommandBoard: false,
-    min: 0.01,
-    max: 8,
-  ),
-  AlarmQuantity(
     field: 'temperature',
     label: 'Temperatura',
     unit: '°C',

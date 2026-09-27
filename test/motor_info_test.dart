@@ -28,14 +28,6 @@ void main() {
     expect(MaintenanceStatus.of(const MotorInfo(), 100), isNull);
   });
 
-  test('vibração pela ISO 10816 igual ao painel', () {
-    expect(VibrationSeverity.of(0.01, 1800, 5)!.label, 'Boa');
-    expect(VibrationSeverity.of(0.05, 1800, 5)!.label, 'Alerta');
-    expect(VibrationSeverity.of(0.05, 1800, 50)!.label, 'Aceitável');
-    expect(VibrationSeverity.of(0.1, 1800, 5)!.label, 'Crítica');
-    expect(VibrationSeverity.of(0.01, null, 5), isNull);
-  });
-
   test('firmware: em dia, desatualizado ou sem versão', () {
     expect(firmwareSituation(firmwarePublicado[0], firmwarePublicado[0]).atualizar, isFalse);
     expect(firmwareSituation('v11', firmwarePublicado[0]).atualizar, isTrue);
@@ -65,23 +57,17 @@ void main() {
     expect(VibrationSeverity.zone(2.3, 5)!.label, 'Alerta');
     expect(VibrationSeverity.zone(2.3, 50)!.label, 'Aceitável');
     expect(VibrationSeverity.zone(12, 500)!.label, 'Crítica');
-    expect(VibrationSeverity.zone(2.3, 5)!.estimada, isFalse);
-    expect(VibrationSeverity.of(0.01, 1800, 5)!.estimada, isTrue);
     expect(VibrationSeverity.zone(double.nan, 5), isNull);
   });
 
-  test('telemetria: vibration_mms é a vibração; vibration (g) vira aceleração', () {
+  test('telemetria: só a vibração em mm/s; aceleração em g é ignorada', () {
     final TelemetrySample s = TelemetrySample.tryParsePayload(
       '{"device_id":"esp32-02","vibration":0.12,"vibration_mms":2.5}',
     )!;
     expect(s.vibration, 2.5);
-    expect(s.accelerationG, 0.12);
-    final TelemetrySample antigo = TelemetrySample.tryParsePayload('{"vibration":0.12}')!;
-    expect(antigo.vibration, isNull);
-    expect(antigo.accelerationG, 0.12);
-    // Histórico guardado no celular volta com as duas grandezas separadas.
+    expect(s.toStoredMap().containsKey('vibration'), isFalse);
+    expect(TelemetrySample.tryParsePayload('{"vibration":0.12}'), isNull);
     final TelemetrySample volta = TelemetrySample.fromStoredMap(s.toStoredMap())!;
     expect(volta.vibration, 2.5);
-    expect(volta.accelerationG, 0.12);
   });
 }

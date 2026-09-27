@@ -11,8 +11,6 @@
 // Faixa: 10 Hz ate ~180 Hz (filtro interno do MPU a 1 kHz). A norma vai ate
 // 1 kHz, mas num motor de 2 ou 4 polos o que pesa na severidade (1x e 2x a
 // rotacao: desbalanceamento, desalinhamento, folga) esta abaixo de 180 Hz.
-//
-// Tambem sai a aceleracao dinamica em g (RMS e pico), como antes.
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
@@ -29,9 +27,7 @@ constexpr float LSB_POR_G = 8192.0f;  // +/-4 g.
 // Depois de ligar ou de uma perda de amostras, os filtros precisam assentar.
 constexpr uint16_t AMOSTRAS_ASSENTAR = 300;
 // Janela com menos que isso (placa travada, I2C falhando) nao vira leitura.
-// A velocidade pede meia janela; o RMS em g, como antes, bem menos.
 constexpr uint16_t MINIMO_JANELA = 500;
-constexpr uint16_t MINIMO_ACELERACAO = 100;
 
 // Filtro passa-altas Butterworth de 2a ordem (transformada bilinear).
 struct PassaAltas {
@@ -78,15 +74,14 @@ inline Eixo eixos[3];
 inline uint16_t assentando = AMOSTRAS_ASSENTAR;
 
 // Janela em andamento.
-inline double somaV2[3] = {0, 0, 0}, somaG2 = 0;
-inline uint32_t nVelocidade = 0, nAceleracao = 0;
-inline float picoParcial = 0;  // Pico em g ate agora, para o alarme reagir antes do fim da janela.
+inline double somaV2[3] = {0, 0, 0};
+inline uint32_t nVelocidade = 0;
 
 // Resultado da ultima janela fechada.
-inline float rmsG = 0, picoG = 0, mmS = 0;
+inline float mmS = 0;
 inline char eixo = 'x';
 inline uint32_t amostras = 0;
-inline bool velocidadeValida = false, aceleracaoValida = false;
+inline bool velocidadeValida = false;
 inline uint32_t perdas = 0;  // FIFO cheia (amostras perdidas), para o serial.
 
 inline bool escrever(uint8_t reg, uint8_t valor) {
@@ -124,9 +119,8 @@ inline bool iniciar(uint8_t id) {
   if (ok && id != 0x68) ok = escrever(0x1D, 0x01);  // MPU6500: filtro de 218 Hz.
   ok = ok && escrever(0x23, 0x08);        // Na FIFO, so a aceleracao.
   ok = ok && reiniciarFifo();
-  somaV2[0] = somaV2[1] = somaV2[2] = somaG2 = 0;
-  nVelocidade = nAceleracao = 0;
-  picoParcial = 0;
+  somaV2[0] = somaV2[1] = somaV2[2] = 0;
+  nVelocidade = 0;
   return ok;
 }
 
@@ -142,11 +136,9 @@ inline void amostra(const uint8_t* d) {
     --assentando;
     return;
   }
-  const float dinamica = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) / G;
-  if (!isfinite(dinamica) || dinamica >= 8.0f) return;
-  somaG2 += (double)dinamica * dinamica;
-  picoParcial = fmaxf(picoParcial, dinamica);
-  ++nAceleracao;
+  // Leitura absurda (ruido no I2C) nao entra na janela.
+  const double dinamica = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) / G;
+  if (!isfinite(dinamica) || dinamica >= 8.0) return;
   for (uint8_t i = 0; i < 3; ++i) somaV2[i] += v[i] * v[i];
   ++nVelocidade;
 }
@@ -172,12 +164,9 @@ inline bool ler() {
   return true;
 }
 
-// Fecha a janela: calcula RMS de velocidade (maior eixo) e de aceleracao.
+// Fecha a janela: RMS da velocidade de cada eixo; vale o maior.
 inline void fecharJanela(bool sensorOk) {
-  amostras = sensorOk ? nAceleracao : 0;
-  aceleracaoValida = amostras >= MINIMO_ACELERACAO;
-  rmsG = aceleracaoValida ? sqrt(somaG2 / nAceleracao) : 0;
-  picoG = aceleracaoValida ? picoParcial : 0;
+  amostras = sensorOk ? nVelocidade : 0;
   velocidadeValida = sensorOk && nVelocidade >= MINIMO_JANELA;
   mmS = 0;
   if (velocidadeValida) {
@@ -186,9 +175,8 @@ inline void fecharJanela(bool sensorOk) {
       if (rms > mmS || i == 0) { mmS = rms; eixo = 'x' + i; }
     }
   }
-  somaV2[0] = somaV2[1] = somaV2[2] = somaG2 = 0;
-  nVelocidade = nAceleracao = 0;
-  picoParcial = 0;
+  somaV2[0] = somaV2[1] = somaV2[2] = 0;
+  nVelocidade = 0;
 }
 
 }  // namespace vibracao

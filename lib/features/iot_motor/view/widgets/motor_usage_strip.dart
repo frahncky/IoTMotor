@@ -23,17 +23,13 @@ class MotorUsageStrip extends StatelessWidget {
     if (carga != null) {
       itens.add(_Item(Icons.speed_rounded, 'Carga $carga%', carga > 100 ? AppTheme.danger : null));
     }
-    // Medida em mm/s pela placa; firmware antigo: estimada da aceleração.
-    final VibrationSeverity? iso = !ligado
-        ? null
-        : controller.sensorVibration != null
-            ? VibrationSeverity.zone(controller.sensorVibration, info?.powerCv)
-            : VibrationSeverity.of(controller.sensorAccelerationG, info?.rpm, info?.powerCv);
+    // Vibração em mm/s RMS medida pela placa, com a zona ISO 10816.
+    final VibrationSeverity? iso =
+        ligado ? VibrationSeverity.zone(controller.sensorVibration, info?.powerCv) : null;
     if (iso != null) {
-      final String mms = iso.mmS.toStringAsFixed(iso.estimada ? 1 : 2).replaceAll('.', ',');
       itens.add(_Item(
         Icons.vibration_rounded,
-        iso.estimada ? 'Vibração ≈$mms mm/s · ${iso.label}' : 'Vibração $mms mm/s RMS · ${iso.label}',
+        'Vibração ${iso.mmS.toStringAsFixed(2).replaceAll('.', ',')} mm/s RMS · ${iso.label}',
         iso.zona >= 2 ? (iso.zona == 3 ? AppTheme.danger : AppTheme.brandOrange) : null,
       ));
     }

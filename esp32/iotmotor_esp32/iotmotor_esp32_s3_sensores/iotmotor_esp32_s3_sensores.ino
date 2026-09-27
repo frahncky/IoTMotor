@@ -5,7 +5,6 @@
  * campos invalidos sao omitidos; nao inventamos temperatura ou vibracao.
  * Vibracao em velocidade RMS (mm/s), o padrao de maquinas eletricas
  * (ISO 10816-3 / 20816-3): 1000 amostras/s integradas nos 3 eixos (vibracao.h).
- * A aceleracao dinamica em g (RMS e pico) continua na telemetria.
  * Bibliotecas: PubSubClient, ArduinoJson 6.x, OneWire, DallasTemperature.
  * Comandos de alarme, Wi-Fi e OTA; nenhum comando de motor.
  */
@@ -128,8 +127,8 @@ uint32_t ultimoBeep=0,inicioDoTeste=0;
 bool testeAtivo=false;
 bool testeLedAtivo=false;
 uint32_t inicioTesteLed=0;
-// Ultima janela de 1 s (vibracao.h): aceleracao em g e velocidade em mm/s.
-float picoAtual=0.0f,rmsAtual=0.0f,mmsAtual=0.0f;
+// Ultima janela de 1 s (vibracao.h): velocidade RMS em mm/s.
+float mmsAtual=0.0f;
 char eixoAtual='x';
 bool mmsValida=false;
 uint32_t mmsEm=0;  // Quando saiu a ultima velocidade valida.
@@ -376,14 +375,13 @@ bool atualizarTesteLed(uint32_t now) {
 // azul piscando = conectando; azul fixo = conectado/motor desligado;
 // verde fixo = motor ligado normal; vermelho piscando = motor ligado anormal;
 // vermelho fixo = falha de sensor com motor desligado.
-void atualizarSinalizacao(uint32_t now,float vibracaoPico) {
+void atualizarSinalizacao(uint32_t now) {
   if(atualizarProcuraDoBuzzer(now))return;  // Procura do buzzer em andamento.
   if(atualizarTesteLed(now))return;
 
   // Quem decide os alarmes e a lista configurada na placa. Avaliados tambem
   // sem rede: temperatura e vibracao sao medidas aqui mesmo.
-  const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,rmsAtual,vibracaoPico,
-                                            mmsValida?mmsAtual:NAN,
+  const bool algumDisparou=alarmes::avaliar(now,mpuReady,tempReady,mmsValida?mmsAtual:NAN,
                                             temperatureC,relogio::agoraUtc());
   const bool falhaSensor=!mpuReady || !tempReady;
   estadoCritico=alarmeHabilitado&&(algumDisparou||falhaSensor);
@@ -546,8 +544,6 @@ void tarefaSensores(void*) {
       ultimaJanela=now;
       vibracao::fecharJanela(mpuReady);
       amostrasAtuais=vibracao::amostras;
-      picoAtual=vibracao::picoG;
-      rmsAtual=vibracao::rmsG;
       if(vibracao::velocidadeValida) {
         mmsAtual=vibracao::mmS;
         eixoAtual=vibracao::eixo;
@@ -560,7 +556,7 @@ void tarefaSensores(void*) {
         perdasAvisadas=vibracao::perdas;
       }
     }
-    atualizarSinalizacao(now,fmaxf(picoAtual,vibracao::picoParcial));
+    atualizarSinalizacao(now);
     xSemaphoreGive(sensoresMutex);
     vTaskDelay(pdMS_TO_TICKS(2));
   }
@@ -569,12 +565,12 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.9-mms";
+  doc["firmware_version"]="s3-sensors-1.10-vibracao";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
   JsonArray fields=doc.createNestedArray("fields");
-  fields.add("vibration_mms");fields.add("vibration");fields.add("vibration_peak");fields.add("temperature");
+  fields.add("vibration_mms");fields.add("temperature");
   char payload[384];size_t n=serializeJson(doc,payload,sizeof(payload));
   if(n)mqtt.publish(capabilitiesTopic,(const uint8_t*)payload,(unsigned int)n,true);
 }
@@ -600,10 +596,6 @@ void publishTelemetry() {
   doc["motor_on"]=motorLigado;
   doc["command_telemetry_fresh"]=ultimaTelemetriaQuadro &&
       (uint32_t)(millis()-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
-  if(mpuReady && vibracao::aceleracaoValida) {
-    doc["vibration"]=rmsAtual; // RMS de aceleracao dinamica, g
-    doc["vibration_peak"]=picoAtual;
-  }
   if(mpuReady && mmsValida) {
     doc["vibration_mms"]=mmsAtual;  // Velocidade RMS, mm/s, 10 Hz a ~180 Hz, pior eixo
     doc["vibration_axis"]=String(eixoAtual);  // x, y ou z (String: copiado)

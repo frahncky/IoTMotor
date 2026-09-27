@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationSeverity,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -76,7 +76,7 @@ test('PZEM: calcula potencias derivadas apenas quando ha dados validos',()=>{
  assert.equal(x.apparent,1100);
  assert.equal(x.reactive,660);
  assert.equal(x.temperature,null);
- assert.equal(x.vibration,null);
+ assert.equal(x.vibration_mms,null);
  assert.equal(x.demo,false);
 });
 
@@ -92,9 +92,9 @@ test('firmware atual deriva motor ligado a partir dos relés quando motor_on nã
 });
 
 test('ESP32-S3: vibração/temperatura nao viram dados eletricos inventados',()=>{
- const x=parseTelemetry({device_id:'esp32-02',data_source:'mpu6050_ds18b20',vibration:0.23,vibration_peak:0.7,temperature:37.2});
+ const x=parseTelemetry({device_id:'esp32-02',data_source:'mpu6050_ds18b20',vibration_mms:2.3,temperature:37.2});
  assert.equal(x.temperature,37.2);
- assert.equal(x.vibration,0.23);
+ assert.equal(x.vibration_mms,2.3);
  assert.equal(x.voltage,null);
  assert.equal(x.current,null);
  assert.equal(x.power,null);
@@ -111,10 +111,11 @@ test('valores ausentes nao se tornam zero e modo de demonstracao fica marcado',(
  assert.equal(x.apparent,null);
 });
 
-test('onze metricas e IDs distintos com WSS obrigatorio',()=>{
- assert.equal(METRICS.length,11);
- assert.equal(new Set(METRICS.map(m=>m.key)).size,11);
- assert.equal(METRICS.filter(m=>m.source==='sensor').length,3);
+test('dez metricas e IDs distintos com WSS obrigatorio',()=>{
+ assert.equal(METRICS.length,10);
+ assert.equal(new Set(METRICS.map(m=>m.key)).size,10);
+ assert.equal(METRICS.filter(m=>m.source==='sensor').length,2);
+ assert.ok(!METRICS.some(m=>m.unit==='g'),'aceleração em g não é mostrada');
  assert.equal(validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}).broker,'wss://test.mosquitto.org:8081/');
  assert.throws(()=>validateConfig({broker:'ws://test.mosquitto.org:8080',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'}),/wss/);
  assert.throws(()=>validateConfig({broker:'wss://test.mosquitto.org:8081',prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-01'}),/distintos/);
@@ -140,7 +141,7 @@ test('alarmes disparados indicam a parte do motor afetada',()=>{
  assert.deepEqual([...alarmParts([],null)],[]);
  // Sem a lista retida, os ids padrão da placa ainda são reconhecidos.
  assert.deepEqual([...alarmParts(['temp','vib'],null)].sort(),['temperature','vibration']);
- const lista=[{id:'quente',field:'temperature'},{id:'rms',field:'vibration'},{id:'tensao',field:'voltage'}];
+ const lista=[{id:'quente',field:'temperature'},{id:'rms',field:'vibration_mms'},{id:'tensao',field:'voltage'}];
  assert.deepEqual([...alarmParts(['quente'],lista)],['temperature']);
  assert.deepEqual([...alarmParts(['rms'],lista)],['vibration']);
  assert.deepEqual([...alarmParts(['tensao','desconhecido'],lista)],['other']);
@@ -157,18 +158,18 @@ test('avisos do motor: grandezas sem leitura e valores perto ou além do limite'
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:null,sensor:null,alarms:null})),
   ['warn|Sensores do motor sem dados','warn|Quadro de comando sem dados']);
  // Placa de sensores enviando, mas sem temperatura.
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.02,temperature:null,vibrationPeak:0.05},alarms:null})),
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:0.3,temperature:null},alarms:null})),
   ['warn|Temperatura sem leitura']);
  // Quadro sem nenhuma medição do PZEM vira um único aviso.
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{voltage:null,current:null},sensor:{vibration:0.02,temperature:30},alarms:null})),
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{voltage:null,current:null},sensor:{vibration_mms:0.3,temperature:30},alarms:null})),
   ['warn|Medições elétricas (PZEM) sem leitura']);
  // Limites de fábrica: 90% avisa, no limite vira alarme.
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.1,vibration_mms:5,temperature:55,vibrationPeak:0.6},alarms:null})),
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:5,temperature:55},alarms:null})),
   ['alarm|Vibração RMS alta: 5.00 mm/s (limite 4.5 mm/s)','warn|Temperatura alta: 55.0 °C (limite 60 °C)']);
  // Lista da placa: limites próprios, alarmes desligados ignorados, "abaixo de" também.
  const alarms=[{id:'t',field:'temperature',above:true,limit:40,on:true},{id:'i',field:'current',above:true,limit:4,on:false},
   {id:'v',field:'voltage',above:false,limit:200,on:true}];
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{...cmd,voltage:210},sensor:{vibration:0.1,temperature:41},alarms})),
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{...cmd,voltage:210},sensor:{vibration_mms:1,temperature:41},alarms})),
   ['alarm|Temperatura alta: 41.0 °C (limite 40 °C)','warn|Tensão baixa: 210.0 V (limite 200 V)']);
 });
 
@@ -176,18 +177,19 @@ test('avisos de limite seguem o firmware: estrito, o mais grave vale e nada com 
  const textos=a=>a.map(w=>`${w.level}|${w.text}`);
  const cmd={voltage:220,current:3.9,power:800,pf:0.9,frequency:60,energy:1.2};
  // Exatamente no limite: a placa não dispara (valor > limite), então é só aviso.
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.1,temperature:60,vibrationPeak:0.1},alarms:null})),
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:1,temperature:60},alarms:null})),
   ['warn|Temperatura alta: 60.0 °C (limite 60 °C)']);
  // Dois alarmes de temperatura: o de 60 °C disparou mesmo vindo depois do de 100 °C.
  const dois=[{id:'a',field:'temperature',above:true,limit:100,on:true},{id:'b',field:'temperature',above:true,limit:60,on:true}];
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.1,temperature:95},alarms:dois})),
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:1,temperature:95},alarms:dois})),
   ['alarm|Temperatura alta: 95.0 °C (limite 60 °C)']);
  // Monitoramento desligado: sem avisos de limite, mas a falta de leitura continua.
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{alarmEnabled:false,vibration:null,temperature:95},alarms:dois})),
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{alarmEnabled:false,vibration_mms:null,temperature:95},alarms:dois})),
   ['warn|Vibração sem leitura']);
- // Firmware novo manda só mm/s: não é falta de leitura; firmware antigo, só g, também não.
+ // Só a vibração em mm/s conta: aceleração em g (firmware antigo) é falta de leitura.
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:1.2,temperature:30},alarms:[]})),[]);
- assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration:0.02,temperature:30},alarms:[]})),[]);
+ assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:parseTelemetry({device_id:'esp32-02',vibration:0.02,temperature:30}),alarms:[]})),
+  ['warn|Vibração sem leitura']);
 });
 
 test('carga do motor usa a corrente nominal cadastrada e some sem ela',()=>{
@@ -232,7 +234,7 @@ test('manutenção pelo horímetro: em dia, perto e vencida, com aviso em Alarme
  assert.equal(vencida.vencida,true);
  assert.equal(maintenanceText(vencida),'Manutenção vencida há 0,5 h de uso (a cada 2000 h)');
  const cmd={voltage:220,current:1,power:null,pf:null,frequency:null,energy:null};
- const sensor={vibration:0.01,temperature:30,vibrationPeak:0.02};
+ const sensor={vibration_mms:0.3,temperature:30};
  const avisos=motorWarnings({brokerReady:true,command:cmd,sensor,alarms:[],maintenance:vencida});
  assert.deepEqual(avisos.map(a=>a.kind),['maintenance']);
  assert.equal(motorWarnings({brokerReady:true,command:cmd,sensor,alarms:[],maintenance:emDia}).length,0);
@@ -241,24 +243,10 @@ test('manutenção pelo horímetro: em dia, perto e vencida, com aviso em Alarme
 test('partidas na última hora: lidas da telemetria e avisadas perto do limite',()=>{
  const cmd=parseTelemetry({device_id:'esp32-01',voltage:220,current:1,starts_hour:6});
  assert.equal(cmd.startsHour,6);
- const sensor={vibration:0.01,temperature:30,vibrationPeak:0.02};
+ const sensor={vibration_mms:0.3,temperature:30};
  const alarmes=[{id:'partidas',field:'starts_hour',above:true,limit:6,on:true}];
  assert.deepEqual(motorWarnings({brokerReady:true,command:cmd,sensor,alarms:alarmes}).map(a=>a.text),
   ['Partidas na última hora alta: 6 (limite 6)']);
-});
-
-test('vibração pela ISO 10816: mm/s estimado na rotação e faixa pela potência',()=>{
- assert.equal(vibrationSeverity(0.01,null,5),null,'sem rotação não há conversão');
- // 0,01 g a 1800 rpm (30 Hz): 0,52 mm/s -> Boa na classe até 15 kW.
- const boa=vibrationSeverity(0.01,1800,5);
- assert.equal(boa.mmS.toFixed(2),'0.52');
- assert.equal(boa.label,'Boa');
- assert.equal(vibrationSeverity(0.03,1800,5).label,'Aceitável');  // 1,56 mm/s
- assert.equal(vibrationSeverity(0.06,1800,5).label,'Alerta');     // 3,1 mm/s
- assert.equal(vibrationSeverity(0.1,1800,5).label,'Crítica');     // 5,2 mm/s
- // Motor maior (50 cv ≈ 37 kW): os mesmos 2,6 mm/s que alertam no pequeno ainda são aceitáveis.
- assert.equal(vibrationSeverity(0.05,1800,5).label,'Alerta');
- assert.equal(vibrationSeverity(0.05,1800,50).label,'Aceitável');
 });
 
 test('vibração medida em mm/s pela placa: zona direta, sem precisar da rotação',()=>{
@@ -269,10 +257,10 @@ test('vibração medida em mm/s pela placa: zona direta, sem precisar da rotaç�
  assert.equal(vibrationZone(NaN,5),null);
  // O cartão prefere a medida em mm/s; classifica só com o motor girando.
  assert.deepEqual(vibrationText({vibration:0.2,vibration_mms:1.234},true,{power_cv:5}),
-  {texto:'Vibração 1,23 mm/s RMS · Aceitável',iso:{mmS:1.234,zona:1,label:'Aceitável',estimada:false}});
+  {texto:'Vibração 1,23 mm/s RMS · Aceitável',iso:{mmS:1.234,zona:1,label:'Aceitável'}});
  assert.equal(vibrationText({vibration:0.2,vibration_mms:1.234},false,null).texto,'Vibração 1,23 mm/s RMS');
- // Firmware antigo: aceleração em g, com a estimativa se houver rotação.
- assert.equal(vibrationText({vibration:0.01},true,{rpm:1800,power_cv:5}).texto,'Vibração 0.010 g (≈0,5 mm/s · Boa)');
+ // Só aceleração em g (firmware antigo): não é mostrada.
+ assert.equal(vibrationText({vibration:0.01},true,{rpm:1800,power_cv:5}),null);
  assert.equal(vibrationText({},true,null),null);
  assert.equal(parseTelemetry({device_id:'esp32-02',vibration:0.1,vibration_mms:2.5}).vibration_mms,2.5);
 });
@@ -283,6 +271,5 @@ test('desarme: o cartão diz qual alarme desligou o motor, só com ele parado',(
  assert.equal(tripText(x.tripField,x.motorOn),'Desligado pelo alarme de temperatura');
  assert.equal(tripText('current',true),'');
  assert.equal(tripText('vibration_mms',false),'Desligado pelo alarme de vibração');
- assert.equal(tripText('vibration_peak',false),'Desligado pelo alarme de aceleração (pico)');
  assert.equal(parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false]}).tripField,'');
 });
