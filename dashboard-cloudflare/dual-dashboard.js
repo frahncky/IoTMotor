@@ -32,12 +32,11 @@ const METRICS=[
  {key:'energy',label:'Energia',unit:'kWh',digits:3,group:'eletrica',color:'#d4cf87',source:'command'},
  // Vibração pelo padrão de máquinas elétricas (ISO 10816-3): velocidade RMS.
  {key:'vibration_mms',label:'Vibração RMS',unit:'mm/s',digits:2,group:'mecanica',color:'#e6b2d4',source:'sensor'},
- {key:'vibration',label:'Aceleração RMS',unit:'g',digits:3,group:'mecanica',color:'#c7a6f2',source:'sensor'},
  {key:'temperature',label:'Temperatura',unit:'°C',digits:1,group:'mecanica',color:'#f69d84',source:'sensor'}
 ];
 // Nomes mostrados na tela; o identificador tecnico fica na dica do selo.
 const NOMES={command:'Quadro de comando',sensor:'Sensores do motor'};
-const alias={voltage:['voltage','tensao','v'],current:['current','corrente','i'],power:['power','potencia','w'],pf:['pf','power_factor','fator_potencia','fp'],frequency:['frequency','frequencia','hz'],energy:['energy','energy_kwh','energia','kwh'],vibration_mms:['vibration_mms'],vibration:['vibration','vibracao','vib'],temperature:['temperature','temperatura','temp']};
+const alias={voltage:['voltage','tensao','v'],current:['current','corrente','i'],power:['power','potencia','w'],pf:['pf','power_factor','fator_potencia','fp'],frequency:['frequency','frequencia','hz'],energy:['energy','energy_kwh','energia','kwh'],vibration_mms:['vibration_mms'],temperature:['temperature','temperatura','temp']};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
  series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
@@ -57,7 +56,6 @@ function parseTelemetry(json){
   benchArmed:source.bench_armed===true,motorOn,
   mode:typeof source.mode==='string'?source.mode:'—',
   profile:typeof source.profile==='string'?source.profile:'',
-  vibrationPeak:numeric(source.vibration_peak),
   relays,alarmEnabled:typeof source.alarm_enabled==='boolean'?source.alarm_enabled:null,
   runSTotal:numeric(source.run_s_total),startsTotal:numeric(source.starts_total),
   startsToday:numeric(source.starts_today),sessionS:numeric(source.session_s),startsHour:numeric(source.starts_hour),
@@ -125,7 +123,7 @@ function temperatureLimit(alarms){
 function alarmParts(firing,alarms){
  const parts=new Set();
  for(const id of firing||[]){
-  const field=(alarms||[]).find(a=>a.id===id)?.field??(id==='temp'?'temperature':id==='vib'?'vibration_peak':'');
+  const field=(alarms||[]).find(a=>a.id===id)?.field??(id==='temp'?'temperature':id==='vib'?'vibration_mms':'');
   parts.add(field==='temperature'?'temperature':field.startsWith('vibration')?'vibration':'other');
  }
  return parts;
@@ -137,8 +135,7 @@ function heatColor(heat){
 }
 // Limites de fábrica da placa de sensores, usados enquanto a lista não chega.
 const LIMITES_PADRAO=[{field:'vibration_mms',above:true,limit:4.5},{field:'temperature',above:true,limit:60}];
-const GRANDEZA_AVISO={vibration_peak:{label:'Aceleração (pico)',unit:'g',digits:2,read:s=>s.vibrationPeak},
- starts_hour:{label:'Partidas na última hora',unit:'',digits:0,source:'command',read:s=>s.startsHour}};
+const GRANDEZA_AVISO={starts_hour:{label:'Partidas na última hora',unit:'',digits:0,source:'command',read:s=>s.startsHour}};
 // Avisos de leitura e de limite, mostrados em "Alarmes ativos" (alarm-controls.js).
 // kind: no-data (placa sem dados), missing (grandeza sem leitura), near (a partir
 // de 90% do limite), over (limite ultrapassado) ou maintenance (manutenção
@@ -147,14 +144,9 @@ function motorWarnings({brokerReady,command,sensor,alarms,maintenance}){
  if(!brokerReady)return [];
  const out=[];
  if(!sensor)out.push({kind:'no-data',field:'sensor',level:'warn',text:'Sensores do motor sem dados'});
- else{
-  // Vibração: mm/s (ISO 10816); a aceleração em g vale só para o firmware antigo, que não manda mm/s.
-  const semLeitura=v=>v===null||v===undefined;
-  if(semLeitura(sensor.vibration_mms)&&semLeitura(sensor.vibration))
-   out.push({kind:'missing',field:'vibration',level:'warn',text:'Vibração sem leitura'});
-  if(semLeitura(sensor.temperature))
-   out.push({kind:'missing',field:'temperature',level:'warn',text:'Temperatura sem leitura'});
- }
+ else for(const [key,texto] of [['vibration_mms','Vibração'],['temperature','Temperatura']])
+  if(sensor[key]===null||sensor[key]===undefined)
+   out.push({kind:'missing',field:key,level:'warn',text:`${texto} sem leitura`});
  if(!command)out.push({kind:'no-data',field:'command',level:'warn',text:'Quadro de comando sem dados'});
  else if(METRICS.filter(m=>m.source==='command'&&!['apparent','reactive'].includes(m.key)).every(m=>command[m.key]===null||command[m.key]===undefined))
   out.push({kind:'missing',field:'pzem',level:'warn',text:'Medições elétricas (PZEM) sem leitura'});
@@ -223,26 +215,15 @@ function vibrationZone(mmS,powerCv){
  const classe=ISO10816.find(c=>kw<=c.ateKw);
  const indice=classe.zonas.findIndex(limite=>mmS<limite);
  const zona=indice<0?3:indice;
- return {mmS,zona,label:ZONAS_VIBRACAO[zona],estimada:false};
+ return {mmS,zona,label:ZONAS_VIBRACAO[zona]};
 }
-// Firmware de sensores antigo (sem vibration_mms): estima a velocidade pela
-// aceleração RMS supondo a vibração na rotação do motor (1×). Sem a rotação
-// cadastrada não há conversão.
-function vibrationSeverity(rmsG,rpm,powerCv){
- if(!Number.isFinite(rmsG)||rmsG<0||!Number.isFinite(rpm)||rpm<=0)return null;
- return {...vibrationZone(rmsG*9806.65/(2*Math.PI*rpm/60),powerCv),estimada:true};
-}
-// Texto da vibração no cartão do motor: medida em mm/s quando a placa manda;
-// senão a aceleração em g, com a estimativa em mm/s se houver rotação.
+// Texto da vibração no cartão do motor, em mm/s RMS; a zona ISO só com o
+// motor girando (parado, a vibração é ruído do sensor).
 function vibrationText(sensor,motorOn,info){
  const mms=sensor?.vibration_mms;
- if(Number.isFinite(mms)){
-  const iso=motorOn===true?vibrationZone(mms,info?.power_cv):null;
-  return {texto:`Vibração ${mms.toFixed(2).replace('.',',')} mm/s RMS${iso?` · ${iso.label}`:''}`,iso};
- }
- if(!Number.isFinite(sensor?.vibration))return null;
- const iso=motorOn===true?vibrationSeverity(sensor.vibration,info?.rpm,info?.power_cv):null;
- return {texto:`Vibração ${sensor.vibration.toFixed(3)} g${iso?` (≈${iso.mmS.toFixed(1).replace('.',',')} mm/s · ${iso.label})`:''}`,iso};
+ if(!Number.isFinite(mms))return null;
+ const iso=motorOn===true?vibrationZone(mms,info?.power_cv):null;
+ return {texto:`Vibração ${mms.toFixed(2).replace('.',',')} mm/s RMS${iso?` · ${iso.label}`:''}`,iso};
 }
 // Manutenção pelo horímetro: horas de uso desde a última manutenção contra o
 // intervalo cadastrado em "Dados do motor". null sem intervalo ou sem horímetro.
@@ -285,8 +266,8 @@ function renderMotorVisual(){
  if(Number.isFinite(info?.rpm)&&info.rpm>0)root.dataset.rpm=String(info.rpm);else delete root.dataset.rpm;
  if(perfilId)root.dataset.profile=perfilId;else delete root.dataset.profile;
  root.dataset.startKind=perfil?.kind||'direct';
- if(cmd?.motorOn===true&&Number.isFinite(sensor?.vibration)&&sensor.vibration>=0)
-  root.dataset.vibration=String(sensor.vibration);
+ if(cmd?.motorOn===true&&Number.isFinite(sensor?.vibration_mms)&&sensor.vibration_mms>=0)
+  root.dataset.vibration=String(sensor.vibration_mms);
  else root.dataset.vibration='0';
  const alarms=window.iotmotorAlarme?.lista?.()||null;
  const heat=motorHeat(sensor?.temperature,temperatureLimit(alarms));
@@ -537,4 +518,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationSeverity,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};

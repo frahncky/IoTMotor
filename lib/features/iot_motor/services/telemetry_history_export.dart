@@ -31,7 +31,6 @@ String buildTelemetryHistoryCsv(List<TelemetryHistoryEntry> entries) {
       'Frequência (Hz)',
       'Energia (kWh)',
       'Vibração (mm/s RMS)',
-      'Aceleração (g)',
       'Temperatura (C)',
     ],
     for (final TelemetryHistoryEntry entry in sorted)
@@ -54,7 +53,6 @@ List<Object?> _rowFor(String deviceId, TelemetrySample sample) {
     _formatNumber(sample.frequency, 2),
     _formatNumber(sample.energy, 3),
     _formatNumber(sample.vibration, 2),
-    _formatNumber(sample.accelerationG, 3),
     _formatNumber(sample.temperature, 1),
   ];
 }

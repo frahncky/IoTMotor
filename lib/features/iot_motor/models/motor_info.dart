@@ -4,7 +4,7 @@ import 'dart:math' as math;
 /// Versão do firmware publicada para OTA (release firmware-latest), a mesma que
 /// o painel usa (FIRMWARE_PUBLICADO em wifi-manager.js): [quadro, sensores].
 /// O CI confere que é a mesma do firmware_version de cada .ino.
-const List<String> firmwarePublicado = <String>['v16-desarme', 's3-sensors-1.9-mms'];
+const List<String> firmwarePublicado = <String>['v16-desarme', 's3-sensors-1.10-vibracao'];
 
 double? _numero(Object? valor) =>
     valor is num && valor.isFinite ? valor.toDouble() : null;
@@ -168,13 +168,10 @@ class MaintenanceStatus {
 /// Severidade da vibração pela ISO 10816: zonas da velocidade RMS em mm/s
 /// (mesmas faixas do painel). Classe pela potência; sem ela, máquina pequena.
 class VibrationSeverity {
-  const VibrationSeverity(this.mmS, this.zona, {this.estimada = false});
+  const VibrationSeverity(this.mmS, this.zona);
 
   final double mmS;
   final int zona;
-
-  /// true = calculada da aceleração em g pela rotação (firmware antigo).
-  final bool estimada;
 
   static const List<String> _nomes = <String>['Boa', 'Aceitável', 'Alerta', 'Crítica'];
   static const List<(double, List<double>)> _classes = <(double, List<double>)>[
@@ -186,19 +183,12 @@ class VibrationSeverity {
   String get label => _nomes[zona];
 
   /// Zona da velocidade medida pela placa (mm/s RMS).
-  static VibrationSeverity? zone(double? mmS, double? powerCv, {bool estimada = false}) {
+  static VibrationSeverity? zone(double? mmS, double? powerCv) {
     if (mmS == null || !mmS.isFinite || mmS < 0) return null;
     final double kw = powerCv != null && powerCv > 0 ? powerCv * 0.7355 : 0;
     final List<double> zonas = _classes.firstWhere(((double, List<double>) c) => kw <= c.$1).$2;
     final int indice = zonas.indexWhere((double limite) => mmS < limite);
-    return VibrationSeverity(mmS, indice < 0 ? 3 : indice, estimada: estimada);
-  }
-
-  /// Firmware antigo: estima a velocidade pela aceleração RMS (g) supondo a
-  /// vibração na rotação do motor (1×). Sem rotação cadastrada, nada.
-  static VibrationSeverity? of(double? rmsG, double? rpm, double? powerCv) {
-    if (rmsG == null || rmsG < 0 || rpm == null || rpm <= 0) return null;
-    return zone(rmsG * 9806.65 / (2 * math.pi * rpm / 60), powerCv, estimada: true);
+    return VibrationSeverity(mmS, indice < 0 ? 3 : indice);
   }
 }
 
