@@ -23,17 +23,32 @@ import '../services/telemetry_alert_store.dart';
 import '../services/telemetry_history_store.dart';
 
 class MotorControlController extends ChangeNotifier {
-  MotorControlController({MqttMotorService? service, bool loadSettings = true})
-    : _service = service ?? MqttMotorService() {
-    // ...existing code for controllers...
-    brokerController = TextEditingController(text: 'broker.hivemq.com');
-    portController = TextEditingController(text: '1883');
-    clientIdController = TextEditingController(
-      text: 'motor_app_${DateTime.now().millisecondsSinceEpoch % 100000}',
+  MotorControlController({
+    MqttMotorService? service,
+    bool loadSettings = true,
+    MqttConnectionConfig? initialConfig,
+    String initialProfileId = '',
+  }) : _service = service ?? MqttMotorService() {
+    activeProfileId = initialProfileId;
+    brokerController = TextEditingController(
+      text: initialConfig?.host ?? 'broker.hivemq.com',
     );
-    deviceIdController = TextEditingController(text: '');
-    usernameController = TextEditingController();
-    passwordController = TextEditingController();
+    portController = TextEditingController(
+      text: (initialConfig?.port ?? 1883).toString(),
+    );
+    clientIdController = TextEditingController(
+      text: initialConfig?.clientId ??
+          'motor_app_${DateTime.now().millisecondsSinceEpoch % 100000}',
+    );
+    deviceIdController = TextEditingController(
+      text: initialConfig?.deviceId ?? '',
+    );
+    usernameController = TextEditingController(
+      text: initialConfig?.username ?? '',
+    );
+    passwordController = TextEditingController(
+      text: initialConfig?.password ?? '',
+    );
     commandPasswordController = TextEditingController();
     // A senha de comando cifra cada comando enviado as placas; fica guardada
     // no cofre do aparelho, nunca no broker nem no arquivo de configuracoes.
@@ -42,7 +57,10 @@ class MotorControlController extends ChangeNotifier {
       unawaited(_guardarSenhaDeComando());
       _notify();
     });
-    topicPrefixController = TextEditingController(text: 'iotmotor');
+    topicPrefixController = TextEditingController(
+      text: initialConfig?.topicPrefix ?? 'iotmotor',
+    );
+    useTls = initialConfig?.useTls ?? false;
     voltageMinController = TextEditingController(text: '190');
     voltageMaxController = TextEditingController(text: '240');
     currentMaxController = TextEditingController(text: '10');
@@ -321,21 +339,12 @@ class MotorControlController extends ChangeNotifier {
     MqttMotorService? service,
     String profileId = '',
   }) {
-    final controller = MotorControlController(
+    return MotorControlController(
       service: service,
       loadSettings: true,
+      initialConfig: config,
+      initialProfileId: profileId,
     );
-    controller.activeProfileId = profileId;
-    controller.brokerController.text = config.host;
-    controller.portController.text = config.port.toString();
-    controller.clientIdController.text = config.clientId;
-    controller.deviceIdController.text = config.deviceId;
-    controller.topicPrefixController.text = config.topicPrefix;
-    controller.usernameController.text = config.username ?? '';
-    controller.passwordController.text = config.password ?? '';
-    controller.useTls = config.useTls;
-    // deviceId não é usado diretamente nos campos, mas pode ser adicionado se necessário
-    return controller;
   }
 
   static const int maxHistory = 120;
