@@ -182,8 +182,9 @@ class MotorSoundService extends ChangeNotifier {
     _playing = true;
     try {
       await _player?.stop();
-      await _player.setVolume(_volume);
-      await _player.play(
+      final AudioPlayer player = await _ensurePlayer();
+      await player.setVolume(_volume);
+      await player.play(
         UrlSource(_sampleUrl),
         position: _shutdownStart,
       );
@@ -215,8 +216,10 @@ class MotorSoundService extends ChangeNotifier {
 
   void _onPosition(Duration position) {
     if (!_looping || _seekingLoop || position < _loopEnd) return;
+    final AudioPlayer? player = _player;
+    if (player == null) return;
     _seekingLoop = true;
-    _player?.seek(_loopStart).whenComplete(() {
+    player.seek(_loopStart).whenComplete(() {
       _seekingLoop = false;
     });
   }
