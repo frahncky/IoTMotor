@@ -2946,7 +2946,19 @@ class MotorControlController extends ChangeNotifier {
 
   Future<void> _persistHistory() async {
     try {
-      await savePersistedTelemetryHistory(_buildCombinedHistoryEntries());
+      final List<TelemetryHistoryEntry> origem = _buildCombinedHistoryEntries();
+      final Map<String, DateTime> ultimaPorDispositivo = <String, DateTime>{};
+      final List<TelemetryHistoryEntry> gravar = <TelemetryHistoryEntry>[];
+      for (final TelemetryHistoryEntry entry in origem) {
+        final DateTime? ultima = ultimaPorDispositivo[entry.deviceId];
+        if (ultima == null ||
+            entry.sample.timestamp.difference(ultima).inMilliseconds >=
+                acquisitionConfig.recordMs) {
+          gravar.add(entry);
+          ultimaPorDispositivo[entry.deviceId] = entry.sample.timestamp;
+        }
+      }
+      await savePersistedTelemetryHistory(gravar);
     } catch (_) {
       // Keep in-memory history active even if persistence fails.
     }
