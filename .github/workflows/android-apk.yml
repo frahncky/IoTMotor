@@ -23,6 +23,12 @@ on:
       - 'pubspec.lock'
   workflow_dispatch:
 
+# Evita que dois pushes próximos publiquem APKs fora de ordem no release
+# app-latest. Só o build mais recente da mesma referência pode continuar.
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
