@@ -47,6 +47,7 @@ class MotorSoundService extends ChangeNotifier {
   double get volume => _volume;
   int get volumePercent => (_volume * 100).round();
   bool get playing => _playing;
+  bool get testing => _testMode;
   String? get lastError => _lastError;
 
   Future<void> _load() async {
