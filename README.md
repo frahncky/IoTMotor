@@ -4,8 +4,8 @@
 
 # IoTMotor
 
-**Monitoramento e comando de motores elétricos pela internet**<br>
-Painel web, app Android e dois ESP32 conversando por MQTT.
+**Monitoramento, comando e acompanhamento de motores elétricos pela internet**<br>
+Painel web, app Android e dois ESP32 integrados por MQTT.
 
 [![Painel e firmware](https://github.com/frahncky/IoTMotor/actions/workflows/cloudflare-dashboard.yml/badge.svg)](https://github.com/frahncky/IoTMotor/actions/workflows/cloudflare-dashboard.yml)
 [![Firmware ESP32](https://github.com/frahncky/IoTMotor/actions/workflows/esp32-compile.yml/badge.svg)](https://github.com/frahncky/IoTMotor/actions/workflows/esp32-compile.yml)
@@ -25,29 +25,35 @@ Painel web, app Android e dois ESP32 conversando por MQTT.
 
 | | |
 | --- | --- |
-| ⚡ **Medições elétricas** | Tensão, corrente, potências, fator de potência, frequência e energia (PZEM-004T). |
-| 🌡️ **Temperatura e vibração** | DS18B20 e MPU6050 no motor, com a vibração classificada pela ISO 10816 (Boa, Aceitável, Alerta, Crítica). |
-| ▶️ **Partidas pela internet** | Partida direta ou estrela-triângulo, montadas no painel e gravadas no quadro de comando. |
-| 🚨 **Alarmes na placa** | LED e buzzer na placa de sensores. Os limites ficam gravados nela e funcionam com o painel fechado. |
-| 🧾 **Dados do motor** | Placa de identificação (inclusive dupla tensão 220/380 V) e carga em % da corrente nominal. |
-| ⏱️ **Horímetro e manutenção** | Horas de uso, partidas por dia e lembrete de manutenção pelo horímetro. |
-| 📈 **Histórico de 7 dias** | Médias e máximos de cada hora, guardados na própria placa. |
-| 🔄 **Atualização remota** | Os dois ESP32 baixam o firmware novo pelo painel ou pelo app, sem cabo. |
-| 🔐 **Comandos cifrados** | Com senha, os comandos saem cifrados (AES-256-GCM), mesmo em broker público. |
+| ⚡ **Monitoramento elétrico** | Tensão, corrente, potências, fator de potência, frequência e energia pelo PZEM-004T. |
+| 🌡️ **Condição do motor** | Temperatura por DS18B20 e vibração por MPU6050, com classificação de condição e alarmes configuráveis. |
+| ▶️ **Comando e partidas** | Acionamento remoto e perfis como partida direta e estrela-triângulo, gravados no quadro de comando. |
+| 🧾 **Uso e manutenção** | Dados de placa, carga em % da corrente nominal, horímetro, partidas e lembrete de manutenção. |
+| 📈 **Histórico na própria bancada** | Médias e máximos por hora, com histórico de 7 dias retido na placa mesmo sem o painel aberto. |
+| 📱 **Painel web e app Android** | Controle, telemetria, animação do motor, som opcional, diagnóstico e atualização do app. |
+| 🔄 **Atualização remota** | Firmware dos dois ESP32 pode ser atualizado pelo painel ou pelo app, sem nova gravação por cabo. |
+| 🔐 **Segurança opcional** | Quando uma senha é configurada nas placas, os comandos são cifrados e autenticados com AES-256-GCM. |
 
 ## 🖼️ Telas
 
 <table>
   <tr>
     <td width="68%"><img src="docs/images/historico.png" alt="Histórico de 7 dias guardado na placa"></td>
-    <td rowspan="2" width="32%"><img src="docs/images/celular.png" alt="Painel no celular"></td>
+    <td rowspan="2" width="32%"><img src="docs/images/celular.png" alt="IoTMotor no celular"></td>
   </tr>
   <tr>
     <td><img src="docs/images/dados-do-motor.png" alt="Cadastro dos dados do motor"></td>
   </tr>
 </table>
 
-## 🧭 Como funciona
+## 🧭 Arquitetura do sistema
+
+O IoTMotor divide as funções entre duas placas:
+
+- **ESP32-01 — quadro de comando:** grandezas elétricas, contatores, partidas, LCD, dados do motor e horímetro.
+- **ESP32-S3 — sensores do motor:** vibração, temperatura, LED RGB, buzzer e diagnóstico de condição.
+- **Painel web e app Android:** visualização, configuração e comandos remotos.
+- **MQTT:** transporte da telemetria, estados e comandos entre as interfaces e a bancada.
 
 ```mermaid
 flowchart LR
@@ -57,7 +63,7 @@ flowchart LR
     end
     B(("☁️ Broker MQTT"))
     subgraph Bancada["Bancada do motor"]
-        Q["ESP32-01<br/>Quadro de comando<br/>PZEM-004T · relés · LCD"]
+        Q["ESP32-01<br/>Quadro de comando<br/>PZEM-004T · contatores · LCD"]
         S["ESP32-S3<br/>Sensores do motor<br/>MPU6050 · DS18B20 · LED · buzzer"]
         M["⚙️ Motor"]
     end
@@ -65,12 +71,11 @@ flowchart LR
     A <--> B
     B <--> Q
     B <--> S
-    Q -- contatores --> M
-    S -. mede .- M
+    Q -- comando dos contatores --> M
+    S -. mede condição .- M
 ```
 
-- As placas publicam a telemetria e os dados retidos (partidas, alarmes, dados do motor, histórico). O painel e o app só leem e comandam pelo broker.
-- A placa de sensores também ouve o quadro de comando: os alarmes de corrente e tensão tocam no mesmo LED e buzzer.
+As placas publicam telemetria e também mantêm dados importantes localmente, como perfis de partida, alarmes, dados do motor e histórico. O painel e o app utilizam essas informações para representar o estado confirmado da bancada e enviar comandos.
 
 ## 🔌 Hardware
 
@@ -81,9 +86,9 @@ flowchart LR
 
 ## 🚀 Começando
 
-1. **Grave as placas** uma vez pelo cabo, com os sketches acima (Arduino IDE). Depois disso, as atualizações chegam pela aba **Dispositivos**.
+1. **Grave as placas** uma vez pelo cabo, com os sketches acima (Arduino IDE). Depois disso, as novas versões de firmware podem ser instaladas remotamente.
 2. **Abra o painel** em [iotmotor.pages.dev](https://iotmotor.pages.dev) e toque em **Conectar**.
-3. **Instale o app** pelo [APK](https://github.com/frahncky/IoTMotor/releases/download/app-latest/IoTMotor.apk). Para as próximas versões, use **Configurações › Atualizar este app**.
+3. **Instale o app Android** pelo [APK](https://github.com/frahncky/IoTMotor/releases/download/app-latest/IoTMotor.apk). As próximas versões podem ser verificadas e instaladas pelo próprio app.
 
 ## 🗂️ Estrutura
 
@@ -106,5 +111,9 @@ docs/                   Documentação técnica e imagens
 | 🔧 [Firmware](docs/firmware.md) | Gravar, atualizar e configurar as placas |
 | 🛠️ [Desenvolvimento](docs/desenvolvimento.md) | Estrutura, testes, CI e publicação |
 
+## 🎓 Escopo do projeto
+
+O IoTMotor foi desenvolvido como **plataforma didática e de pesquisa** para estudo de acionamento, monitoramento, instrumentação, IoT e manutenção de motores elétricos.
+
 > [!WARNING]
-> Projeto de **bancada didática** para fins de pesquisa.
+> O sistema não substitui proteções elétricas, intertravamentos físicos, dispositivos de parada de emergência nem procedimentos de segurança exigidos para instalações industriais reais.
