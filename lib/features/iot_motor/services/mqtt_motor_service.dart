@@ -301,31 +301,36 @@ class MqttMotorService {
         client.connectionStatus?.state != MqttConnectionState.connected) {
       return false;
     }
-    // Desligar nunca espera a senha: sem ela (ou sem o desafio) sai aberto, e
-    // a placa aceita parar mesmo assim (firmware v15 em diante).
+    // Desligar nunca espera a senha: sai sempre aberto, e o firmware v15 aceita
+    // mesmo com senha errada ou desafio vencido (um selo que a placa nao abre
+    // seria recusado antes de ela ver que era parar). Com selo possivel, sai
+    // tambem selado, para placas antigas que exigem senha.
     final bool parar = action == 'stop';
     final bool semSelo = seal.impedimento(deviceId) != null;
     if (semSelo && !parar) return false;
-    _publicarComando(
-      client,
-      config.commandTopicForDevice(deviceId),
-      deviceId,
-      aberto: semSelo,
-      <String, dynamic>{
-        'v': 1,
-        'device_id': deviceId,
-        'seq': _proximaSequencia(),
-        'action': action,
-        'boot': boot,
-        'mode': mode,
-        'mask': mask,
-        'main': main,
-        'star': star,
-        'delta': delta,
-        'seconds': seconds,
-        if (profile.isNotEmpty) 'profile': profile,
-      },
-    );
+    final Map<String, dynamic> comando = <String, dynamic>{
+      'v': 1,
+      'device_id': deviceId,
+      'seq': _proximaSequencia(),
+      'action': action,
+      'boot': boot,
+      'mode': mode,
+      'mask': mask,
+      'main': main,
+      'star': star,
+      'delta': delta,
+      'seconds': seconds,
+      if (profile.isNotEmpty) 'profile': profile,
+    };
+    final String topico = config.commandTopicForDevice(deviceId);
+    if (parar) {
+      _publicarComando(client, topico, deviceId, comando, aberto: true);
+      if (!semSelo && seal.exigeSelo(deviceId)) {
+        _publicarComando(client, topico, deviceId, comando);
+      }
+    } else {
+      _publicarComando(client, topico, deviceId, comando);
+    }
     return true;
   }
 

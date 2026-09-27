@@ -909,6 +909,9 @@ void loop() {
     }
     delay(2);return;
   }
+  // Hora pelo NTP assim que ha Wi-Fi, mesmo com o broker fora: sem ela o
+  // historico descarta as amostras.
+  relogio::manter(now);
   if(wifiCaiuEm) {
     Serial.printf("[S3/Wi-Fi] recuperado em %lu ms, rede=%s, RSSI=%d dBm\n",
                   (unsigned long)(now-wifiCaiuEm),WiFi.SSID().c_str(),WiFi.RSSI());
@@ -932,7 +935,6 @@ void loop() {
   }
 
   mqtt.loop();
-  relogio::manter(now);  // Hora real para carimbar as medicoes.
   now=millis();
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
     lastPublish=now;publishTelemetry();

@@ -47,6 +47,7 @@ jobs:
       # teria outra assinatura e o Android exigiria desinstalar para atualizar,
       # entao o workflow para aqui em vez de publicar um APK incompativel.
       - name: Restore release signing key
+        id: chave
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -54,9 +55,17 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$ANDROID_KEYSTORE_BASE64" ] || [ -z "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            # PR de fork ou do Dependabot nao recebe segredos: testa e compila
+            # com a chave de debug (nada e publicado a partir de PR).
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              echo "::notice::PR sem os segredos de assinatura: build com a chave de debug."
+              echo "assinado=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "::error::Segredos ANDROID_KEYSTORE_* ausentes: o APK sairia com assinatura diferente."
             exit 1
           fi
+          echo "assinado=true" >> "$GITHUB_OUTPUT"
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/iotmotor-release.jks"
           {
             echo "storeFile=$RUNNER_TEMP/iotmotor-release.jks"
@@ -81,6 +90,7 @@ jobs:
             --target-platform android-arm,android-arm64 \
             --dart-define=IOTMOTOR_BUILD="$SELO"
       - name: Check APK signature
+        if: steps.chave.outputs.assinado == 'true'
         # O APK usa so assinatura v2/v3 (keytool -jarfile nao le): apksigner.
         # Deve mostrar CN=IoTMotor; qualquer outra chave impede atualizar.
         run: |
