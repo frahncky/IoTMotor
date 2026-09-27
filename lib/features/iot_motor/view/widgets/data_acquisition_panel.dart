@@ -60,10 +60,13 @@ class _DataAcquisitionPanelState extends State<DataAcquisitionPanel> {
       switch (value) {
         case 'realtime':
           _draft = DataAcquisitionConfig.realtime;
+          break;
         case 'monitoring':
           _draft = DataAcquisitionConfig.monitoring;
+          break;
         case 'economic':
           _draft = DataAcquisitionConfig.economic;
+          break;
         default:
           break;
       }
