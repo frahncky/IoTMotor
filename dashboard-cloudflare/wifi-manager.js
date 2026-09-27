@@ -95,6 +95,7 @@ if (typeof document !== 'undefined') (() => {
   // olhar o status, a aba dizia "conectada em ..." de uma placa desligada.
   const estados = {};  // device -> 'online' | 'offline'
   const versoes = {};  // device -> firmware_version (tópico capabilities, retido)
+  const atualizados = {};  // device -> {version, em}, concluído nesta sessão do painel
   let ordemEditada = null;  // lista de SSIDs enquanto o usuario reordena
 
   const topico = (dev, tipo) => `${prefixo}/${dev}/${tipo}`;
@@ -142,14 +143,43 @@ if (typeof document !== 'undefined') (() => {
     $('tabBtn-wifi').dataset.update = String(algumaDesatualizada);
     $('tabBtn-wifi').title = algumaDesatualizada ? 'Há atualização de firmware para uma das placas' : '';
     const minha = firmware[selecionado];
-    $('wifiFirmware').textContent = !connected ? '' : minha ? minha.texto
-      : 'Firmware: aguardando a placa informar a versão…';
-    $('wifiUpdateFw').className = `btn ${connected && minha?.atualizar ? '' : 'secondary'}`.trim();
+    const ota = pendenteDe(dev)?.acao === 'update' ? pendenteDe(dev) : null;
+    const atualizado = atualizados[dev] || null;
     const noAr = () => estados[dispositivos[selecionado]] !== 'offline';
+    if (!connected) {
+      $('wifiFirmware').textContent = '';
+    } else if (ota) {
+      $('wifiFirmware').textContent =
+        ota.fase === 'enviado'
+          ? 'Firmware: Atualizando firmware… aguardando confirmação da placa.'
+          : ota.fase === 'reiniciando'
+            ? 'Firmware: Atualizando firmware… reiniciando e reconectando.'
+            : ota.fase === 'confirmando'
+              ? 'Firmware: Atualizando firmware… conectado, confirmando versão.'
+              : 'Firmware: Atualizando firmware… download e gravação em andamento.';
+    } else if (atualizado && noAr()) {
+      $('wifiFirmware').textContent = `Firmware: ${atualizado.version} · Atualizado · Conectado.`;
+    } else {
+      $('wifiFirmware').textContent = minha ? minha.texto
+        : 'Firmware: aguardando a placa informar a versão…';
+    }
+    $('wifiUpdateFw').className = `btn ${connected && minha?.atualizar && !ota ? '' : 'secondary'}`.trim();
+    $('wifiUpdateFw').textContent = ota ? '⭳ Atualizando firmware…' : '⭳ Atualizar firmware desta placa';
     lista.replaceChildren();
 
     if (!connected) $('wifiStatus').textContent = 'Conecte ao MQTT (botão no topo) para ver e editar as redes.';
-    else if (!placa) $('wifiStatus').textContent = `${nomeDaPlaca()} ainda não publicou a lista de redes. Se estiver online, ` +
+    else if (ota) {
+      const etapa = ota.fase === 'reiniciando'
+        ? 'reiniciando e reconectando'
+        : ota.fase === 'confirmando'
+          ? 'conectada novamente; confirmando a nova versão'
+          : ota.fase === 'enviado'
+            ? 'aguardando confirmação para iniciar a atualização'
+            : 'baixando e gravando o novo firmware';
+      $('wifiStatus').textContent = `${nomeDaPlaca()}: Atualizando firmware… ${etapa}.`;
+    } else if (atualizado && noAr()) {
+      $('wifiStatus').textContent = `${nomeDaPlaca()}: Atualizado · Conectado.`;
+    } else if (!placa) $('wifiStatus').textContent = `${nomeDaPlaca()} ainda não publicou a lista de redes. Se estiver online, ` +
       'está com firmware antigo: use "Atualizar firmware desta placa".';
     else if (!noAr()) $('wifiStatus').textContent =
       `${nomeDaPlaca()}: desligada ou fora da rede agora. O que aparece abaixo é a ` +
@@ -330,6 +360,7 @@ if (typeof document !== 'undefined') (() => {
     const dev = dispositivos[selecionado];
     if (!confirm(`A placa ${dev} vai baixar o firmware publicado no GitHub e reiniciar (cerca de 1 minuto fora do ar).\n\n` +
                  'A placa de comandos recusa se houver contatores ligados.\n\nContinuar?')) return;
+    delete atualizados[dev];
     if (publicar('update', {})) aviso(`Pedindo atualização de firmware para ${nomeDaPlaca().toLowerCase()}…`);
   });
   $('wifiRestart').addEventListener('click', () => {
@@ -383,6 +414,7 @@ if (typeof document !== 'undefined') (() => {
     for (const k of Object.keys(placas)) delete placas[k];
     for (const k of Object.keys(estados)) delete estados[k];
     for (const k of Object.keys(versoes)) delete versoes[k];
+    for (const k of Object.keys(atualizados)) delete atualizados[k];
     ordemEditada = null;
     limparTodosPendentes();
     const ativo = window.mqtt.connect(cfg.url, {
@@ -403,7 +435,13 @@ if (typeof document !== 'undefined') (() => {
       if (client !== ativo) return;
       const placaDoStatus = dispositivos.find(d => nome === topico(d, 'status'));
       if (placaDoStatus) {  // "online" / "offline": texto puro, não JSON.
-        estados[placaDoStatus] = payload.toString('utf8').trim();
+        const estado = payload.toString('utf8').trim();
+        estados[placaDoStatus] = estado;
+        const p = pendenteDe(placaDoStatus);
+        if (p?.acao === 'update' && p.fase !== 'enviado') {
+          if (estado === 'offline') p.fase = 'reiniciando';
+          else if (estado === 'online' && p.fase === 'reiniciando') p.fase = 'confirmando';
+        }
         renderizar();
         return;
       }
@@ -418,6 +456,8 @@ if (typeof document !== 'undefined') (() => {
         const p = pendenteDe(dev);
         if (p?.acao === 'update' && indice >= 0 && versoes[dev] === FIRMWARE_PUBLICADO[indice]) {
           const instalada = versoes[dev];
+          atualizados[dev] = {version: instalada, em: Date.now()};
+          estados[dev] = 'online';  // capabilities novo prova que a placa voltou ao MQTT.
           limparPendente(dev);
           aviso(`Atualização de ${dev} concluída · firmware ${instalada} instalado.`);
         }
