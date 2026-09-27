@@ -63,7 +63,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
 
     double dt = (elapsed - previous).inMicroseconds / 1000000;
     if (dt < 0) dt += 1;
-    dt = dt.clamp(0, 0.064);
+    dt = dt.clamp(0.0, 0.064).toDouble();
 
     final bool running = widget.controller.isBenchMotorOn;
     final double startupSeconds = _startupSeconds(widget.startType);
@@ -77,7 +77,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
 
     double effectiveSpeed = _smoothstep(_speed);
     if (running && _looksSequential(widget.startType)) {
-      final double progress = (_startupElapsed / startupSeconds).clamp(0, 1);
+      final double progress = (_startupElapsed / startupSeconds).clamp(0.0, 1.0).toDouble();
       final double center = widget.startType.sequence ? 0.61 : 0.64;
       final double width = widget.startType.sequence ? 0.055 : 0.075;
       final double depth = widget.startType.sequence ? 0.16 : 0.08;
@@ -94,7 +94,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   }
 
   static double _smoothstep(double x) {
-    final double v = x.clamp(0, 1);
+    final double v = x.clamp(0.0, 1.0).toDouble();
     return v * v * (3 - 2 * v);
   }
 
@@ -120,8 +120,8 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
 
   static double _visualDps(double rpm) {
     final double nominal = rpm > 0 ? rpm : 1750;
-    final double x = ((nominal - 600) / 3000).clamp(0, 1);
-    return 540 + 720 * math.pow(x, 0.72);
+    final double x = ((nominal - 600) / 3000).clamp(0.0, 1.0).toDouble();
+    return (540 + 720 * math.pow(x, 0.72)).toDouble();
   }
 
   @override
@@ -335,7 +335,7 @@ class _MotorPainter extends CustomPainter {
     canvas.save();
     canvas.translate(fanCenter.dx, fanCenter.dy);
     canvas.rotate(angleDegrees * math.pi / 180);
-    final double blur = ((speed - 0.48) / 0.52).clamp(0, 1);
+    final double blur = ((speed - 0.48) / 0.52).clamp(0.0, 1.0).toDouble();
     final Paint blade = Paint()
       ..color = const Color(0xFF4A90A8).withValues(alpha: 1 - 0.34 * blur);
     for (int i = 0; i < 5; i++) {
@@ -435,7 +435,7 @@ class _MotorPainter extends CustomPainter {
 
   double _heatLevel(double? temperature) {
     if (temperature == null) return 0;
-    return ((temperature - 30) / 40).clamp(0, 1) * 0.72;
+    return ((temperature - 30) / 40).clamp(0.0, 1.0).toDouble() * 0.72;
   }
 
   @override
