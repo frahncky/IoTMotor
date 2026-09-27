@@ -448,6 +448,8 @@ class MotorControlController extends ChangeNotifier {
   /// `motor_running` do quadro: girando pela regra do horímetro, que inclui o
   /// modo instrumentação (motor comandado por fora, sem contator da placa).
   final Map<String, bool> _runningByDevice = <String, bool>{};
+  /// Grandeza do alarme que desligou o motor (desarme), até a próxima partida.
+  final Map<String, String> _desarmeByDevice = <String, String>{};
   final Map<String, String> _modeByDevice = <String, String>{};
   final Map<String, DateTime> _lastSeenByDevice = <String, DateTime>{};
   final Map<String, DateTime> _lastTelemetryReceivedByDevice =
@@ -1556,6 +1558,7 @@ class MotorControlController extends ChangeNotifier {
     _bootByDevice.clear();
     _relaysByDevice.clear();
     _runningByDevice.clear();
+    _desarmeByDevice.clear();
     _modeByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
     _lastTelemetryStale = false;
@@ -2419,6 +2422,12 @@ class MotorControlController extends ChangeNotifier {
       _relaysByDevice[deviceId] = estados;
       _motorOnByDevice[deviceId] = estados.any((ligado) => ligado);
     }
+    final Object? desarme = dados['trip_field'];
+    if (desarme is String && desarme.isNotEmpty) {
+      _desarmeByDevice[deviceId] = desarme;
+    } else {
+      _desarmeByDevice.remove(deviceId);
+    }
     final Object? girando = dados['motor_running'];
     if (girando is bool) {
       _runningByDevice[deviceId] = girando;
@@ -2450,6 +2459,13 @@ class MotorControlController extends ChangeNotifier {
   /// decide Ligar/Desligar: a "placa selecionada" em modo automático alterna
   /// entre o ESP32-01 e o S3, que não tem contatores.
   bool get isBenchMotorOn => benchRelays?.any((ligado) => ligado) ?? false;
+
+  /// Grandeza do alarme que desligou o motor pelo desarme automático
+  /// (`temperature`, `current`...), enquanto o quadro informa; null sem desarme.
+  String? get desarmeCampo {
+    final String? dev = _benchDeviceId;
+    return dev == null ? null : _desarmeByDevice[dev];
+  }
 
   /// Motor girando, para o desenho, o som, a carga e a vibração: inclui o modo
   /// instrumentação, em que nenhum contator da placa fecha. Placas antigas,

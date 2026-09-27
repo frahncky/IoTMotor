@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationSeverity,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationSeverity,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -255,4 +255,13 @@ test('vibração pela ISO 10816: mm/s estimado na rotação e faixa pela potênc
  // Motor maior (50 cv ≈ 37 kW): os mesmos 2,6 mm/s que alertam no pequeno ainda são aceitáveis.
  assert.equal(vibrationSeverity(0.05,1800,5).label,'Alerta');
  assert.equal(vibrationSeverity(0.05,1800,50).label,'Aceitável');
+});
+
+test('desarme: o cartão diz qual alarme desligou o motor, só com ele parado',()=>{
+ const x=parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false],trip_alarm:'temp',trip_field:'temperature'});
+ assert.equal(x.tripField,'temperature');
+ assert.equal(tripText(x.tripField,x.motorOn),'Desligado pelo alarme de temperatura');
+ assert.equal(tripText('current',true),'');
+ assert.equal(tripText('vibration_peak',false),'Desligado pelo alarme de vibração (pico)');
+ assert.equal(parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false]}).tripField,'');
 });

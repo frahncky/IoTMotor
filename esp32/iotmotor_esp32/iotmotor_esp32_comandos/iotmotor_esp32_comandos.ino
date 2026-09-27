@@ -212,6 +212,19 @@ void semAcento(const char* origem, char* destino, size_t tamanho) {
   destino[escritos] = '\0';
 }
 
+// Nome curto da grandeza para o LCD (sem acento; ele nao tem).
+const char* nomeCurtoDoCampo(const char* campo) {
+  if (!strcmp(campo, "temperature")) return "temperatura";
+  if (!strncmp(campo, "vibration", 9)) return "vibracao";
+  if (!strcmp(campo, "current")) return "corrente";
+  if (!strcmp(campo, "voltage")) return "tensao";
+  if (!strcmp(campo, "power")) return "potencia";
+  if (!strcmp(campo, "frequency")) return "frequencia";
+  if (!strcmp(campo, "pf")) return "fator pot.";
+  if (!strcmp(campo, "starts_hour")) return "partidas/h";
+  return campo;
+}
+
 // LCD 20x4. Cada linha cabe nas 20 colunas: acima disso o display corta o
 // texto e as informacoes aparecem coladas.
 //   L0  Estrela-triangulo      (ou a ultima partida/estado da conexao)
@@ -232,6 +245,8 @@ void atualizarLcd() {
     snprintf(buffer, sizeof(buffer), "WiFi: procurando");
   } else if (!comMqtt) {
     snprintf(buffer, sizeof(buffer), "MQTT reconectando");
+  } else if (desarmeCampo[0]) {  // Parado por alarme: diz qual.
+    snprintf(buffer, sizeof(buffer), "Desarme: %-11.11s", nomeCurtoDoCampo(desarmeCampo));
   } else if (!acionamentoLigado) {
     snprintf(buffer, sizeof(buffer), "Somente medicao");
   } else if (nome[0]) {  // Parado: diz qual foi o ultimo ensaio.
@@ -397,7 +412,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v15-partida-sem-bloqueio";
+  doc["firmware_version"] = "v16-desarme";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -453,6 +468,10 @@ void publicarTelemetriaMqtt() {
   // Motor girando pela mesma regra do horimetro: com acionamento, algum rele;
   // em modo instrumentacao, corrente medida. A placa de sensores usa no historico.
   doc["motor_running"] = motorinfo::girando;
+  if (desarmeCampo[0]) {  // Parou por alarme com desarme: qual.
+    doc["trip_alarm"] = desarmeAlarme;
+    doc["trip_field"] = desarmeCampo;
+  }
   if (partidaAtiva) {  // Painel e app mostram o andamento da partida.
     doc["profile"] = perfilEmExecucao.id;
     doc["profile_ms"] = tempoDePartidaMs(millis());

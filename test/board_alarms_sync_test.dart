@@ -114,6 +114,7 @@ void main() {
       'above': false,
       'limit': 12.0,
       'on': false,
+      'trip': false,
     });
     final BoardAlarm? volta = BoardAlarm.fromMap(alarme.toBoard());
     expect(volta?.enabled, isFalse);

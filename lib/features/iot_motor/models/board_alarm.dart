@@ -12,6 +12,7 @@ class BoardAlarm {
     required this.above,
     required this.limit,
     this.enabled = true,
+    this.trip = false,
     this.firing = false,
   });
 
@@ -27,6 +28,9 @@ class BoardAlarm {
   final bool above;
   final double limit;
   final bool enabled;
+
+  /// Desarme: com o motor ligado, disparar faz o quadro desligar o motor.
+  final bool trip;
 
   /// Estado publicado pela placa: só existe enquanto ela informa.
   final bool firing;
@@ -45,6 +49,7 @@ class BoardAlarm {
       above: raw['above'] != false,
       limit: limit,
       enabled: raw['on'] != false,
+      trip: raw['trip'] == true,
       firing: raw['firing'] == true,
     );
   }
@@ -56,9 +61,10 @@ class BoardAlarm {
     'above': above,
     'limit': limit,
     'on': enabled,
+    'trip': trip,
   };
 
-  BoardAlarm copyWith({double? limit, bool? enabled, bool? above, bool? firing}) {
+  BoardAlarm copyWith({double? limit, bool? enabled, bool? above, bool? trip, bool? firing}) {
     return BoardAlarm(
       id: id,
       field: field,
@@ -66,6 +72,7 @@ class BoardAlarm {
       above: above ?? this.above,
       limit: limit ?? this.limit,
       enabled: enabled ?? this.enabled,
+      trip: trip ?? this.trip,
       firing: firing ?? this.firing,
     );
   }

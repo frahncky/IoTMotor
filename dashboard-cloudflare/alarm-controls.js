@@ -91,7 +91,7 @@
 
   function guardarRascunho(alarme, mudanca) {
     const atual = rascunhos.get(alarme.id) ||
-      {limite: String(alarme.limit), ligado: alarme.on !== false};
+      {limite: String(alarme.limit), ligado: alarme.on !== false, desarma: alarme.trip === true};
     rascunhos.set(alarme.id, {...atual, ...mudanca});
   }
 
@@ -129,6 +129,12 @@
         estadoAtual.className = 'tag on';
         estadoAtual.textContent = 'disparado';
         item.append(nome, estadoAtual);
+        if (alarme?.trip === true) {
+          const desliga = document.createElement('span');
+          desliga.className = 'tag';
+          desliga.textContent = 'desliga o motor';
+          item.append(desliga);
+        }
         alvo.append(item);
       }
       for (const falha of falhas) alvo.append(itemAtivo(`Falha de sensor: ${falha.texto}`, 'falha', 'atual'));
@@ -147,7 +153,7 @@
   function assinaturaDaLista() {
     if (!lista) return 'sem-lista:' + String(conectado);
     return JSON.stringify([
-      lista.map(a => [a.id, a.field, a.board, a.above, a.limit, a.on]),
+      lista.map(a => [a.id, a.field, a.board, a.above, a.limit, a.on, a.trip === true]),
       [...(estado?.firing || [])].sort(),
       [...rascunhos.entries()].sort(),
       pronto(), maxAlarmes
@@ -220,6 +226,17 @@
       ligado.append(marca, document.createTextNode(' ligado'));
       item.append(ligado);
 
+      // Desarme: com o motor ligado, disparar faz o quadro desligar.
+      const desliga = document.createElement('label');
+      desliga.className = 'check';
+      desliga.title = 'Com o motor ligado, este alarme faz o quadro desligar o motor';
+      const marcaDesliga = document.createElement('input');
+      marcaDesliga.type = 'checkbox';
+      marcaDesliga.checked = rascunho ? rascunho.desarma === true : alarme.trip === true;
+      marcaDesliga.addEventListener('change', () => guardarRascunho(alarme, {desarma: marcaDesliga.checked}));
+      desliga.append(marcaDesliga, document.createTextNode(' desliga o motor'));
+      item.append(desliga);
+
       const ops = document.createElement('span');
       ops.className = 'ops';
       const botao = (texto, titulo, classe, acao) => {
@@ -258,7 +275,8 @@
     const corpo = {
       id: alarme.id, field: alarme.field, board: alarme.board === 'command' ? 'command' : 'sensors',
       above: alarme.above !== false, limit: valor,
-      on: rascunho ? rascunho.ligado : alarme.on !== false
+      on: rascunho ? rascunho.ligado : alarme.on !== false,
+      trip: rascunho ? rascunho.desarma === true : alarme.trip === true
     };
     if (publicar('alarm_save', {alarm: corpo}, alarme.id)) aviso('Gravando o alarme na placa…');
   }
@@ -355,7 +373,8 @@
     if (erro) { aviso(erro); return; }
     const corpo = {
       id: novoId(campo), field: campo, board: g.placa,
-      above: $('alarmeLado').value !== 'below', limit: valor, on: true
+      above: $('alarmeLado').value !== 'below', limit: valor, on: true,
+      trip: $('alarmeDesarme')?.checked === true
     };
     if (publicar('alarm_save', {alarm: corpo}, corpo.id)) aviso('Criando o alarme na placa…');
   });

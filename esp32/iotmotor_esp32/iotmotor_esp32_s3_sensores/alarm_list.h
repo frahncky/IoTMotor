@@ -25,6 +25,9 @@ struct Alarme {
   bool acima = true;               // true = dispara acima do limite.
   float limite = 0;
   bool habilitado = true;
+  // Desarme: com o motor ligado, disparar manda o quadro desligar. Escolhido
+  // por alarme, desligado por padrao.
+  bool desarma = false;
   bool disparado = false;          // Estado atual, nao gravado.
 };
 
@@ -45,6 +48,7 @@ struct Evento {
   uint32_t fim = 0;     // 0 enquanto o alarme continua disparado.
   uint32_t inicioMs = 0;
   uint32_t fimMs = 0;
+  bool desarmou = false;  // Este episodio mandou o quadro desligar o motor.
 };
 
 inline Evento eventos[MAX_EVENTOS];
@@ -64,6 +68,18 @@ inline void anotarInicio(const Alarme& a, float valor, uint32_t agora, uint32_t 
   e.inicio = utc;
   e.inicioMs = agora;
   eventosMudaram = true;
+}
+
+// O episodio aberto deste alarme desligou o motor.
+inline void anotarDesarme(const char* id) {
+  for (int8_t i = totalEventos - 1; i >= 0; --i) {
+    if (strcmp(eventos[i].id, id) || eventos[i].fimMs) continue;
+    if (!eventos[i].desarmou) {
+      eventos[i].desarmou = true;
+      eventosMudaram = true;
+    }
+    return;
+  }
 }
 
 inline void anotarFim(const Alarme& a, uint32_t agora, uint32_t utc) {
@@ -86,8 +102,11 @@ inline int indiceDe(const char* id) {
   return -1;
 }
 
+// Oito alarmes com todos os campos passam de 1,5 KB no ArduinoJson.
+constexpr size_t TAMANHO_DOC_ALARMES = 2048;
+
 inline void gravar() {
-  StaticJsonDocument<1536> doc;
+  DynamicJsonDocument doc(TAMANHO_DOC_ALARMES);
   JsonArray array = doc.to<JsonArray>();
   for (uint8_t i = 0; i < total; ++i) {
     JsonObject item = array.createNestedObject();
@@ -97,6 +116,7 @@ inline void gravar() {
     item["above"] = lista[i].acima;
     item["limit"] = lista[i].limite;
     item["on"] = lista[i].habilitado;
+    if (lista[i].desarma) item["trip"] = true;
   }
   String texto;
   serializeJson(doc, texto);
@@ -119,6 +139,7 @@ inline bool lerDeJson(JsonVariantConst origem, Alarme& destino) {
   destino.acima = origem["above"] | true;
   destino.limite = origem["limit"].as<float>();
   destino.habilitado = origem["on"] | true;
+  destino.desarma = origem["trip"] | false;
   destino.disparado = false;
   return isfinite(destino.limite);
 }
@@ -183,7 +204,7 @@ inline void carregar(float vibracaoPadrao, float temperaturaPadrao) {
   }
   total = 0;
   if (texto.length()) {
-    StaticJsonDocument<1536> doc;
+    DynamicJsonDocument doc(TAMANHO_DOC_ALARMES);
     if (!deserializeJson(doc, texto)) {
       for (JsonVariantConst item : doc.as<JsonArrayConst>()) {
         if (total >= MAX_ALARMES) break;
@@ -256,6 +277,7 @@ inline void descreverEventos(JsonDocument& doc) {
     if (eventos[i].inicio) item["start"] = eventos[i].inicio;
     if (eventos[i].fim) item["end"] = eventos[i].fim;
     item["open"] = eventos[i].fimMs == 0;
+    if (eventos[i].desarmou) item["trip"] = true;
     // Duracao em segundos vale mesmo sem hora: millis() nao depende do NTP.
     const uint32_t ate = eventos[i].fimMs ? eventos[i].fimMs : millis();
     item["seconds"] = (ate - eventos[i].inicioMs) / 1000;
@@ -273,6 +295,7 @@ inline void descrever(JsonDocument& doc) {
     item["above"] = lista[i].acima;
     item["limit"] = lista[i].limite;
     item["on"] = lista[i].habilitado;
+    item["trip"] = lista[i].desarma;
     item["firing"] = lista[i].disparado;
   }
   doc["max"] = MAX_ALARMES;

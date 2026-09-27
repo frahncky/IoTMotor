@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
+import '../../models/board_alarm.dart';
 import '../../models/motor_info.dart';
 import 'glass_panel.dart';
 import 'motor_usage_strip.dart';
@@ -145,6 +146,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     final MotorInfo? info = widget.controller.motorInfo;
     final double? temperature = widget.controller.latestSample?.temperature;
     final double rpm = info?.rpm ?? 1750;
+    final String? desarme = widget.controller.desarmeCampo;
     final String status = !connected
         ? 'Desconectado'
         : running
@@ -217,6 +219,16 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                   ],
                 ),
                 const SizedBox(height: 4),
+                // Desarme automático: por que o motor parou.
+                if (desarme != null && connected && !running)
+                  Text(
+                    'Desligado pelo alarme de ${(alarmQuantityFor(desarme)?.label ?? desarme).toLowerCase()}',
+                    key: const ValueKey<String>('motor_desarme'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppTheme.danger,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 Text(
                   'Rotação de placa: ${rpm.round()} rpm',
                   style: Theme.of(context).textTheme.bodySmall,

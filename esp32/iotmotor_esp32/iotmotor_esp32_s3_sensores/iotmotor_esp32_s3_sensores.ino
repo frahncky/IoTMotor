@@ -105,6 +105,7 @@ uint8_t ds18b20Pin=0;
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96];
+char quadroCommandTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastSample=0,lastPublish=0,lastHistorico=0;
 uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
@@ -132,6 +133,10 @@ uint32_t amostrasAtuais=0;
 // Estado do motor vem da telemetria do quadro de comando (esp32-01).
 bool motorLigado=false;
 bool motorGirandoQuadro=false;  // Horimetro do quadro: girando (inclui instrumentacao).
+bool saidasDoQuadro=false;      // Algum contator do quadro ligado (ou partida em andamento).
+// Desarme: o ultimo Desligar mandado ao quadro por um alarme com desarme.
+static const uint32_t DESARME_REPETIR_MS=3000UL;
+uint32_t ultimoDesarme=0,sequenciaDesarme=0;
 uint32_t ultimaTelemetriaQuadro=0;
 static const uint32_t QUADRO_STALE_MS=6000UL;
 // Sensores e sinalizacao continuam durante reconexao Wi-Fi, portal e MQTT.
@@ -219,7 +224,7 @@ bool atualizarBeeps(uint32_t now) {
 // Lista de alarmes retida, para o painel e o app abrirem ja preenchidos.
 void publishAlarms() {
   if(!mqtt.connected())return;
-  StaticJsonDocument<1536> doc;
+  DynamicJsonDocument doc(alarmes::TAMANHO_DOC_ALARMES);
   doc["device_id"]=DEVICE_ID;
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   doc["enabled"]=alarmeHabilitado;
@@ -236,12 +241,17 @@ void publishAlarms() {
 // Ultimos disparos, retidos: o painel abre ja mostrando o que aconteceu.
 void publishAlarmLog() {
   if(!mqtt.connected())return;
-  StaticJsonDocument<1536> doc;
+  // 10 eventos com "trip" passam de 1,5 KB: sobra para nao cortar o fim.
+  DynamicJsonDocument doc(3072);
   doc["device_id"]=DEVICE_ID;
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   alarmes::descreverEventos(doc);
   alarmes::eventosMudaram=false;
   xSemaphoreGive(sensoresMutex);
+  if(doc.overflowed()) {
+    Serial.println("[S3/alarmes] registro nao coube no documento; nao publicado");
+    return;
+  }
   String texto;
   serializeJson(doc,texto);
   if(texto.length())
@@ -557,7 +567,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.7-offline";
+  doc["firmware_version"]="s3-sensors-1.8-desarme";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -646,11 +656,14 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
         // Para o historico vale a mesma regra do horimetro do quadro (inclui o
         // modo instrumentacao, em que o motor gira sem partida ativa).
         const bool girando=quadro["motor_running"].is<bool>()?quadro["motor_running"].as<bool>():ligado;
+        bool saidas=perfil[0]!='\0';
+        for(JsonVariantConst r:quadro["relays"].as<JsonArrayConst>())saidas=saidas||r.as<bool>();
         xSemaphoreTake(sensoresMutex,portMAX_DELAY);
         // Em modo instrumentacao o motor gira sem partida pelo quadro (comando
         // eletrico externo): girando vem da corrente medida. Os alarmes tocam
         // do mesmo jeito.
         motorLigado=ligado||girando;
+        saidasDoQuadro=saidas;
         motorGirandoQuadro=girando;
         ultimaTelemetriaQuadro=millis();
         alarmes::receberMedidasDoQuadro(quadro.as<JsonVariantConst>(),ultimaTelemetriaQuadro);
@@ -800,6 +813,40 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
   if(n)mqtt.publish(ackTopic,(const uint8_t*)saida,(unsigned int)n,false);
 }
 
+// Desarme automatico: um alarme com desarme disparado, com o quadro acionando
+// o motor, manda o quadro desligar. Repete a cada 3 s enquanto o alarme
+// seguir disparado, entao religar com o alarme ativo cai de novo. Precisa do
+// broker (as placas so se falam por ele). O quadro aceita Desligar sem selo
+// (v15 em diante), entao vale tambem com senha de comando.
+void verificarDesarme(uint32_t now) {
+  if(!mqtt.connected())return;
+  if(ultimoDesarme&&(uint32_t)(now-ultimoDesarme)<DESARME_REPETIR_MS)return;
+  char id[alarmes::MAX_ID_ALARME+1]="",campo[alarmes::MAX_CAMPO+1]="";
+  xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+  const bool quadroFresco=ultimaTelemetriaQuadro&&(uint32_t)(now-ultimaTelemetriaQuadro)<QUADRO_STALE_MS;
+  if(alarmeHabilitado&&quadroFresco&&saidasDoQuadro) {
+    for(uint8_t i=0;i<alarmes::total;i++) {
+      const alarmes::Alarme& a=alarmes::lista[i];
+      if(!a.desarma||!a.disparado)continue;
+      strncpy(id,a.id,sizeof(id)-1);
+      strncpy(campo,a.campo,sizeof(campo)-1);
+      alarmes::anotarDesarme(a.id);
+      break;
+    }
+  }
+  xSemaphoreGive(sensoresMutex);
+  if(!id[0])return;
+  ultimoDesarme=now|1U;
+  StaticJsonDocument<256> doc;
+  char seq[24];
+  snprintf(seq,sizeof(seq),"%lu%03lu",(unsigned long)(now|1U),(unsigned long)(++sequenciaDesarme%1000));
+  doc["v"]=1;doc["device_id"]="esp32-01";doc["seq"]=seq;doc["action"]="stop";
+  doc["reason"]="alarm";doc["alarm"]=id;doc["field"]=campo;
+  char payload[256];size_t n=serializeJson(doc,payload,sizeof(payload));
+  if(n&&mqtt.publish(quadroCommandTopic,(const uint8_t*)payload,(unsigned int)n,false))
+    Serial.printf("[S3/desarme] alarme %s (%s): Desligar enviado ao quadro\n",id,campo);
+}
+
 void recuperarWifiS3() {
   // Limpa qualquer sessao MQTT/WebSocket antiga antes de reiniciar o radio.
   mqtt.disconnect();
@@ -858,6 +905,7 @@ void setup() {
   snprintf(historyTopic,sizeof(historyTopic),"%s/%s/history",TOPIC_PREFIX,DEVICE_ID);
   // Alarmes de tensao e corrente leem a telemetria do quadro de comando.
   snprintf(quadroTelemetryTopic,sizeof(quadroTelemetryTopic),"%s/esp32-01/telemetry",TOPIC_PREFIX);
+  snprintf(quadroCommandTopic,sizeof(quadroCommandTopic),"%s/esp32-01/command",TOPIC_PREFIX);
   mqtt.setBufferSize(2048);  // Cabe um dia inteiro do historico.
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
@@ -935,6 +983,7 @@ void loop() {
   }
 
   mqtt.loop();
+  verificarDesarme(millis());
   now=millis();
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
     lastPublish=now;publishTelemetry();
