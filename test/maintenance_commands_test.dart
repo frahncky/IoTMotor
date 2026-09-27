@@ -105,7 +105,7 @@ void main() {
     expect(servico.enviados, isEmpty);
   });
 
-  testWidgets('botão informa quando não há atualização disponível', (WidgetTester tester) async {
+  testWidgets('botão de firmware fica clicável e explica quando está em dia', (WidgetTester tester) async {
     final _ServicoFalso servico = _ServicoFalso();
     final MotorControlController c = _duasPlacas(
       servico,
@@ -122,11 +122,18 @@ void main() {
       ),
     );
 
-    expect(find.text('Sem atualização disponível'), findsOneWidget);
     final OutlinedButton botao = tester.widget<OutlinedButton>(
-      find.widgetWithText(OutlinedButton, 'Sem atualização disponível'),
+      find.widgetWithText(OutlinedButton, 'Atualizar firmware'),
     );
-    expect(botao.onPressed, isNull);
+    expect(botao.onPressed, isNotNull);
+
+    await tester.tap(find.text('Atualizar firmware'));
+    await tester.pump();
+    expect(
+      find.text('O firmware das placas conectadas já está atualizado.'),
+      findsOneWidget,
+    );
+    expect(servico.enviados, isEmpty);
 
     await tester.pumpWidget(const SizedBox.shrink());
     c.dispose();
