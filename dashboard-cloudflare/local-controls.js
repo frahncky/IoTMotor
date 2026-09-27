@@ -174,6 +174,27 @@
   // A partida escolhida é o que o botão Ligar envia (remote-controls.js).
   window.iotmotorPartidaSelecionada = () => selecionado;
 
+  // Metadados somente visuais da partida. A animação nunca usa isto para
+  // comandar a placa: serve apenas para representar uma partida direta ou
+  // uma sequência com comutação (ex.: estrela-triângulo).
+  window.iotmotorPerfilVisual = (id = selecionado) => {
+    const perfil = perfis.find(p => p.id === id);
+    if (!perfil) return null;
+    const nome = `${perfil.id} ${perfil.name}`.toLowerCase();
+    const usados = perfil.cnt.filter(c => c?.use === true);
+    const instantesLiga = [...new Set(usados.map(c => Number(c.on) || 0))];
+    const temDesligamento = usados.some(c => Number(c.off) > 0);
+    const sequencial = instantesLiga.length > 1 || temDesligamento;
+    const estrelaTriangulo =
+      /estrela|star|tri[aâ]ngulo|delta|y[ -]?delta/.test(nome) ||
+      (sequencial && usados.length >= 3);
+    return {
+      id: perfil.id,
+      name: perfil.name,
+      kind: estrelaTriangulo ? 'star-delta' : sequencial ? 'sequenced' : 'direct'
+    };
+  };
+
   function conectar() {
     if (!window.mqtt?.connect) { aviso('Biblioteca MQTT indisponível.'); return; }
     let url, p, d;
