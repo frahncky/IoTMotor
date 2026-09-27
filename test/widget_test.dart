@@ -119,6 +119,8 @@ void main() {
     expect(find.text('Editar dados do motor'), findsOneWidget);
     expect(find.text('Manutenção feita'), findsOneWidget);
     expect(find.text('Zerar horímetro e partidas'), findsOneWidget);
+    expect(find.text('Som do motor'), findsOneWidget);
+    expect(find.text('Testar som'), findsOneWidget);
 
     await tester.ensureVisible(find.widgetWithText(Tab, 'Armazenamento'));
     await tester.pump(const Duration(milliseconds: 200));
