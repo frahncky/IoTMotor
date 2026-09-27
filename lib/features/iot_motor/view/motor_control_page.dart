@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:iotmotor/app/theme/app_theme.dart';
 import 'package:iotmotor/features/iot_motor/controller/motor_control_controller.dart';
+import 'package:iotmotor/features/iot_motor/models/mqtt_connection_config.dart';
+import 'package:iotmotor/features/iot_motor/services/alertas_no_celular.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/settings_tab.dart';
 import 'package:iotmotor/app/providers/mqtt_profiles_provider.dart';
 import 'package:iotmotor/app/providers/motor_sound_provider.dart';
@@ -30,6 +32,9 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     unawaited(ref.read(motorSoundServiceProvider).setForeground(true));
+    // Alertas no celular ligados e o serviço parado (o sistema matou, o app
+    // foi atualizado): volta a vigiar.
+    unawaited(AlertasNoCelular.garantirAoAbrir());
   }
 
   @override
@@ -77,6 +82,11 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
       previous,
       next,
     ) {
+      // Conectou (talvez em outro broker): os alertas seguem a mesma conexão.
+      final MqttConnectionConfig? conexao = next.activeConnectionConfig;
+      if (next.isConnected && !(previous?.isConnected ?? false) && conexao != null) {
+        unawaited(AlertasNoCelular.atualizarConexao(conexao));
+      }
       unawaited(
         ref.read(motorSoundServiceProvider).syncConfirmedState(
           connected: next.isConnected,

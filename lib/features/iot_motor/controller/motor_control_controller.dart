@@ -1767,6 +1767,13 @@ class MotorControlController extends ChangeNotifier {
     return 'há ${age.inDays}d';
   }
 
+  /// Conexão que os alertas no celular usam: a ativa, ou a dos campos.
+  MqttConnectionConfig? configuracaoParaAlertas() =>
+      _service.activeConfig ?? _buildConfigFromInputs();
+
+  /// Conexão ativa agora (null desconectado).
+  MqttConnectionConfig? get activeConnectionConfig => _service.activeConfig;
+
   MqttConnectionConfig? _buildConfigFromInputs() {
     final String host = brokerController.text.trim();
     final String clientId = clientIdController.text.trim();

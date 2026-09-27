@@ -15,6 +15,7 @@ cada mensagem, veja a [referência MQTT](mqtt.md).
 - [Placas: Wi-Fi, atualização e reinício](#placas-wi-fi-atualização-e-reinício)
 - [Senha de comando](#senha-de-comando)
 - [App Android](#app-android)
+  - [Alertas no celular](#alertas-no-celular)
 - [Problemas comuns](#problemas-comuns)
 
 ## Abrir e conectar
@@ -235,8 +236,6 @@ baixa o APK e o Android pede a confirmação.
 com TLS desligado: é o mesmo caminho das placas e passa em rede que bloqueia
 MQTT. Cada celular usa um *client id* próprio; dois aparelhos com o mesmo id se
 derrubam no broker.
-O app só recebe dados enquanto está aberto: não há monitoramento em segundo
-plano.
 **Testar caminhos de conexão** mostra qual endereço passa na rede em que você
 está.
 
@@ -245,6 +244,19 @@ está.
 | `test.mosquitto.org` | 1883 | Rede que deixa passar MQTT |
 | `ws://test.mosquitto.org` | 8080 | Rede que bloqueia as portas MQTT (IFMA) |
 | `wss://test.mosquitto.org` | 8081 | WebSocket com TLS, onde a 8081 não é bloqueada |
+
+### Alertas no celular
+
+Em **Configurações › Alertas no celular** (desligado por padrão), o app avisa
+quando um alarme da placa dispara, **mesmo fechado**.
+
+- Os alarmes são os da lista gravada na placa de sensores: os mesmos que acendem o LED e tocam o buzzer ([Alarmes](#alarmes)). Com o monitoramento da placa desligado, o celular também fica quieto.
+- Ao disparar, chega uma notificação com som, dizendo o limite e a leitura: "Alarme: Temperatura acima de 60 °C · agora 65,3 °C". Ao voltar ao normal, a mesma notificação muda para "Normalizado", sem som.
+- Um alarme que oscila no limite toca no máximo uma vez a cada 5 minutos.
+- Enquanto os alertas estão ligados, o Android mostra uma notificação fixa ("IoTMotor: alertas ligados"): é a exigência do sistema para o app seguir vigiando fechado. Ela diz se está conectado ao broker.
+- Os alertas voltam sozinhos depois de reiniciar o celular ou atualizar o app. Usam a conexão da tela de conexão, com um *client id* próprio (`…_alertas`).
+- Ao ligar, o Android pede permissão para notificações. Se o aparelho economizar bateria de forma agressiva, deixe o IoTMotor **sem restrição de bateria** para ele não ser encerrado.
+- Só no Android.
 
 ## Problemas comuns
 
