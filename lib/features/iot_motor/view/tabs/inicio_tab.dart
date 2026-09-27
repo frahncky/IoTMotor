@@ -304,33 +304,37 @@ class _InicioTabState extends State<InicioTab> {
     final bool connected = widget.controller.isConnected;
     final bool canSend = connected && !widget.controller.isBusy;
     final bool motorOn = widget.controller.isBenchMotorOn;
-    const double controlHeight = 50;
-    const double selectorHeight = 74;
+    // Seletor e botão na mesma altura, com o rótulo "Partida" dentro do
+    // seletor: o painel ocupava ~110 px e agora ~66, que sobram para os
+    // gráficos.
+    const double controlHeight = 46;
 
     return SizedBox(
       width: double.infinity,
       child: GlassPanel(
         tint: AppTheme.brandBlue,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Align(
           alignment: Alignment.centerLeft,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+          child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                SizedBox(
-                  width: 220,
-                  height: selectorHeight,
-                  child: _buildStartTypeSelector(
-                    context,
-                    startTypes: startTypes,
-                    selectedStartType: selectedStartType,
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 340),
+                    child: SizedBox(
+                      height: controlHeight,
+                      child: _buildStartTypeSelector(
+                        context,
+                        startTypes: startTypes,
+                        selectedStartType: selectedStartType,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 SizedBox(
-                  width: 126,
+                  width: 120,
                   height: controlHeight,
                   child: FilledButton.icon(
                     onPressed:
@@ -375,7 +379,6 @@ class _InicioTabState extends State<InicioTab> {
                 ),
               ],
             ),
-          ),
         ),
       ),
     );
@@ -422,12 +425,7 @@ class _InicioTabState extends State<InicioTab> {
     required List<MotorCommandType> startTypes,
     required MotorCommandType selectedStartType,
   }) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: <Widget>[
-        Positioned.fill(
-          top: 8,
-          child: PopupMenuButton<String>(
+    return PopupMenuButton<String>(
             onSelected: (String action) {
               setState(() {
                 _selectedStartTypeId = action;
@@ -532,13 +530,28 @@ class _InicioTabState extends State<InicioTab> {
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      selectedStartType.label,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelLarge?.copyWith(color: AppTheme.ink),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'Partida',
+                          maxLines: 1,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: AppTheme.inkSoft,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                          ),
+                        ),
+                        Text(
+                          selectedStartType.label,
+                          style: Theme.of(
+                            context,
+                          ).textTheme.labelLarge?.copyWith(color: AppTheme.ink, height: 1.2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                   Icon(
@@ -548,28 +561,6 @@ class _InicioTabState extends State<InicioTab> {
                 ],
               ),
             ),
-          ),
-        ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              color: AppTheme.surfaceSoft.withValues(alpha: 0.96),
-              child: Text(
-                'Partida do motor',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: AppTheme.inkSoft,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
