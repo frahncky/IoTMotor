@@ -125,14 +125,10 @@ class GrandezasTab extends StatelessWidget {
   }
 
   int _columnsForWidth(double width) {
-    if (width >= 1080) {
-      return 5;
-    }
+    // São 10 medições. Preferimos divisores de 10 para evitar uma última
+    // linha com um único card: 2 colunas no espaço estreito e 5 no largo.
     if (width >= 760) {
-      return 4;
-    }
-    if (width >= 520) {
-      return 3;
+      return 5;
     }
     return 2;
   }
@@ -159,16 +155,7 @@ class GrandezasTab extends StatelessWidget {
   }
 
   int _maxColumnsForWidth(double width, int itemCount) {
-    int maxColumns;
-    if (width >= 1080) {
-      maxColumns = 6;
-    } else if (width >= 760) {
-      maxColumns = 5;
-    } else if (width >= 360) {
-      maxColumns = 3;
-    } else {
-      maxColumns = 2;
-    }
+    final int maxColumns = width >= 760 ? 5 : 2;
     return maxColumns.clamp(1, itemCount);
   }
 
