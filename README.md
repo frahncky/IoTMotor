@@ -29,7 +29,7 @@ Painel web, app Android e dois ESP32 conversando por MQTT.
 | 🌡️ **Temperatura e vibração** | DS18B20 e MPU6050 no motor, com a vibração classificada pela ISO 10816 (Boa, Aceitável, Alerta, Crítica). |
 | ▶️ **Partidas pela internet** | Partida direta ou estrela-triângulo, montadas no painel e gravadas no quadro de comando. |
 | 🚨 **Alarmes na placa** | LED e buzzer na placa de sensores. Os limites ficam gravados nela e funcionam com o painel fechado. |
-| 🧾 **Dados do motor** | Placa de identificação (inclusive dupla tensão 220/380 V), carga em % e alarmes sugeridos de sobrecarga, tensão e partidas. |
+| 🧾 **Dados do motor** | Placa de identificação (inclusive dupla tensão 220/380 V) e carga em % da corrente nominal. |
 | ⏱️ **Horímetro e manutenção** | Horas de uso, partidas por dia e lembrete de manutenção pelo horímetro. |
 | 📈 **Histórico de 7 dias** | Médias e máximos de cada hora, guardados na própria placa. |
 | 🔄 **Atualização remota** | Os dois ESP32 baixam o firmware novo pelo painel ou pelo app, sem cabo. |
@@ -98,9 +98,13 @@ docs/                   Documentação técnica e imagens
 
 ## 📚 Documentação
 
-- [Painel web, MQTT e ponte na porta 443](dashboard-cloudflare/README.md)
-- [Placa de sensores (ESP32-S3)](esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/README.md)
-- [App: conexão, telemetria e armazenamento](docs/app-mqtt.md)
+| | |
+| --- | --- |
+| 📘 [Guia de uso](docs/guia-de-uso.md) | Operar a bancada pelo painel e pelo app |
+| 📡 [Referência MQTT](docs/mqtt.md) | Tópicos, telemetria e comandos |
+| 🔌 [Hardware](docs/hardware.md) | Materiais e ligações das duas placas |
+| 🔧 [Firmware](docs/firmware.md) | Gravar, atualizar e configurar as placas |
+| 🛠️ [Desenvolvimento](docs/desenvolvimento.md) | Estrutura, testes, CI e publicação |
 
 > [!WARNING]
 > Projeto de **bancada didática** para fins de pesquisa.
