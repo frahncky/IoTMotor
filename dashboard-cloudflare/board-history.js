@@ -120,7 +120,12 @@ if (typeof document !== 'undefined') (() => {
       if (x(t) + 40 < W) grafico.append(svg('text', {x: x(t) + 3, y: H - 8},
         new Date(t).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})));
     }
-    for (const v of [min, max]) grafico.append(svg('text', {x: 4, y: y(v) + 4}, numeroBr(v, g.barras ? 0 : g.casas)));
+    // Grade horizontal: 4 níveis, com o valor à esquerda.
+    for (let i = 0; i < 4; i++) {
+      const v = min + (max - min) * i / 3;
+      grafico.append(svg('line', {x1: E, x2: W - D, y1: y(v), y2: y(v), class: 'gridline'}));
+      grafico.append(svg('text', {x: 4, y: y(v) + 4}, numeroBr(v, g.barras ? 0 : g.casas)));
+    }
     grafico.append(svg('text', {x: 4, y: H - 8}, g.unidade));
     if (!pontos.length) {
       grafico.append(svg('text', {x: W / 2, y: H / 2, class: 'empty', 'text-anchor': 'middle'}, 'Sem registros nestes 7 dias'));
