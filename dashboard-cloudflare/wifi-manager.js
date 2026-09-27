@@ -101,13 +101,14 @@ if (typeof document !== 'undefined') (() => {
   const topico = (dev, tipo) => `${prefixo}/${dev}/${tipo}`;
   const atual = () => placas[dispositivos[selecionado]];
   const nomeDaPlaca = () => selecionado === 0 ? 'Quadro de comando' : 'Sensores do motor';
-  const aviso = texto => {
-    $('wifiFeedback').textContent = texto;
-    const pertoDosBotoes = $('wifiActionFeedback');
-    if (pertoDosBotoes) {
-      pertoDosBotoes.textContent = texto;
-      pertoDosBotoes.hidden = !texto;
-    }
+  // Mensagens gerais ficam no rodapé da seção. Mensagens de firmware ficam
+  // somente junto aos botões de manutenção, para não duplicar informação.
+  const aviso = texto => { $('wifiFeedback').textContent = texto; };
+  const avisoFirmware = texto => {
+    const el = $('wifiActionFeedback');
+    if (!el) return;
+    el.textContent = texto;
+    el.hidden = !texto;
   };
   const pendenteDe = dev => pendentes[dev] || null;
   const limparPendente = dev => {
@@ -307,14 +308,15 @@ if (typeof document !== 'undefined') (() => {
   }
 
   function publicar(acao, extras) {
-    if (!client?.connected) { aviso('Sem conexão com o broker.'); return false; }
+    const informar = acao === 'update' ? avisoFirmware : aviso;
+    if (!client?.connected) { informar('Sem conexão com o broker.'); return false; }
     const dev = dispositivos[selecionado];
     const impede = window.iotmotorSelo?.impedimento(dev);
-    if (impede) { aviso(impede); return false; }
+    if (impede) { informar(impede); return false; }
     const seq = String(sequencia = Math.max(Date.now() * 1000 + Math.floor(Math.random() * 1000), sequencia + 1));
     const ativo = client;
     if (pendenteDe(dev)) {
-      aviso('Já existe uma operação em andamento nesta placa.');
+      informar('Já existe uma operação em andamento nesta placa.');
       return false;
     }
     const pendente = pendentes[dev] = {seq, dev, acao, fase: 'enviado', timer: null};
@@ -330,13 +332,13 @@ if (typeof document !== 'undefined') (() => {
     if (aberto !== null) enviar(aberto);
     else selo.empacotar(dev, comando).then(enviar).catch(erro => {
       if (client !== ativo || pendenteDe(dev)?.seq !== seq) return;
-      limparPendente(dev); aviso('Não deu para selar o comando: ' + (erro.message || erro)); renderizar();
+      limparPendente(dev); informar('Não deu para selar o comando: ' + (erro.message || erro)); renderizar();
     });
     pendente.timer = setTimeout(() => {
       const atualPendente = pendenteDe(dev);
       if (atualPendente?.seq !== seq || atualPendente.fase !== 'enviado') return;
       limparPendente(dev);
-      aviso(`Sem resposta de ${dev}. A placa está online?`);
+      informar(`Sem resposta de ${dev}. A placa está online?`);
       renderizar();
     }, 8000);
     renderizar();
@@ -362,6 +364,7 @@ if (typeof document !== 'undefined') (() => {
   for (const i of [0, 1]) $('wifiDev' + i).addEventListener('click', () => {
     selecionado = i;
     ordemEditada = null;
+    avisoFirmware('');
     renderizar();
   });
 
@@ -398,26 +401,26 @@ if (typeof document !== 'undefined') (() => {
       : null;
 
     if (!connected || !client?.connected) {
-      aviso('Conecte ao MQTT para atualizar o firmware.');
+      avisoFirmware('Conecte ao MQTT para atualizar o firmware.');
       return;
     }
     if (p?.acao === 'update') {
-      aviso(`Atualização de ${nomeDaPlaca().toLowerCase()} já está em andamento.`);
+      avisoFirmware(`Atualização de ${nomeDaPlaca().toLowerCase()} já está em andamento.`);
       return;
     }
     if (estados[dev] === 'offline') {
-      aviso(`${nomeDaPlaca()} está offline. Aguarde a placa reconectar para atualizar.`);
+      avisoFirmware(`${nomeDaPlaca()} está offline. Aguarde a placa reconectar para atualizar.`);
       return;
     }
     if (minha && !minha.atualizar) {
-      aviso(`${nomeDaPlaca()}: firmware já está atualizado (${versoes[dev]}).`);
+      avisoFirmware(`${nomeDaPlaca()}: firmware já está atualizado (${versoes[dev]}).`);
       return;
     }
 
     if (!confirm(`A placa ${dev} vai baixar o firmware publicado no GitHub e reiniciar (cerca de 1 minuto fora do ar).\n\n` +
                  'A placa de comandos recusa se houver contatores ligados.\n\nContinuar?')) return;
     delete atualizados[dev];
-    if (publicar('update', {})) aviso(`Pedindo atualização de firmware para ${nomeDaPlaca().toLowerCase()}…`);
+    if (publicar('update', {})) avisoFirmware(`Pedindo atualização de firmware para ${nomeDaPlaca().toLowerCase()}…`);
   });
   $('wifiRestart').addEventListener('click', () => {
     // O quadro recusa com contatores ligados: reiniciar desliga os relés.
@@ -515,7 +518,7 @@ if (typeof document !== 'undefined') (() => {
           atualizados[dev] = {version: instalada, em: Date.now()};
           estados[dev] = 'online';  // capabilities novo prova que a placa voltou ao MQTT.
           limparPendente(dev);
-          aviso(`Atualização de ${dev} concluída · firmware ${instalada} instalado.`);
+          avisoFirmware(`Atualização de ${dev} concluída · firmware ${instalada} instalado.`);
         }
         renderizar();
         return;
@@ -547,16 +550,17 @@ if (typeof document !== 'undefined') (() => {
             if (p.timer) clearTimeout(p.timer);
             p.fase = 'instalando';
             const seqAtual = p.seq;
-            aviso(`${dev}: download confirmado. Aguardando reinício e nova versão…`);
+            avisoFirmware(`${dev}: download confirmado. Aguardando reinício e nova versão…`);
             p.timer = setTimeout(() => {
               const atualPendente = pendenteDe(dev);
               if (atualPendente?.seq !== seqAtual || atualPendente.fase !== 'instalando') return;
               limparPendente(dev);
-              aviso(`${dev}: atualização não confirmada. Verifique a versão e tente novamente.`);
+              avisoFirmware(`${dev}: atualização não confirmada. Verifique a versão e tente novamente.`);
               renderizar();
             }, 120000);
           } else {
-            aviso((dados.accepted ? `${dev}: placa confirmou: ` : `${dev}: falha na atualização/comando: `) + motivo);
+            const texto = (dados.accepted ? `${dev}: placa confirmou: ` : `${dev}: falha na atualização/comando: `) + motivo;
+            (p.acao === 'update' ? avisoFirmware : aviso)(texto);
             if (dados.accepted && dev === dispositivos[selecionado]) ordemEditada = null;
             limparPendente(dev);
           }
