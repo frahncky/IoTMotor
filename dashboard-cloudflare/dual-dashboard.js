@@ -46,7 +46,9 @@ function parseTelemetry(json){
   dataSource:String(json.data_source||source.data_source||'não informada'),seq:numeric(source.seq),
   measuredAt:Number.isFinite(source.ts)&&source.ts>1700000000?source.ts*1000:null,
   benchArmed:source.bench_armed===true,motorOn,
-  mode:typeof source.mode==='string'?source.mode:'—',vibrationPeak:numeric(source.vibration_peak),
+  mode:typeof source.mode==='string'?source.mode:'—',
+  profile:typeof source.profile==='string'?source.profile:'',
+  vibrationPeak:numeric(source.vibration_peak),
   relays,alarmEnabled:typeof source.alarm_enabled==='boolean'?source.alarm_enabled:null,
   runSTotal:numeric(source.run_s_total),startsTotal:numeric(source.starts_total),
   startsToday:numeric(source.starts_today),sessionS:numeric(source.session_s),startsHour:numeric(source.starts_hour),
@@ -238,6 +240,15 @@ function renderMotorVisual(){
  const pendente=commandPendingLabel(window.iotmotorRemoteControls?.pendente?.()||null,cmd?.motorOn);
  root.dataset.state=visual.state;text('motorVisualStatus',pendente||visual.label);
  if(pendente)root.dataset.command='pending';else delete root.dataset.command;
+ const info=window.iotmotorMotorInfo?.dados?.()||null;
+ const perfilId=typeof cmd?.profile==='string'&&cmd.profile?cmd.profile:(window.iotmotorPartidaSelecionada?.()||'');
+ const perfil=window.iotmotorPerfilVisual?.(perfilId)||null;
+ if(Number.isFinite(info?.rpm)&&info.rpm>0)root.dataset.rpm=String(info.rpm);else delete root.dataset.rpm;
+ if(perfilId)root.dataset.profile=perfilId;else delete root.dataset.profile;
+ root.dataset.startKind=perfil?.kind||'direct';
+ if(cmd?.motorOn===true&&Number.isFinite(sensor?.vibration)&&sensor.vibration>=0)
+  root.dataset.vibration=String(sensor.vibration);
+ else root.dataset.vibration='0';
  const alarms=window.iotmotorAlarme?.lista?.()||null;
  const heat=motorHeat(sensor?.temperature,temperatureLimit(alarms));
  const heatLayer=root.querySelector('.motor-heat');
@@ -253,7 +264,7 @@ function renderMotorVisual(){
  }
  if(sensor?.vibration!==null&&sensor?.vibration!==undefined){
   // Classificação só com o motor girando: parado, a vibração é ruído do sensor.
-  const motor=window.iotmotorMotorInfo?.dados?.();
+  const motor=info;
   const iso=cmd?.motorOn===true?vibrationSeverity(sensor.vibration,motor?.rpm,motor?.power_cv):null;
   dados.push(`Vibração ${sensor.vibration.toFixed(3)} g${iso?` (≈${iso.mmS.toFixed(1).replace('.',',')} mm/s · ${iso.label})`:''}`);
   if(iso)root.dataset.vibZone=String(iso.zona);else delete root.dataset.vibZone;
@@ -261,7 +272,6 @@ function renderMotorVisual(){
  if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${sensor.temperature.toFixed(1)} °C`);
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
- const info=window.iotmotorMotorInfo?.dados?.()||null;
  const manutencao=maintenanceStatus(info,cmd?.runSTotal);
  const uso=[cmd?usageLine(cmd):'',manutencao?.vencida?'Manutenção vencida':manutencao?.perto?`Manutenção em ${horas(manutencao.restanteH)}`:'']
   .filter(Boolean).join(' · ');
