@@ -221,35 +221,6 @@ class MqttMotorService {
     }
   }
 
-  bool sendCommand(MotorCommandType type, {String? deviceId}) {
-    final MqttServerClient? client = _client;
-    final MqttConnectionConfig? config = _activeConfig;
-    if (client == null ||
-        config == null ||
-        client.connectionStatus?.state != MqttConnectionState.connected) {
-      return false;
-    }
-
-    final String targetDeviceId = _resolveTargetDeviceId(
-      config: config,
-      requestedDeviceId: deviceId,
-    );
-    final String commandTopic = config.commandTopicForDevice(targetDeviceId);
-
-    final String payload = jsonEncode(<String, dynamic>{
-      'device_id': targetDeviceId,
-      'command': type.command,
-      'mode': type.mode,
-      'origin': 'flutter_app',
-      'timestamp': DateTime.now().toIso8601String(),
-    });
-
-    final MqttClientPayloadBuilder builder =
-        MqttClientPayloadBuilder()..addString(payload);
-    client.publishMessage(commandTopic, MqttQos.atLeastOnce, builder.payload!);
-    return true;
-  }
-
   /// Cifra os comandos quando a placa exige senha (ver command_seal.dart).
   final CommandSeal seal = CommandSeal();
 
@@ -272,20 +243,26 @@ class MqttMotorService {
     MqttServerClient client,
     String topic,
     String deviceId,
-    Map<String, dynamic> comando,
-  ) {
+    Map<String, dynamic> comando, {
+    bool aberto = false,
+  }) {
     void enviar(String texto) {
       final MqttClientPayloadBuilder builder =
           MqttClientPayloadBuilder()..addString(texto);
       client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
     }
 
-    final String? aberto = seal.empacotarAberto(deviceId, comando);
-    if (aberto != null) {
-      enviar(aberto);
+    final String? semSelo =
+        aberto ? jsonEncode(comando) : seal.empacotarAberto(deviceId, comando);
+    if (semSelo != null) {
+      enviar(semSelo);
       return;
     }
-    seal.empacotar(deviceId, comando).then(enviar);
+    seal.empacotar(deviceId, comando).then(enviar).catchError((Object _) {
+      // Parar nao depende do selo; os demais comandos ficam sem resposta e a
+      // tela avisa pelo prazo da confirmacao.
+      if (comando['action'] == 'stop') enviar(jsonEncode(comando));
+    });
   }
 
   int _ultimaSequencia = 0;
@@ -324,11 +301,16 @@ class MqttMotorService {
         client.connectionStatus?.state != MqttConnectionState.connected) {
       return false;
     }
-    if (seal.impedimento(deviceId) != null) return false;
+    // Desligar nunca espera a senha: sem ela (ou sem o desafio) sai aberto, e
+    // a placa aceita parar mesmo assim (firmware v15 em diante).
+    final bool parar = action == 'stop';
+    final bool semSelo = seal.impedimento(deviceId) != null;
+    if (semSelo && !parar) return false;
     _publicarComando(
       client,
       config.commandTopicForDevice(deviceId),
       deviceId,
+      aberto: semSelo,
       <String, dynamic>{
         'v': 1,
         'device_id': deviceId,

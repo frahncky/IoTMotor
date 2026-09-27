@@ -14,7 +14,6 @@ import '../models/mqtt_connection_config.dart';
 import '../models/telemetry_alert.dart';
 import '../models/telemetry_history_entry.dart';
 import '../models/telemetry_sample.dart';
-import '../services/background_mqtt_service.dart';
 import '../services/motor_settings_store.dart';
 import '../services/mqtt_settings_validators.dart';
 import '../services/mqtt_motor_service.dart';
@@ -31,10 +30,10 @@ class MotorControlController extends ChangeNotifier {
   }) : _service = service ?? MqttMotorService() {
     activeProfileId = initialProfileId;
     brokerController = TextEditingController(
-      text: initialConfig?.host ?? 'broker.hivemq.com',
+      text: initialConfig?.host ?? 'ws://test.mosquitto.org',
     );
     portController = TextEditingController(
-      text: (initialConfig?.port ?? 1883).toString(),
+      text: (initialConfig?.port ?? 8080).toString(),
     );
     clientIdController = TextEditingController(
       text: initialConfig?.clientId ??
@@ -446,6 +445,9 @@ class MotorControlController extends ChangeNotifier {
   // lógico dos quatro contatores (CNT 1 a CNT 4).
   final Map<String, String> _bootByDevice = <String, String>{};
   final Map<String, List<bool>> _relaysByDevice = <String, List<bool>>{};
+  /// `motor_running` do quadro: girando pela regra do horímetro, que inclui o
+  /// modo instrumentação (motor comandado por fora, sem contator da placa).
+  final Map<String, bool> _runningByDevice = <String, bool>{};
   final Map<String, String> _modeByDevice = <String, String>{};
   final Map<String, DateTime> _lastSeenByDevice = <String, DateTime>{};
   final Map<String, DateTime> _lastTelemetryReceivedByDevice =
@@ -854,29 +856,13 @@ class MotorControlController extends ChangeNotifier {
     // Conexão bem-sucedida: grava estes dados sem esperar o próximo ajuste.
     unawaited(_persistSettings());
 
-    bool backgroundReady = false;
-    try {
-      await BackgroundMqttService.instance.startMonitoring(config);
-      backgroundReady = true;
-    } catch (_) {
-      backgroundReady = false;
-    }
-
-    statusMessage =
-        backgroundReady
-            ? 'Conexão ativa. Monitoramento em segundo plano ativo.'
-            : 'Conexão ativa. Aguardando dados dos ESP32.';
+    statusMessage = 'Conexão ativa. Aguardando dados dos ESP32.';
     _notify();
   }
 
   Future<void> disconnect() async {
     if (!isConnected && !isBusy) {
       return;
-    }
-    try {
-      await BackgroundMqttService.instance.stopMonitoring();
-    } catch (_) {
-      // Keep foreground disconnect flow even if background service stop fails.
     }
 
     await _service.disconnect();
@@ -925,7 +911,9 @@ class MotorControlController extends ChangeNotifier {
       final DateTime? ultima = _lastTelemetryReceivedByDevice[dev];
       if (boot == null ||
           ultima == null ||
-          DateTime.now().difference(ultima) > const Duration(seconds: 10)) {
+          // Mesma janela do painel: no broker publico, 8 a 20 s entre
+          // telemetrias sao comuns, e 10 s recusava a partida a toa.
+          DateTime.now().difference(ultima) > const Duration(seconds: 25)) {
         _pendingMessage =
             'Sem telemetria recente de ${nomeDaPlaca(dev)}: a partida exige a sessão atual da placa.';
         _notify();
@@ -1145,7 +1133,11 @@ class MotorControlController extends ChangeNotifier {
       if (mesmoPerfil) {
         brokerController.text = settings.broker;
         portController.text = settings.port;
-        clientIdController.text = settings.clientId;
+        // "motor_app" era fixo nas versões antigas: dois celulares com ele se
+        // derrubavam no broker. Fica o id único gerado nesta instalação.
+        if (settings.clientId != 'motor_app') {
+          clientIdController.text = settings.clientId;
+        }
         topicPrefixController.text = settings.topicPrefix;
         usernameController.text = settings.username;
         useTls = settings.useTls;
@@ -1563,6 +1555,7 @@ class MotorControlController extends ChangeNotifier {
     _motorOnByDevice.clear();
     _bootByDevice.clear();
     _relaysByDevice.clear();
+    _runningByDevice.clear();
     _modeByDevice.clear();
     _lastTelemetryReceivedByDevice.clear();
     _lastTelemetryStale = false;
@@ -2419,6 +2412,12 @@ class MotorControlController extends ChangeNotifier {
       _relaysByDevice[deviceId] = estados;
       _motorOnByDevice[deviceId] = estados.any((ligado) => ligado);
     }
+    final Object? girando = dados['motor_running'];
+    if (girando is bool) {
+      _runningByDevice[deviceId] = girando;
+    } else {
+      _runningByDevice.remove(deviceId);
+    }
     // Quem decide o alarme é a placa: ela diz quais estão disparados agora.
     final Object? disparados = dados['alarms_firing'];
     if (disparados is List) {
@@ -2444,6 +2443,14 @@ class MotorControlController extends ChangeNotifier {
   /// decide Ligar/Desligar: a "placa selecionada" em modo automático alterna
   /// entre o ESP32-01 e o S3, que não tem contatores.
   bool get isBenchMotorOn => benchRelays?.any((ligado) => ligado) ?? false;
+
+  /// Motor girando, para o desenho, o som, a carga e a vibração: inclui o modo
+  /// instrumentação, em que nenhum contator da placa fecha. Placas antigas,
+  /// sem `motor_running`, seguem pelos contatores.
+  bool get isMotorRunning {
+    final String? dev = _benchDeviceId;
+    return (dev == null ? null : _runningByDevice[dev]) ?? isBenchMotorOn;
+  }
 
   /// Estado lógico de CNT 1 a CNT 4 informado pela placa de comandos.
   List<bool>? get benchRelays {

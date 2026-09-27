@@ -180,7 +180,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Ativa',
-        value: hasData ? sample?.power : null,
+        value: hasData ? sample.power : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.power) : null,
         unit: 'W',
         decimalDigits: 1,
@@ -201,7 +201,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'FP',
-        value: hasData ? sample?.powerFactor : null,
+        value: hasData ? sample.powerFactor : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.powerFactor) : null,
         unit: '',
         decimalDigits: 2,
@@ -211,7 +211,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Tensão',
-        value: hasData ? sample?.voltage : null,
+        value: hasData ? sample.voltage : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.voltage) : null,
         unit: 'V',
         decimalDigits: 1,
@@ -220,7 +220,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Corrente',
-        value: hasData ? sample?.current : null,
+        value: hasData ? sample.current : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.current) : null,
         unit: 'A',
         decimalDigits: 2,
@@ -229,7 +229,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Energia',
-        value: hasData ? sample?.energy : null,
+        value: hasData ? sample.energy : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.energy) : null,
         unit: 'kWh',
         decimalDigits: 3,
@@ -238,7 +238,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Freq.',
-        value: hasData ? sample?.frequency : null,
+        value: hasData ? sample.frequency : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.frequency) : null,
         unit: 'Hz',
         decimalDigits: 2,
@@ -247,7 +247,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Vibra.',
-        value: hasData ? sample?.vibration : null,
+        value: hasData ? sample.vibration : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.vibration) : null,
         unit: 'g',
         decimalDigits: 3,
@@ -256,7 +256,7 @@ class GrandezasTab extends StatelessWidget {
       ),
       _MagnitudeInfo(
         label: 'Temp.',
-        value: hasData ? sample?.temperature : null,
+        value: hasData ? sample.temperature : null,
         trend: hasData ? _trendFor(history, (TelemetrySample item) => item.temperature) : null,
         unit: '\u00b0C',
         decimalDigits: 1,

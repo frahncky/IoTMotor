@@ -35,7 +35,7 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage> {
         motorSound.syncConfirmedState(
           connected: controller.isConnected,
           hasConfirmedState: controller.benchRelays != null,
-          motorOn: controller.isBenchMotorOn,
+          motorOn: controller.isMotorRunning,
         ),
       );
     });
@@ -49,7 +49,7 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage> {
         ref.read(motorSoundServiceProvider).syncConfirmedState(
           connected: next.isConnected,
           hasConfirmedState: next.benchRelays != null,
-          motorOn: next.isBenchMotorOn,
+          motorOn: next.isMotorRunning,
         ),
       );
 

@@ -297,7 +297,10 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                     SizedBox(
                       width: fieldWidth,
                       child: DropdownButtonFormField<String>(
-                        value:
+                        // initialValue só vale na criação: a chave recria o
+                        // campo quando a placa escolhida muda por fora.
+                        key: ValueKey<String>(controller.deviceIdController.text),
+                        initialValue:
                             controller.deviceIdController.text.isEmpty
                                 ? null
                                 : controller.deviceIdController.text,
@@ -468,29 +471,29 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
 
     final List<Widget> dados = <Widget>[];
     void chip(String rotulo, String valor) {
-      dados.add(Chip(label: Text(rotulo + ': ' + valor)));
+      dados.add(Chip(label: Text('$rotulo: $valor')));
     }
 
     if (info != null) {
       if (info.currentA != null) {
         chip(
           'Corrente',
-          _motorPair(info.currentA, info.currentYA) + ' A',
+          '${_motorPair(info.currentA, info.currentYA)} A',
         );
       }
       if (info.voltageV != null) {
         chip(
           'Tensão',
-          _motorPair(info.voltageV, info.voltageYV) + ' V',
+          '${_motorPair(info.voltageV, info.voltageYV)} V',
         );
       }
-      if (info.powerCv != null) chip('Potência', _motorNumber(info.powerCv) + ' cv');
-      if (info.rpm != null) chip('Rotação', _motorNumber(info.rpm, casas: 0) + ' rpm');
+      if (info.powerCv != null) chip('Potência', '${_motorNumber(info.powerCv)} cv');
+      if (info.rpm != null) chip('Rotação', '${_motorNumber(info.rpm, casas: 0)} rpm');
       if (info.serviceFactor != null) chip('Fator de serviço', _motorNumber(info.serviceFactor));
       if (info.phases != null) chip('Tipo', info.phases == 3 ? 'Trifásico' : 'Monofásico');
       if (info.connectionLabel != null) chip('Ligação', info.connectionLabel!);
       if (info.maintIntervalH != null && info.maintIntervalH! > 0) {
-        chip('Manutenção', 'a cada ' + _motorNumber(info.maintIntervalH, casas: 0) + ' h');
+        chip('Manutenção', 'a cada ${_motorNumber(info.maintIntervalH, casas: 0)} h');
       }
     }
 
@@ -509,7 +512,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
           const SizedBox(height: 12),
           if (controller.motorDeviceId != null)
             Text(
-              'Quadro: ' + nomeComId(controller.motorDeviceId!),
+              'Quadro: ${nomeComId(controller.motorDeviceId!)}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: AppTheme.bodySoft,
               ),
@@ -571,7 +574,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                 label: const Text('Manutenção feita'),
               ),
               OutlinedButton.icon(
-                onPressed: disponivel && !controller.isBenchMotorOn
+                onPressed: disponivel && !controller.isMotorRunning
                     ? () => _confirmMotorAction(
                           context,
                           titulo: 'Zerar horímetro e partidas',
@@ -647,7 +650,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
               OutlinedButton.icon(
-                onPressed: controller.isBenchMotorOn
+                onPressed: controller.isMotorRunning
                     ? null
                     : () {
                         if (sound.testing) {
@@ -694,7 +697,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   String _motorPair(double? primeiro, double? segundo) {
     if (primeiro == null) return '—';
     final String a = _motorNumber(primeiro);
-    return segundo == null ? a : a + '/' + _motorNumber(segundo);
+    return segundo == null ? a : '$a/${_motorNumber(segundo)}';
   }
 
   List<double> _parseMotorPair(String texto, String campo) {
@@ -702,13 +705,13 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     if (limpo.isEmpty) return const <double>[];
     final List<String> partes = limpo.split('/');
     if (partes.length > 2) {
-      throw FormatException(campo + ': use um valor ou dois separados por /.');
+      throw FormatException('$campo: use um valor ou dois separados por /.');
     }
     final List<double> valores = <double>[];
     for (final String parte in partes) {
       final double? valor = double.tryParse(parte.trim().replaceAll(',', '.'));
       if (valor == null || !valor.isFinite || valor <= 0) {
-        throw FormatException(campo + ': informe um número positivo.');
+        throw FormatException('$campo: informe um número positivo.');
       }
       valores.add(valor);
     }
@@ -726,9 +729,9 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     final double? valor = double.tryParse(limpo.replaceAll(',', '.'));
     if (valor == null || !valor.isFinite || valor < min || valor > max) {
       final String faixa = max.isFinite
-          ? ' entre ' + _motorNumber(min) + ' e ' + _motorNumber(max)
-          : ' maior ou igual a ' + _motorNumber(min);
-      throw FormatException(campo + ': informe um valor' + faixa + '.');
+          ? ' entre ${_motorNumber(min)} e ${_motorNumber(max)}'
+          : ' maior ou igual a ${_motorNumber(min)}';
+      throw FormatException('$campo: informe um valor$faixa.');
     }
     return valor;
   }
@@ -864,7 +867,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       ),
                       const SizedBox(height: 10),
                       DropdownButtonFormField<int>(
-                        value: fases,
+                        initialValue: fases,
                         decoration: const InputDecoration(labelText: 'Tipo'),
                         items: const <DropdownMenuItem<int>>[
                           DropdownMenuItem<int>(
@@ -887,7 +890,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       if (fases == 3) ...<Widget>[
                         const SizedBox(height: 10),
                         DropdownButtonFormField<String>(
-                          value: ligacao,
+                          initialValue: ligacao,
                           decoration: const InputDecoration(
                             labelText: 'Ligação em uso',
                           ),
@@ -1011,7 +1014,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     if (!(confirmar ?? false)) return;
     final bool ok = await acao();
     if (ok && mounted) {
-      _showSnackBar(titulo + ': comando enviado.');
+      _showSnackBar('$titulo: comando enviado.');
     }
   }
 

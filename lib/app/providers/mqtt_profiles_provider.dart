@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -90,26 +91,61 @@ class MqttProfilesState {
 class MqttProfilesNotifier extends StateNotifier<MqttProfilesState> {
   static const _profilesKey = 'mqtt_profiles_v2';
   static const _activeProfileIdKey = 'mqtt_active_profile_id';
-  static const MqttProfile _defaultProfile = MqttProfile(
-    id: 'default',
-    name: 'Dispositivo principal',
-    config: MqttConnectionConfig(
-      host: 'broker.hivemq.com',
-      port: 1883,
-      clientId: 'motor_app',
-      topicPrefix: 'iotmotor',
-      deviceId: 'default',
-      useTls: false,
-    ),
-  );
-  static const MqttProfilesState _defaultState = MqttProfilesState(
-    profiles: <MqttProfile>[_defaultProfile],
-    activeProfileId: 'default',
-  );
+  /// Broker das placas, pelo caminho que passa em rede que bloqueia as portas
+  /// MQTT (IFMA): WebSocket na 8080. Antes o padrão era broker.hivemq.com, onde
+  /// não há placa nenhuma: conectava "com sucesso" e nunca chegava dado.
+  static const String brokerPadrao = 'ws://test.mosquitto.org';
+  static const int portaPadrao = 8080;
+
+  /// Cada instalação com o seu clientId: dois celulares com o mesmo id se
+  /// derrubam no broker, um a cada reconexão do outro.
+  static String clientIdNovo() => 'motor_app_${Random().nextInt(900000) + 100000}';
+
+  static MqttProfile perfilPadrao() => MqttProfile(
+        id: 'default',
+        name: 'Dispositivo principal',
+        config: MqttConnectionConfig(
+          host: brokerPadrao,
+          port: portaPadrao,
+          clientId: clientIdNovo(),
+          topicPrefix: 'iotmotor',
+          deviceId: 'default',
+          useTls: false,
+        ),
+      );
+
+  static MqttProfilesState _defaultState() => MqttProfilesState(
+        profiles: <MqttProfile>[perfilPadrao()],
+        activeProfileId: 'default',
+      );
+
+  /// Perfis gravados pelas versões antigas: o padrão intocado (hivemq) passa
+  /// para o broker das placas, e o clientId fixo "motor_app" ganha um único.
+  /// Perfis que a pessoa editou ficam como estão.
+  static MqttProfile migrarPerfil(MqttProfile perfil) {
+    final MqttConnectionConfig c = perfil.config;
+    final bool padraoAntigo = perfil.id == 'default' && c.host == 'broker.hivemq.com' && c.port == 1883;
+    final bool idFixo = c.clientId == 'motor_app';
+    if (!padraoAntigo && !idFixo) return perfil;
+    return MqttProfile(
+      id: perfil.id,
+      name: perfil.name,
+      config: MqttConnectionConfig(
+        host: padraoAntigo ? brokerPadrao : c.host,
+        port: padraoAntigo ? portaPadrao : c.port,
+        clientId: idFixo ? clientIdNovo() : c.clientId,
+        topicPrefix: c.topicPrefix,
+        deviceId: c.deviceId,
+        useTls: padraoAntigo ? false : c.useTls,
+        username: c.username,
+        password: c.password,
+      ),
+    );
+  }
 
   final _secureStorage = const FlutterSecureStorage();
 
-  MqttProfilesNotifier() : super(_defaultState) {
+  MqttProfilesNotifier() : super(_defaultState()) {
     load();
   }
 
@@ -118,18 +154,23 @@ class MqttProfilesNotifier extends StateNotifier<MqttProfilesState> {
       final prefs = await SharedPreferences.getInstance();
       final rawProfiles = await _secureStorage.read(key: _profilesKey);
       if (rawProfiles == null || rawProfiles.isEmpty) {
-        state = _defaultState;
+        state = _defaultState();
         await _persist();
         return;
       }
 
       final decoded = jsonDecode(rawProfiles) as List<dynamic>;
-      final profiles =
+      final List<MqttProfile> lidos =
           decoded
               .map((e) => MqttProfile.fromMap(e as Map<String, dynamic>))
               .toList();
+      final profiles = lidos.map(migrarPerfil).toList();
+      final bool migrou = <int>[
+        for (int i = 0; i < lidos.length; i++)
+          if (!identical(lidos[i], profiles[i])) i,
+      ].isNotEmpty;
       if (profiles.isEmpty) {
-        state = _defaultState;
+        state = _defaultState();
         await _persist();
         return;
       }
@@ -140,8 +181,9 @@ class MqttProfilesNotifier extends StateNotifier<MqttProfilesState> {
               ? savedActiveId
               : profiles.first.id;
       state = MqttProfilesState(profiles: profiles, activeProfileId: activeId);
+      if (migrou) await _persist();
     } catch (_) {
-      state = _defaultState;
+      state = _defaultState();
     }
   }
 
