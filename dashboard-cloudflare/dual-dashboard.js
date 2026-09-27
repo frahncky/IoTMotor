@@ -364,7 +364,7 @@ function ingest(which,raw,packet){
  if(state.records.length>MAX_REGISTROS)state.records.shift();
  guardarRegistros();
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
- diag(`Recebendo ${which==='command'?'medições do quadro de comando':'vibração e temperatura dos sensores'} · seq ${sample.seq??'—'}.`);render();return true;
+ diag(`Recebendo ${which==='command'?'medições do quadro de comando':'vibração e temperatura dos sensores'}.`);render();return true;
 }
 function connect(automatico){
 
