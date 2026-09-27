@@ -552,6 +552,8 @@ class MqttMotorService {
     client.subscribe(config.telemetryWildcardTopic, MqttQos.atMostOnce);
     client.subscribe(config.statusWildcardTopic, MqttQos.atMostOnce);
     client.subscribe(config.acquisitionConfigTopic, MqttQos.atLeastOnce);
+    // Heartbeats de App/Web para exibir a mesma contagem de clientes da web.
+    client.subscribe(config.clientsPresenceWildcardTopic, MqttQos.atMostOnce);
     // Partidas e respostas: a lista de partidas mora no ESP32 de comandos.
     client.subscribe(config.profilesWildcardTopic, MqttQos.atLeastOnce);
     client.subscribe(config.commandAckWildcardTopic, MqttQos.atLeastOnce);
