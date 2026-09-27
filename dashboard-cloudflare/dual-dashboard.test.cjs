@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS}=require('./dual-dashboard.js');
+const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -272,4 +272,22 @@ test('desarme: o cartão diz qual alarme desligou o motor, só com ele parado',(
  assert.equal(tripText('current',true),'');
  assert.equal(tripText('vibration_mms',false),'Desligado pelo alarme de vibração');
  assert.equal(parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false]}).tripField,'');
+});
+
+
+test('grafico usa janelas temporais exatas e consolida pela media',()=>{
+ const serie=[];
+ assert.equal(chartBucketStart(12001,5000),10000);
+ assert.equal(chartBucketStart(14999,5000),10000);
+ assert.equal(chartBucketStart(15000,5000),15000);
+
+ upsertChartPoint(serie,12001,220,5000);
+ upsertChartPoint(serie,14999,230,5000);
+ upsertChartPoint(serie,16000,240,5000);
+
+ assert.equal(serie.length,2);
+ assert.equal(serie[0].t,10000);
+ assert.equal(serie[0].v,225);
+ assert.equal(serie[1].t,15000);
+ assert.equal(serie[1].v,240);
 });
