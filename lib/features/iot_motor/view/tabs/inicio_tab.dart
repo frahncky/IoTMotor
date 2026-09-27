@@ -90,8 +90,8 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
   _TelemetryPlot(
     id: 'frequency',
     group: _TelemetryGroup.eletrica,
-    label: 'Freq.',
-    title: 'Freq.',
+    label: 'Frequência',
+    title: 'Frequência',
     unit: 'Hz',
     color: AppTheme.brandBlue,
     decimalDigits: 2,
@@ -100,8 +100,8 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
   _TelemetryPlot(
     id: 'vibration',
     group: _TelemetryGroup.mecanica,
-    label: 'Vibra.',
-    title: 'Vibra.',
+    label: 'Vibração',
+    title: 'Vibração',
     unit: 'mm/s',
     color: AppTheme.vibrationAccent,
     decimalDigits: 2,
@@ -110,8 +110,8 @@ final List<_TelemetryPlot> _telemetryPlots = <_TelemetryPlot>[
   _TelemetryPlot(
     id: 'temperature',
     group: _TelemetryGroup.mecanica,
-    label: 'Temp.',
-    title: 'Temp.',
+    label: 'Temperatura',
+    title: 'Temperatura',
     unit: '°C',
     color: AppTheme.temperatureAccent,
     decimalDigits: 1,
