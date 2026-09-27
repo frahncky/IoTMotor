@@ -17,6 +17,7 @@
 #include <PZEM004Tv30.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <math.h>
 #include <esp_system.h>
 #include "mqtt_websocket_client.h"
@@ -86,7 +87,10 @@ float ultimaTensao = 0, ultimaCorrente = 0, ultimaPotencia = 0;
 float ultimaEnergia = 0, ultimaFrequencia = 0, ultimoFatorPotencia = 0;
 bool pzemOk = false;
 unsigned long ultimaLeituraPzem = 0;
-constexpr unsigned long INTERVALO_PZEM_MS = 3000UL;
+constexpr uint32_t PZEM_INTERVALO_PADRAO_MS = 3000UL;
+constexpr uint32_t PZEM_INTERVALO_MIN_MS = 1000UL;
+constexpr uint32_t PZEM_INTERVALO_MAX_MS = 10000UL;
+uint32_t intervaloPzemMs = PZEM_INTERVALO_PADRAO_MS;
 
 static const char* MQTT_HOST = "test.mosquitto.org";
 static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket (ws://)
@@ -95,9 +99,12 @@ MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
 char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
 char topicoComandos[80], topicoResposta[80], topicoWifi[80], topicoPerfis[80], topicoAuth[80];
-char topicoMotorInfo[80];
+char topicoMotorInfo[80], topicoDataConfig[80];
 constexpr unsigned long MQTT_RETRY_MS = 6000UL;
-constexpr unsigned long MQTT_PUBLISH_MS = 1000UL;
+constexpr uint32_t MQTT_INTERVALO_PADRAO_MS = 1000UL;
+constexpr uint32_t MQTT_INTERVALO_MIN_MS = 1000UL;
+constexpr uint32_t MQTT_INTERVALO_MAX_MS = 60000UL;
+uint32_t intervaloMqttMs = MQTT_INTERVALO_PADRAO_MS;
 unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
 uint32_t sequenciaMqtt = 0;
 
@@ -141,6 +148,11 @@ bool salvarToleranciaSemLink(long segundos);
 #include "relogio.h"
 #include "iotmotor_motor_info.h"
 #include "iotmotor_profiles.h"
+
+// Contrato compartilhado com painel/app: configuracao tecnica de aquisicao.
+bool salvarConfigDados(JsonVariantConst doc, const char*& motivo);
+void publicarConfigDados();
+
 #include "iotmotor_mqtt_control.h"
 
 void imprimirLinhaCompleta(uint8_t linha, const char* texto) {
@@ -407,6 +419,59 @@ void lerPzem() {
   lcdPrecisaAtualizar = true;
 }
 
+void carregarConfigDados() {
+  Preferences memoria;
+  if (!memoria.begin("iot-dados", true)) return;
+  intervaloPzemMs = constrain((uint32_t)memoria.getUInt("pzem_ms", PZEM_INTERVALO_PADRAO_MS),
+                              PZEM_INTERVALO_MIN_MS, PZEM_INTERVALO_MAX_MS);
+  intervaloMqttMs = constrain((uint32_t)memoria.getUInt("mqtt_ms", MQTT_INTERVALO_PADRAO_MS),
+                              MQTT_INTERVALO_MIN_MS, MQTT_INTERVALO_MAX_MS);
+  memoria.end();
+}
+
+bool salvarConfigDados(JsonVariantConst doc, const char*& motivo) {
+  const long pzem = doc["pzem_interval_ms"] | (long)intervaloPzemMs;
+  const long mqtt = doc["mqtt_interval_ms"] | (long)intervaloMqttMs;
+  if (pzem < (long)PZEM_INTERVALO_MIN_MS || pzem > (long)PZEM_INTERVALO_MAX_MS) {
+    motivo = "pzem_interval_ms deve ficar entre 1000 e 10000 ms";
+    return false;
+  }
+  if (mqtt < (long)MQTT_INTERVALO_MIN_MS || mqtt > (long)MQTT_INTERVALO_MAX_MS) {
+    motivo = "mqtt_interval_ms deve ficar entre 1000 e 60000 ms";
+    return false;
+  }
+  Preferences memoria;
+  if (!memoria.begin("iot-dados", false)) {
+    motivo = "falha ao abrir configuracao de dados";
+    return false;
+  }
+  memoria.putUInt("pzem_ms", (uint32_t)pzem);
+  memoria.putUInt("mqtt_ms", (uint32_t)mqtt);
+  memoria.end();
+  intervaloPzemMs = (uint32_t)pzem;
+  intervaloMqttMs = (uint32_t)mqtt;
+  motivo = "configuracao de aquisicao gravada";
+  return true;
+}
+
+void publicarConfigDados() {
+  if (!mqttClient.connected()) return;
+  StaticJsonDocument<384> doc;
+  doc["v"] = 1;
+  doc["device_id"] = DEVICE_ID;
+  doc["role"] = "command";
+  doc["pzem_interval_ms"] = intervaloPzemMs;
+  doc["mqtt_interval_ms"] = intervaloMqttMs;
+  doc["pzem_min_ms"] = PZEM_INTERVALO_MIN_MS;
+  doc["pzem_max_ms"] = PZEM_INTERVALO_MAX_MS;
+  doc["mqtt_min_ms"] = MQTT_INTERVALO_MIN_MS;
+  doc["mqtt_max_ms"] = MQTT_INTERVALO_MAX_MS;
+  char payload[384];
+  const size_t len = serializeJson(doc, payload, sizeof(payload));
+  if (len) mqttClient.publish(topicoDataConfig, reinterpret_cast<const uint8_t*>(payload),
+                              static_cast<unsigned int>(len), true);
+}
+
 void publicarCapacidades() {
   if (!mqttClient.connected()) return;
   StaticJsonDocument<384> doc;
@@ -516,6 +581,7 @@ void manterMqtt(unsigned long agora) {
     publicarRedes();
     publicarPerfis();
     publicarMotorInfo();
+    publicarConfigDados();
     Serial.println("[MQTT] conectado: comandos e telemetria ativos");
   } else Serial.printf("[MQTT] falha rc=%d\n", mqttClient.state());
 }
@@ -574,7 +640,9 @@ void setup() {
   snprintf(topicoPerfis, sizeof(topicoPerfis), "iotmotor/%s/profiles", DEVICE_ID);
   snprintf(topicoAuth, sizeof(topicoAuth), "iotmotor/%s/auth", DEVICE_ID);
   snprintf(topicoMotorInfo, sizeof(topicoMotorInfo), "iotmotor/%s/motor_info", DEVICE_ID);
+  snprintf(topicoDataConfig, sizeof(topicoDataConfig), "iotmotor/%s/data_config", DEVICE_ID);
   carregarAcionamento();
+  carregarConfigDados();
   carregarToleranciaSemLink();
   carregarLimiteDoEnsaio();
   motorinfo::carregar();
@@ -620,7 +688,7 @@ void loop() {
     Serial.println("[QUADRO] reiniciando a pedido do painel");
     ESP.restart();
   }
-  if (agora - ultimaLeituraPzem >= INTERVALO_PZEM_MS) {
+  if (agora - ultimaLeituraPzem >= intervaloPzemMs) {
     ultimaLeituraPzem = agora;
     lerPzem();
   }
@@ -628,7 +696,7 @@ void loop() {
     ultimaAtualizacaoLcd = agora;
     atualizarLcd();
   }
-  if (mqttClient.connected() && (!ultimaPublicacaoMqtt || agora - ultimaPublicacaoMqtt >= MQTT_PUBLISH_MS)) {
+  if (mqttClient.connected() && (!ultimaPublicacaoMqtt || agora - ultimaPublicacaoMqtt >= intervaloMqttMs)) {
     ultimaPublicacaoMqtt = agora;
     publicarTelemetriaMqtt();
   }
