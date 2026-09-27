@@ -25,7 +25,8 @@ class MotorSoundService extends ChangeNotifier {
       'https://iotmotor.pages.dev/motor-ligado.mp3';
 
   static const Duration _loopStart = Duration(milliseconds: 1000);
-  static const Duration _loopEnd = Duration(milliseconds: 3700);
+  static const Duration _loopEnd = Duration(milliseconds: 3400);
+  static const Duration _shutdownStart = Duration(milliseconds: 3700);
 
   final AudioPlayer _player = AudioPlayer();
 
@@ -40,11 +41,13 @@ class MotorSoundService extends ChangeNotifier {
   bool _playing = false;
   bool _testMode = false;
   bool _seekingLoop = false;
+  String? _lastError;
 
   bool get enabled => _enabled;
   double get volume => _volume;
   int get volumePercent => (_volume * 100).round();
   bool get playing => _playing;
+  String? get lastError => _lastError;
 
   Future<void> _load() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -133,12 +136,19 @@ class MotorSoundService extends ChangeNotifier {
   }
 
   Future<void> testSound() async {
+    _lastError = null;
     _testMode = true;
     _looping = false;
     _playing = true;
-    await _player.stop();
-    await _player.setVolume(_volume);
-    await _player.play(UrlSource(_sampleUrl));
+    try {
+      await _player.stop();
+      await _player.setVolume(_volume);
+      await _player.play(UrlSource(_sampleUrl));
+    } catch (_) {
+      _testMode = false;
+      _playing = false;
+      _lastError = 'Não foi possível carregar o som do motor.';
+    }
     notifyListeners();
   }
 
@@ -152,27 +162,40 @@ class MotorSoundService extends ChangeNotifier {
   }
 
   Future<void> _startContinuous({required bool includeStartup}) async {
+    _lastError = null;
     _testMode = false;
     _looping = true;
     _playing = true;
-    await _player.stop();
-    await _player.setVolume(_volume);
-    await _player.play(
-      UrlSource(_sampleUrl),
-      position: includeStartup ? Duration.zero : _loopStart,
-    );
+    try {
+      await _player.stop();
+      await _player.setVolume(_volume);
+      await _player.play(
+        UrlSource(_sampleUrl),
+        position: includeStartup ? Duration.zero : _loopStart,
+      );
+    } catch (_) {
+      _looping = false;
+      _playing = false;
+      _lastError = 'Não foi possível reproduzir o som do motor.';
+    }
   }
 
   Future<void> _playShutdown() async {
+    _lastError = null;
     _testMode = false;
     _looping = false;
     _playing = true;
-    await _player.stop();
-    await _player.setVolume(_volume);
-    await _player.play(
-      UrlSource(_sampleUrl),
-      position: _loopEnd,
-    );
+    try {
+      await _player.stop();
+      await _player.setVolume(_volume);
+      await _player.play(
+        UrlSource(_sampleUrl),
+        position: _shutdownStart,
+      );
+    } catch (_) {
+      _playing = false;
+      _lastError = 'Não foi possível reproduzir o som de desligamento.';
+    }
   }
 
   void _onPosition(Duration position) {
