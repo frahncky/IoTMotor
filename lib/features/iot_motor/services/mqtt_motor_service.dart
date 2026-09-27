@@ -396,6 +396,8 @@ class MqttMotorService {
       config: config,
       requestedDeviceId: deviceId,
     );
+    // Cada placa só escuta o próprio tópico: "auto" não chegaria a nenhuma.
+    if (targetDeviceId.isEmpty || targetDeviceId == 'auto') return false;
     if (seal.impedimento(targetDeviceId) != null) return false;
     final DateTime now = DateTime.now();
     _publicarComando(

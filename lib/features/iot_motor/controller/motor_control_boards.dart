@@ -209,20 +209,69 @@ extension MotorControlBoards on MotorControlController {
     return true;
   }
 
-  /// Pede ao ESP32 que abra o portal de Wi-Fi (`wifi_portal`) ou que se
-  /// atualize pela internet (`update`). Nenhuma senha trafega no broker.
-  Future<void> sendMaintenanceCommand(String action) async {
-    final bool enviado = _service.sendMaintenanceCommand(action);
-    if (!enviado) {
-      _pendingMessage = _service.seal.impedimento(_benchDeviceId ?? '') ??
-          'Conecte-se ao broker antes de enviar comandos.';
+  /// Placas no ar agora: as que anunciaram `online` no status retido (a
+  /// placa publica `online` ao conectar e o broker troca por `offline`, o
+  /// testamento dela, quando cai). Placa só conhecida pelo histórico ou de uma
+  /// conexão anterior, sem status atual, não entra.
+  List<String> get maintenanceBoards {
+    if (!isConnected) return const <String>[];
+    final List<String> placas = _knownDevices
+        .where((String d) => _statusByDevice[d]?.trim().toLowerCase() == 'online')
+        .toList()
+      ..sort();
+    return placas;
+  }
+
+  /// Placas no ar com firmware diferente do publicado: o alvo do botão
+  /// "Atualizar firmware". Placa que nunca informou a versão (firmware antigo,
+  /// sem o tópico `capabilities`) também entra.
+  List<String> get boardsToUpdate => <String>[
+    for (final String placa in maintenanceBoards)
+      if (firmwareOf(placa)?.atualizar ?? true) placa,
+  ];
+
+  /// Pede a cada placa de [deviceIds], no tópico dela, que abra o portal de
+  /// Wi-Fi (`wifi_portal`) ou que se atualize pela internet (`update`).
+  /// Nenhuma senha trafega no broker.
+  Future<void> sendMaintenanceCommand(String action, List<String> deviceIds) async {
+    // A lista veio de antes do diálogo de confirmação: confere de novo, porque
+    // a placa pode ter caído ou terminado de atualizar enquanto ele estava aberto.
+    final List<String> validas =
+        action == 'update' ? boardsToUpdate : maintenanceBoards;
+    final List<String> alvos = <String>[
+      for (final String placa in deviceIds)
+        if (validas.contains(placa)) placa,
+    ];
+    if (alvos.isEmpty) {
+      _pendingMessage =
+          action == 'update'
+              ? 'Nenhuma placa no ar precisa de atualização agora.'
+              : 'Nenhuma placa no ar para receber o pedido.';
       _notify();
       return;
     }
-    statusMessage =
-        action == 'wifi_portal'
-            ? 'Pedido enviado: a placa vai abrir a rede IoTMotor- por 3 minutos.'
-            : 'Pedido enviado: a placa vai baixar o firmware e reiniciar.';
+    final List<String> enviados = <String>[];
+    final List<String> falhas = <String>[
+      for (final String placa in deviceIds)
+        if (!alvos.contains(placa))
+          '${nomeDaPlaca(placa)}: ${action == 'update' && maintenanceBoards.contains(placa) ? 'já está em dia' : 'saiu do ar'}',
+    ];
+    for (final String placa in alvos) {
+      if (_service.sendMaintenanceCommand(action, deviceId: placa)) {
+        enviados.add(nomeDaPlaca(placa));
+      } else {
+        falhas.add('${nomeDaPlaca(placa)}: '
+            '${_service.seal.impedimento(placa) ?? 'sem conexão com o broker'}');
+      }
+    }
+    if (enviados.isNotEmpty) {
+      final String quem = enviados.join(' e ');
+      statusMessage =
+          action == 'wifi_portal'
+              ? 'Pedido enviado: $quem vai abrir a rede IoTMotor- por 3 minutos.'
+              : 'Pedido enviado para $quem: baixar o firmware e reiniciar.';
+    }
+    if (falhas.isNotEmpty) _pendingMessage = 'Pedido não enviado. ${falhas.join('; ')}.';
     _notify();
   }
 }
