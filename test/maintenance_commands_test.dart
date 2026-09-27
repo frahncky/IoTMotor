@@ -105,6 +105,33 @@ void main() {
     expect(servico.enviados, isEmpty);
   });
 
+  testWidgets('botão informa quando não há atualização disponível', (WidgetTester tester) async {
+    final _ServicoFalso servico = _ServicoFalso();
+    final MotorControlController c = _duasPlacas(
+      servico,
+      versaoQuadro: firmwarePublicado[0],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DeviceMaintenanceSection(controller: c),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Sem atualização disponível'), findsOneWidget);
+    final OutlinedButton botao = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Sem atualização disponível'),
+    );
+    expect(botao.onPressed, isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    c.dispose();
+  });
+
   testWidgets('os botões únicos mandam para as placas certas', (WidgetTester tester) async {
     final _ServicoFalso servico = _ServicoFalso();
     final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
