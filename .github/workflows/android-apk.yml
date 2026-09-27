@@ -11,6 +11,16 @@ on:
       - 'assets/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+  # Na PR: testes e build, sem publicar no app-latest.
+  pull_request:
+    paths:
+      - '.github/workflows/android-apk.yml'
+      - 'android/**'
+      - 'lib/**'
+      - 'test/**'
+      - 'assets/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
   workflow_dispatch:
 
 jobs:
@@ -62,10 +72,13 @@ jobs:
         # app sabe se ha versao mais nova, ja que a versao do pubspec nao muda.
         # O build-number (versionCode) cresce a cada build: o Android recusa
         # instalar uma versao "menor" por cima da instalada.
+        # So ARM (32 e 64 bits), que cobre os celulares: sem o x86_64, que so
+        # serve a emuladores, o APK fica cerca de um terco menor.
         run: |
           SELO="$(date -u '+%Y%m%d%H%M')"
           echo "IOTMOTOR_BUILD=$SELO" >> "$GITHUB_ENV"
           flutter build apk --release --build-number="$(date -u '+%y%m%d%H')" \
+            --target-platform android-arm,android-arm64 \
             --dart-define=IOTMOTOR_BUILD="$SELO"
       - name: Check APK signature
         # O APK usa so assinatura v2/v3 (keytool -jarfile nao le): apksigner.
@@ -88,6 +101,7 @@ jobs:
           retention-days: 14
       # O app confere app-latest.json e baixa o APK deste release, sem cabo.
       - name: Publish APK for in-app update
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

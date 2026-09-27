@@ -6,6 +6,13 @@ on:
       - 'esp32/iotmotor_esp32/iotmotor_esp32_comandos/**'
       - 'esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/**'
       - '.github/workflows/esp32-compile.yml'
+  # Na PR tambem: erro de compilacao aparece antes do merge, e nao so quando o
+  # publish-firmware falha na main.
+  pull_request:
+    paths:
+      - 'esp32/iotmotor_esp32/iotmotor_esp32_comandos/**'
+      - 'esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/**'
+      - '.github/workflows/esp32-compile.yml'
   workflow_dispatch:
 permissions:
   contents: read

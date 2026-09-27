@@ -242,8 +242,10 @@
       comando.profile = window.iotmotorPartidaSelecionada?.() || '';
       if (!comando.profile) {feedback('Escolha uma partida.');return;}
     }
+    // Desligar nunca espera a senha: sem ela (ou sem o desafio) sai aberto, e
+    // a placa aceita parar mesmo assim (firmware v15 em diante).
     const impede = window.iotmotorSelo?.impedimento(device);
-    if (impede) { feedback(impede); return; }
+    if (impede && action !== 'stop') { feedback(impede); return; }
     pending = {seq: comando.seq, action};
     feedback('Enviando ' + (action === 'start' ? 'partida' : 'parada') + ' MQTT…');
     // O comando sai cifrado quando a placa exige senha (command-seal.js).
@@ -263,10 +265,11 @@
         // sonoro, e uma publicação MQTT não é confundida com motor realmente ligado.
       });
     };
-    const aberto = selo ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
+    const aberto = selo && !impede ? selo.empacotarAberto(device, comando) : JSON.stringify(comando);
     if (aberto !== null) enviar(aberto);
     else selo.empacotar(device, comando).then(enviar).catch(erro => {
       if (pending?.seq !== comando.seq) return;
+      if (action === 'stop') { enviar(JSON.stringify(comando)); return; }
       feedback('Não deu para selar o comando: ' + (erro.message || erro)); pending = null; refresh();
     });
     setTimeout(() => {

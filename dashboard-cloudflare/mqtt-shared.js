@@ -62,7 +62,7 @@
       return client;
     }
 
-    mqtt.connect = function sharedConnect(url, options) {
+    function sharedConnect(url, options) {
       const key = String(url);
       let pool = pools.get(key);
       if (!pool) {
@@ -90,9 +90,16 @@
         });
       }
       return virtualClient(pool);
-    };
-    mqtt.__iotmotorShared = true;
-    mqtt.__iotmotorPools = pools;
+    }
+    // O MQTT.js 5 exporta as funcoes como propriedades so de leitura: trocar
+    // mqtt.connect ali lancava erro ao carregar a pagina, e cada modulo abria o
+    // proprio WebSocket. Um objeto novo, com as mesmas funcoes, substitui o global.
+    const shared = {};
+    for (const key of Object.keys(mqtt)) shared[key] = mqtt[key];
+    shared.connect = sharedConnect;
+    shared.__iotmotorShared = true;
+    shared.__iotmotorPools = pools;
+    target.mqtt = shared;
     return true;
   }
 

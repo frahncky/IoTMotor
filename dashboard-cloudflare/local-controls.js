@@ -119,7 +119,25 @@
     }
     const id = dialogo.dataset.id ||
       `p${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
-    return {perfil: {id, name: nome, cnt}};
+    return {perfil: {id, name: nome, cnt}, aviso: avisoDeSobreposicao(cnt)};
+  }
+
+  // Tres contatores fechados juntos: numa estrela-triangulo seriam estrela e
+  // triangulo ao mesmo tempo, um curto entre fases. Nao impede (pode ser um
+  // ensaio de reles sem motor), mas pede confirmacao. O intertravamento
+  // eletrico entre estrela e triangulo continua obrigatorio no quadro.
+  function avisoDeSobreposicao(cnt) {
+    for (const c of cnt) {
+      if (!c.use) continue;
+      const juntos = cnt.map((o, i) => ({...o, n: i + 1}))
+        .filter(o => o.use && o.on <= c.on && (!o.off || o.off > c.on));
+      if (juntos.length >= 3) {
+        return `Aos ${segundos(c.on)} s ficam ligados juntos CNT ${juntos.map(o => o.n).join(', ')}. ` +
+          'Numa estrela-triângulo, estrela e triângulo não podem fechar ao mesmo tempo ' +
+          '(o tempo morto entre eles evita o curto). Gravar mesmo assim?';
+      }
+    }
+    return '';
   }
 
   function publicar(acao, extras, mensagem) {
@@ -165,6 +183,7 @@
   $('profileSalvar').addEventListener('click', () => {
     const resultado = lerEditor();
     if (resultado.erro) { $('profileErro').textContent = resultado.erro; return; }
+    if (resultado.aviso && !confirm(resultado.aviso)) return;
     if (publicar('profile_save', {profile: resultado.perfil}, `Gravando "${resultado.perfil.name}" na placa…`)) {
       selecionado = resultado.perfil.id;
       dialogo.close();
