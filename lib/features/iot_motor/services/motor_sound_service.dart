@@ -6,16 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class MotorSoundService extends ChangeNotifier {
   MotorSoundService() {
-    _positionSub = _player.onPositionChanged.listen(_onPosition);
-    _completeSub = _player.onPlayerComplete.listen((_) {
-      if (_testMode) {
-        _testMode = false;
-      }
-      if (!_looping) {
-        _playing = false;
-        notifyListeners();
-      }
-    });
     _load();
   }
 
@@ -28,7 +18,7 @@ class MotorSoundService extends ChangeNotifier {
   static const Duration _loopEnd = Duration(milliseconds: 3400);
   static const Duration _shutdownStart = Duration(milliseconds: 3700);
 
-  final AudioPlayer _player = AudioPlayer();
+  AudioPlayer? _player;
 
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<void>? _completeSub;
@@ -54,7 +44,6 @@ class MotorSoundService extends ChangeNotifier {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     _enabled = prefs.getBool(_enabledKey) ?? false;
     _volume = (prefs.getDouble(_volumeKey) ?? 0.70).clamp(0.0, 1.0).toDouble();
-    await _player.setVolume(_volume);
     notifyListeners();
   }
 
@@ -67,7 +56,7 @@ class MotorSoundService extends ChangeNotifier {
       _looping = false;
       _testMode = false;
       _playing = false;
-      await _player.stop();
+      await _player?.stop();
     } else if (_lastMotorOn == true && !_baselinePending) {
       await _startContinuous(includeStartup: false);
     }
@@ -76,7 +65,10 @@ class MotorSoundService extends ChangeNotifier {
 
   Future<void> setVolume(double value) async {
     _volume = value.clamp(0.0, 1.0).toDouble();
-    await _player.setVolume(_volume);
+    final AudioPlayer? player = _player;
+    if (player != null) {
+      await player.setVolume(_volume);
+    }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_volumeKey, _volume);
     notifyListeners();
@@ -98,7 +90,7 @@ class MotorSoundService extends ChangeNotifier {
       _looping = false;
       _testMode = false;
       _playing = false;
-      await _player.stop();
+      await _player?.stop();
       notifyListeners();
       return;
     }
@@ -111,7 +103,7 @@ class MotorSoundService extends ChangeNotifier {
       } else if (!motorOn) {
         _looping = false;
         _playing = false;
-        await _player.stop();
+        await _player?.stop();
       }
       notifyListeners();
       return;
@@ -123,7 +115,7 @@ class MotorSoundService extends ChangeNotifier {
     if (!_enabled) {
       _looping = false;
       _playing = false;
-      await _player.stop();
+      await _player?.stop();
       notifyListeners();
       return;
     }
@@ -142,9 +134,10 @@ class MotorSoundService extends ChangeNotifier {
     _looping = false;
     _playing = true;
     try {
-      await _player.stop();
-      await _player.setVolume(_volume);
-      await _player.play(UrlSource(_sampleUrl));
+      await _player?.stop();
+      final AudioPlayer player = await _ensurePlayer();
+      await player.setVolume(_volume);
+      await player.play(UrlSource(_sampleUrl));
     } catch (_) {
       _testMode = false;
       _playing = false;
@@ -158,7 +151,7 @@ class MotorSoundService extends ChangeNotifier {
     _testMode = false;
     _looping = false;
     _playing = false;
-    await _player.stop();
+    await _player?.stop();
     notifyListeners();
   }
 
@@ -168,9 +161,10 @@ class MotorSoundService extends ChangeNotifier {
     _looping = true;
     _playing = true;
     try {
-      await _player.stop();
-      await _player.setVolume(_volume);
-      await _player.play(
+      await _player?.stop();
+      final AudioPlayer player = await _ensurePlayer();
+      await player.setVolume(_volume);
+      await player.play(
         UrlSource(_sampleUrl),
         position: includeStartup ? Duration.zero : _loopStart,
       );
@@ -187,7 +181,7 @@ class MotorSoundService extends ChangeNotifier {
     _looping = false;
     _playing = true;
     try {
-      await _player.stop();
+      await _player?.stop();
       await _player.setVolume(_volume);
       await _player.play(
         UrlSource(_sampleUrl),
@@ -199,10 +193,30 @@ class MotorSoundService extends ChangeNotifier {
     }
   }
 
+  Future<AudioPlayer> _ensurePlayer() async {
+    final AudioPlayer? existing = _player;
+    if (existing != null) return existing;
+
+    final AudioPlayer player = AudioPlayer();
+    _player = player;
+    _positionSub = player.onPositionChanged.listen(_onPosition);
+    _completeSub = player.onPlayerComplete.listen((_) {
+      if (_testMode) {
+        _testMode = false;
+      }
+      if (!_looping) {
+        _playing = false;
+        notifyListeners();
+      }
+    });
+    await player.setVolume(_volume);
+    return player;
+  }
+
   void _onPosition(Duration position) {
     if (!_looping || _seekingLoop || position < _loopEnd) return;
     _seekingLoop = true;
-    _player.seek(_loopStart).whenComplete(() {
+    _player?.seek(_loopStart).whenComplete(() {
       _seekingLoop = false;
     });
   }
@@ -211,7 +225,7 @@ class MotorSoundService extends ChangeNotifier {
   void dispose() {
     _positionSub?.cancel();
     _completeSub?.cancel();
-    _player.dispose();
+    _player?.dispose();
     super.dispose();
   }
 }
