@@ -29,7 +29,6 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   /// A senha do Wi-Fi não é enviada por MQTT: o broker é público. O app apenas
   /// pede que a placa abra a própria rede, onde a senha é digitada.
   Widget _buildMaintenanceSection(BuildContext context) {
-    final bool conectado = widget.controller.isConnected;
     final List<String> placas = <String>{
       ...widget.controller.firmwareByDevice.keys,
       ...widget.controller.firmwareUpdateDeviceIds,
@@ -62,10 +61,9 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
           runSpacing: 10,
           children: <Widget>[
             OutlinedButton.icon(
-              onPressed:
-                  conectado && widget.controller.maintenanceBoards.isNotEmpty
-                      ? () => _cadastrarWifi(context)
-                      : null,
+              // Nunca fica desabilitado: o toque informa por que a ação
+              // não pode ser executada naquele instante.
+              onPressed: () => _acaoCadastrarWifi(context),
               icon: const Icon(Icons.wifi_password_rounded),
               label: const Text('Cadastrar Wi-Fi'),
             ),
@@ -87,8 +85,9 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
               ),
             ),
             OutlinedButton.icon(
-              onPressed:
-                  _verificandoAppUpdate ? null : _verificarAtualizacaoDoApp,
+              // Continua clicável durante a verificação; um novo toque apenas
+              // informa que a checagem já está em andamento.
+              onPressed: _acaoAtualizarApp,
               icon:
                   _verificandoAppUpdate
                       ? const SizedBox.square(
@@ -104,6 +103,32 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
         ),
       ],
     );
+  }
+
+  Future<void> _acaoCadastrarWifi(BuildContext context) async {
+    if (!widget.controller.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Conecte ao MQTT para cadastrar uma rede Wi-Fi.')),
+      );
+      return;
+    }
+    if (widget.controller.maintenanceBoards.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nenhuma placa compatível está conectada agora.')),
+      );
+      return;
+    }
+    await _cadastrarWifi(context);
+  }
+
+  Future<void> _acaoAtualizarApp() async {
+    if (_verificandoAppUpdate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A verificação de atualização já está em andamento.')),
+      );
+      return;
+    }
+    await _verificarAtualizacaoDoApp();
   }
 
   Future<void> _acaoAtualizarFirmware(BuildContext context) async {
