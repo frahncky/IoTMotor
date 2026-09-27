@@ -155,4 +155,36 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
+
+  testWidgets('alarme de corrente acende o cartão sem ícone no desenho', (
+    WidgetTester tester,
+  ) async {
+    final MotorControlController controller =
+        MotorControlController(loadSettings: false)
+          ..isConnected = true;
+    controller.handlePayloadForTest(
+      'iotmotor/esp32-01/telemetry',
+      '{"relays":[false,false,false,false],"motor_running":false,"alarms_firing":["current"]}',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MotorAnimationCard(
+            controller: controller,
+            startType: MotorCommandType.directStart,
+          ),
+        ),
+      ),
+    );
+    // Sem ícone piscando, o desenho não precisa de quadros.
+    await tester.pumpAndSettle();
+    expect(
+      find.bySemanticsLabel(RegExp('Motor desligado, outro alarme ativo')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -47,6 +48,11 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   bool _reduceMotion = false;
   String? _shownStatus;
 
+  /// Reavalia o alarme a cada segundo enquanto ele existe: sem telemetria
+  /// nova ele envelhece e some, mesmo sem aviso do controller.
+  Timer? _alarmCheck;
+  bool _alarmShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +79,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   @override
   void dispose() {
     widget.controller.removeListener(_onControllerChanged);
+    _alarmCheck?.cancel();
     _ticker.dispose();
     _frame.dispose();
     super.dispose();
@@ -93,6 +100,15 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   /// Ajusta o movimento ao estado da bancada e liga/desliga o ticker.
   void _sync() {
     final bool running = _running;
+    _alarmShown = _alarms.any;
+    if (_alarmShown) {
+      _alarmCheck ??= Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted && _alarms.any != _alarmShown) _onControllerChanged();
+      });
+    } else {
+      _alarmCheck?.cancel();
+      _alarmCheck = null;
+    }
     if (!_connected) {
       // Sem telemetria ao vivo, não animamos o último estado conhecido.
       _motion.halt();
@@ -101,7 +117,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     }
     final bool needsFrames = _connected &&
         !_reduceMotion &&
-        (running || _motion.moving || _alarms.any);
+        (running || _motion.moving || _alarms.blinks);
     if (needsFrames && !_ticker.isActive) {
       _lastElapsed = Duration.zero;
       _ticker.start();
@@ -125,7 +141,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     _frame.value++;
 
     if (_statusText() != _shownStatus) setState(() {});
-    if (!running && !_motion.moving && !_alarms.any) _ticker.stop();
+    if (!running && !_motion.moving && !_alarms.blinks) _ticker.stop();
   }
 
   String _statusText() {
@@ -161,6 +177,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
       status,
       if (alarms.temperature) 'alarme de temperatura',
       if (alarms.vibration) 'alarme de vibração',
+      if (alarms.other) 'outro alarme ativo',
     ];
 
     return SizedBox(
@@ -331,12 +348,19 @@ double temperatureLimit(List<BoardAlarm> alarms) {
 }
 
 /// Partes do motor com alarme disparado agora, segundo a placa.
+///
+/// Temperatura e vibração ganham ícone no desenho; os demais (corrente,
+/// tensão, potência...) só acendem o cartão, como `other` no painel web.
 class _AlarmParts {
-  const _AlarmParts({this.temperature = false, this.vibration = false});
+  const _AlarmParts({
+    this.temperature = false,
+    this.vibration = false,
+    this.other = false,
+  });
 
   factory _AlarmParts.of(MotorControlController controller) {
-    bool temperatura = false, vibracao = false;
-    for (final String id in controller.firingAlarmIds) {
+    bool temperatura = false, vibracao = false, outro = false;
+    for (final String id in controller.liveFiringAlarmIds) {
       String field = id == 'temp'
           ? 'temperature'
           : id == 'vib'
@@ -345,15 +369,24 @@ class _AlarmParts {
       for (final BoardAlarm a in controller.boardAlarms) {
         if (a.id == id) field = a.field;
       }
-      if (field == 'temperature') temperatura = true;
-      if (field.startsWith('vibration')) vibracao = true;
+      if (field == 'temperature') {
+        temperatura = true;
+      } else if (field.startsWith('vibration')) {
+        vibracao = true;
+      } else {
+        outro = true;
+      }
     }
-    return _AlarmParts(temperature: temperatura, vibration: vibracao);
+    return _AlarmParts(temperature: temperatura, vibration: vibracao, other: outro);
   }
 
   final bool temperature;
   final bool vibration;
-  bool get any => temperature || vibration;
+  final bool other;
+  bool get any => temperature || vibration || other;
+
+  /// Só temperatura e vibração piscam no desenho.
+  bool get blinks => temperature || vibration;
 }
 
 /// Cor do aquecimento: laranja morno até vermelho.

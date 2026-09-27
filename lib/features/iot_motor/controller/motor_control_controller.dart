@@ -174,6 +174,23 @@ class MotorControlController extends ChangeNotifier {
   /// Ids disparados agora, segundo a última telemetria da placa.
   Set<String> firingAlarmIds = const <String>{};
 
+  /// Quando chegou a última [firingAlarmIds].
+  DateTime? _firingAlarmsAt;
+
+  /// Idade máxima de [firingAlarmIds], a mesma `TELEMETRY_STALE_MS` do web.
+  static const Duration firingAlarmsStaleAfter = Duration(seconds: 6);
+
+  /// [firingAlarmIds] só com telemetria recente: com a placa fora do ar ou o
+  /// broker reconectando, a lista é antiga e não vale como alarme ao vivo.
+  Set<String> get liveFiringAlarmIds {
+    final DateTime? at = _firingAlarmsAt;
+    if (!isConnected || at == null) return const <String>{};
+    if (DateTime.now().difference(at) >= firingAlarmsStaleAfter) {
+      return const <String>{};
+    }
+    return firingAlarmIds;
+  }
+
   bool get hasBoardAlarms => alarmsDeviceId != null;
 
   /// Dados de placa do motor e horímetro/partidas, por quadro de comando: com
@@ -2684,6 +2701,7 @@ class MotorControlController extends ChangeNotifier {
     // Quem decide o alarme é a placa: ela diz quais estão disparados agora.
     final Object? disparados = dados['alarms_firing'];
     if (disparados is List) {
+      _firingAlarmsAt = DateTime.now();
       firingAlarmIds = <String>{
         for (final Object? id in disparados)
           if (id is String && id.isNotEmpty) id,
