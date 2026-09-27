@@ -44,7 +44,7 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
-                '${nomeDaPlaca(placa)}: firmware ${firmware.texto}${firmware.atualizar ? ' — use "Atualizar firmware" com a placa selecionada' : ''}.',
+                '${nomeDaPlaca(placa)}: firmware ${firmware.texto}${firmware.atualizar ? ' — use "Atualizar firmware"' : ''}.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: firmware.atualizar ? AppTheme.brandOrange : AppTheme.bodySoft,
                 ),
@@ -65,30 +65,26 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
           children: <Widget>[
             OutlinedButton.icon(
               onPressed:
-                  conectado
-                      ? () => _confirmarManutencao(
-                        context,
-                        action: 'wifi_portal',
-                        titulo: 'Cadastrar Wi-Fi na placa',
-                        texto:
-                            'A placa sai da rede atual e abre a rede "IoTMotor-" por 3 minutos.\n\n'
-                            'Conecte o celular nessa rede e informe o Wi-Fi novo na página que abrir. '
-                            'A senha vai direto para a placa, sem passar pelo broker público.',
-                      )
+                  conectado && widget.controller.maintenanceBoards.isNotEmpty
+                      ? () => _cadastrarWifi(context)
                       : null,
               icon: const Icon(Icons.wifi_password_rounded),
               label: const Text('Cadastrar Wi-Fi'),
             ),
             OutlinedButton.icon(
+              // Vai para cada placa no ar com firmware diferente do publicado.
               onPressed:
-                  conectado
+                  conectado && widget.controller.boardsToUpdate.isNotEmpty
                       ? () => _confirmarManutencao(
                         context,
                         action: 'update',
+                        placas: widget.controller.boardsToUpdate,
                         titulo: 'Atualizar firmware',
                         texto:
-                            'A placa baixa o firmware publicado no GitHub e reinicia. '
-                            'Só funciona com as saídas desligadas.',
+                            'Vai atualizar: ${widget.controller.boardsToUpdate.map(nomeDaPlaca).join(' e ')}.\n\n'
+                            'Cada placa baixa o firmware publicado no GitHub e reinicia '
+                            '(cerca de 1 minuto fora do ar). O quadro de comando só aceita '
+                            'com o motor parado.',
                       )
                       : null,
               icon: const Icon(Icons.system_update_alt_rounded),
@@ -266,6 +262,7 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   Future<void> _confirmarManutencao(
     BuildContext context, {
     required String action,
+    required List<String> placas,
     required String titulo,
     required String texto,
   }) async {
@@ -288,7 +285,66 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
           ),
     );
     if (confirmado ?? false) {
-      await widget.controller.sendMaintenanceCommand(action);
+      await widget.controller.sendMaintenanceCommand(action, placas);
+    }
+  }
+
+  /// A rede própria tira a placa do ar por 3 minutos: pergunta qual.
+  Future<void> _cadastrarWifi(BuildContext context) async {
+    final List<String> placas = widget.controller.maintenanceBoards;
+    String escolhida = placas.first;
+    final bool? confirmado = await showDialog<bool>(
+      context: context,
+      builder:
+          (BuildContext dialogContext) => StatefulBuilder(
+            builder:
+                (BuildContext context, StateSetter marcar) => AlertDialog(
+                  title: const Text('Cadastrar Wi-Fi na placa'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text(
+                        'A placa sai da rede atual e abre a rede "IoTMotor-" por 3 minutos.\n\n'
+                        'Conecte o celular nessa rede e informe o Wi-Fi novo na página que abrir. '
+                        'A senha vai direto para a placa, sem passar pelo broker público.',
+                      ),
+                      const SizedBox(height: 8),
+                      RadioGroup<String>(
+                        groupValue: escolhida,
+                        onChanged: (String? placa) {
+                          if (placa != null) marcar(() => escolhida = placa);
+                        },
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            for (final String placa in placas)
+                              RadioListTile<String>(
+                                key: ValueKey<String>('wifi_placa_$placa'),
+                                value: placa,
+                                title: Text(nomeDaPlaca(placa)),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('Cancelar'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('Continuar'),
+                    ),
+                  ],
+                ),
+          ),
+    );
+    if (confirmado ?? false) {
+      await widget.controller.sendMaintenanceCommand('wifi_portal', <String>[escolhida]);
     }
   }
 }
