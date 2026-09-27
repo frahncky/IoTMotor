@@ -10,6 +10,7 @@ import '../../../../app/theme/app_theme.dart';
 import '../../../../app/versao.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/device_names.dart';
+import '../../models/acquisition_config.dart';
 import '../../models/mqtt_connection_config.dart';
 import '../../models/motor_info.dart';
 import '../../models/telemetry_alert.dart';
@@ -41,6 +42,12 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   final _retentionFocusNode = FocusNode();
   final _remoteRetentionFocusNode = FocusNode();
   final _espIpController = TextEditingController();
+  final _acqPzemController = TextEditingController();
+  final _acqPublishController = TextEditingController();
+  final _acqChartController = TextEditingController();
+  final _acqRecordController = TextEditingController();
+  String _acqPreset = 'custom';
+  int _lastAcqRevision = -1;
   bool _verificandoAppUpdate = false;
 
   _RetentionUnit _retentionUnit = _RetentionUnit.days;
@@ -54,6 +61,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   void initState() {
     super.initState();
     _syncRetentionControllers(force: true);
+    _syncAcquisitionControllers(force: true);
     widget.controller.addListener(_onControllerChanged);
   }
 
@@ -64,6 +72,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
       _syncRetentionControllers(force: true);
+      _syncAcquisitionControllers(force: true);
     }
   }
 
@@ -75,12 +84,17 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     _retentionFocusNode.dispose();
     _remoteRetentionFocusNode.dispose();
     _espIpController.dispose();
+    _acqPzemController.dispose();
+    _acqPublishController.dispose();
+    _acqChartController.dispose();
+    _acqRecordController.dispose();
     super.dispose();
   }
 
   void _onControllerChanged() {
     if (mounted) {
       _syncRetentionControllers();
+      _syncAcquisitionControllers();
       setState(() {});
     }
   }
@@ -88,7 +102,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
         child: Center(
@@ -115,6 +129,11 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                         key: 'settings_motor',
                         delay: const Duration(milliseconds: 180),
                         child: _buildMotorPanel(context),
+                      ),
+                      _buildTabScrollView(
+                        key: 'settings_acquisition',
+                        delay: const Duration(milliseconds: 180),
+                        child: _buildAcquisitionPanel(context),
                       ),
                       _buildTabScrollView(
                         key: 'settings_profiles',
@@ -190,6 +209,12 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
             iconMargin: EdgeInsets.only(bottom: 2),
             icon: Icon(Icons.electric_bolt_rounded),
             text: 'Motor',
+          ),
+          Tab(
+            height: 48,
+            iconMargin: EdgeInsets.only(bottom: 2),
+            icon: Icon(Icons.speed_rounded),
+            text: 'Aquisição',
           ),
           Tab(
             height: 48,
@@ -469,6 +494,146 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     );
   }
 
+
+  void _syncAcquisitionControllers({bool force = false}) {
+    final AcquisitionConfig cfg = controller.acquisitionConfig;
+    if (!force && cfg.revision == _lastAcqRevision) return;
+    _lastAcqRevision = cfg.revision;
+    _acqPzemController.text = (cfg.pzemReadMs / 1000).toStringAsFixed(0);
+    _acqPublishController.text = (cfg.publishMs / 1000).toStringAsFixed(0);
+    _acqChartController.text = (cfg.chartMs / 1000).toStringAsFixed(0);
+    _acqRecordController.text = (cfg.recordMs / 1000).toStringAsFixed(0);
+    _acqPreset = 'custom';
+    for (final MapEntry<String, AcquisitionConfig> entry in AcquisitionConfig.presets.entries) {
+      final AcquisitionConfig p = entry.value;
+      if (p.pzemReadMs == cfg.pzemReadMs &&
+          p.publishMs == cfg.publishMs &&
+          p.chartMs == cfg.chartMs &&
+          p.recordMs == cfg.recordMs) {
+        _acqPreset = entry.key;
+        break;
+      }
+    }
+  }
+
+  AcquisitionConfig? _acquisitionFromFields() {
+    int? ms(TextEditingController campo) {
+      final int? s = int.tryParse(campo.text.trim());
+      return s == null ? null : s * 1000;
+    }
+    final int? pzem = ms(_acqPzemController);
+    final int? pub = ms(_acqPublishController);
+    final int? chart = ms(_acqChartController);
+    final int? record = ms(_acqRecordController);
+    if (pzem == null || pub == null || chart == null || record == null) return null;
+    return AcquisitionConfig(
+      revision: controller.acquisitionConfig.revision,
+      pzemReadMs: pzem,
+      publishMs: pub,
+      chartMs: chart,
+      recordMs: record,
+    );
+  }
+
+  Widget _buildAcquisitionPanel(BuildContext context) {
+    final AcquisitionConfig cfg = controller.acquisitionConfig;
+    return GlassPanel(
+      tint: AppTheme.brandMint,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          _buildPanelTitle(
+            context,
+            icon: Icons.speed_rounded,
+            color: AppTheme.brandMint,
+            title: 'Aquisição e registro de dados',
+            subtitle: 'Configuração única do sistema. Alterações feitas aqui também valem no painel web e nas placas.',
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            value: _acqPreset,
+            decoration: const InputDecoration(labelText: 'Perfil'),
+            items: const <DropdownMenuItem<String>>[
+              DropdownMenuItem(value: 'custom', child: Text('Personalizado')),
+              DropdownMenuItem(value: 'realtime', child: Text('Tempo real')),
+              DropdownMenuItem(value: 'monitoring', child: Text('Monitoramento')),
+              DropdownMenuItem(value: 'economic', child: Text('Econômico')),
+            ],
+            onChanged: (String? value) {
+              if (value == null) return;
+              setState(() {
+                _acqPreset = value;
+                final AcquisitionConfig? p = AcquisitionConfig.presets[value];
+                if (p != null) {
+                  _acqPzemController.text = '${p.pzemReadMs ~/ 1000}';
+                  _acqPublishController.text = '${p.publishMs ~/ 1000}';
+                  _acqChartController.text = '${p.chartMs ~/ 1000}';
+                  _acqRecordController.text = '${p.recordMs ~/ 1000}';
+                }
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: <Widget>[
+              _textField(width: 210, label: 'Aquisição elétrica (s)', controllerField: _acqPzemController, keyboardType: TextInputType.number),
+              _textField(width: 210, label: 'Publicação MQTT (s)', controllerField: _acqPublishController, keyboardType: TextInputType.number),
+              _textField(width: 210, label: 'Pontos do gráfico (s)', controllerField: _acqChartController, keyboardType: TextInputType.number),
+              _textField(width: 210, label: 'Registro de dados (s)', controllerField: _acqRecordController, keyboardType: TextInputType.number),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildInlineNotice(
+            context,
+            icon: Icons.lock_clock_rounded,
+            color: AppTheme.brandBlue,
+            text: 'Parâmetros protegidos: vibração ${cfg.vibrationHz} Hz, janela RMS ${cfg.vibrationWindowMs ~/ 1000} s, histórico consolidado a cada ${cfg.historyBucketS ~/ 60} min por ${cfg.historyRetentionDays} dias.',
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              FilledButton.icon(
+                onPressed: controller.isConnected
+                    ? () async {
+                        final AcquisitionConfig? nova = _acquisitionFromFields();
+                        if (nova == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Informe os quatro intervalos em segundos.')),
+                          );
+                          return;
+                        }
+                        final String? erro = nova.validate();
+                        if (erro != null) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erro)));
+                          return;
+                        }
+                        await controller.saveAcquisitionConfig(nova);
+                      }
+                    : null,
+                icon: const Icon(Icons.sync_rounded),
+                label: const Text('Gravar e sincronizar'),
+              ),
+              OutlinedButton.icon(
+                onPressed: controller.isConnected ? controller.requestAcquisitionConfig : null,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Ler da placa'),
+              ),
+              Chip(
+                label: Text(cfg.revision > 0
+                    ? 'Sincronizado · revisão ${cfg.revision}'
+                    : 'Aguardando ESP32-01'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildMotorPanel(BuildContext context) {
     final MotorInfo? info = controller.motorInfo;
