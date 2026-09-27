@@ -20,6 +20,7 @@ import '../widgets/connection_path_dialog.dart';
 import '../../services/mqtt_settings_validators.dart';
 import '../widgets/delayed_reveal.dart';
 import '../widgets/glass_panel.dart';
+import '../widgets/data_acquisition_panel.dart';
 
 enum _RetentionUnit { days, months, years }
 
@@ -88,7 +89,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
         child: Center(
@@ -141,6 +142,16 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                         key: 'settings_telemetry',
                         delay: const Duration(milliseconds: 180),
                         child: _buildTelemetryFormatPanel(context),
+                      ),
+                      _buildTabScrollView(
+                        key: 'settings_acquisition',
+                        delay: const Duration(milliseconds: 180),
+                        child: DataAcquisitionPanel(
+                          key: ValueKey<String>(
+                            controller.dataAcquisitionConfig.signature,
+                          ),
+                          controller: controller,
+                        ),
                       ),
                     ],
                   ),
@@ -214,6 +225,12 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
             iconMargin: EdgeInsets.only(bottom: 2),
             icon: Icon(Icons.data_object_rounded),
             text: 'Telemetria',
+          ),
+          Tab(
+            height: 48,
+            iconMargin: EdgeInsets.only(bottom: 2),
+            icon: Icon(Icons.monitor_heart_rounded),
+            text: 'Aquisição',
           ),
         ],
       ),

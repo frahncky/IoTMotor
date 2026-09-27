@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/motor_info.dart';
 import '../models/motor_app_settings.dart';
+import '../models/data_acquisition_config.dart';
 import '../models/board_alarm.dart';
 import '../models/device_names.dart';
 import '../models/motor_command_type.dart';
@@ -316,10 +317,17 @@ class MotorControlController extends ChangeNotifier {
     if (loadSettings) {
       await loadPersistedSettings();
     }
-    await _lerSenhaDeComando();
-    // Só grava depois de ler o que estava salvo, senão os valores padrão
-    // sobrescreveriam o arquivo assim que o app abrisse.
+    // A configuração MQTT já pode ser persistida assim que o arquivo local
+    // terminou de ser restaurado. Não deve esperar o cofre da senha de comando:
+    // em alguns aparelhos/plugins essa leitura é mais lenta e uma edição feita
+    // logo ao abrir o app poderia ser perdida.
     _settingsRestored = true;
+    if (_settingsPersistRequestedBeforeRestore) {
+      _settingsPersistRequestedBeforeRestore = false;
+      await _persistSettings();
+    }
+
+    await _lerSenhaDeComando();
     await Future.wait([
       loadPersistedHistory(),
       loadPersistedAlerts(),
@@ -370,9 +378,9 @@ class MotorControlController extends ChangeNotifier {
   static const String dashboardTabMechanical =
       MotorAppSettings.dashboardTabMechanical;
   static const Duration telemetryStaleTimeout = Duration(minutes: 5);
-  static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
   static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
   static const Duration _historyPersistDelay = Duration(milliseconds: 700);
+  static const int maxChartPoints = 120;
   static const Duration _alertsPersistDelay = Duration(milliseconds: 350);
   static const List<MotorCommandType> _defaultStartTypes = <MotorCommandType>[
     MotorCommandType.directStart,
@@ -394,6 +402,7 @@ class MotorControlController extends ChangeNotifier {
   bool _startTypesLoaded = false;
   bool _settingsLoaded = false;
   bool _settingsRestored = false;
+  bool _settingsPersistRequestedBeforeRestore = false;
   /// Perfil MQTT que montou esta tela (vazio fora do app com perfis).
   String activeProfileId = '';
   bool _historyLoaded = false;
@@ -430,12 +439,23 @@ class MotorControlController extends ChangeNotifier {
   int remoteHistoryRetentionDays =
       MotorAppSettings.defaultRemoteHistoryRetentionDays;
 
+  /// Configuração efetiva publicada pelas placas. O ESP32-01 é autoridade
+  /// para o PZEM; o ESP32-S3 é autoridade para janela RMS, gráfico e registro.
+  DataAcquisitionConfig dataAcquisitionConfig = const DataAcquisitionConfig();
+  bool dataAcquisitionSynchronized = false;
+  final Map<String, Map<String, dynamic>> _dataConfigByDevice =
+      <String, Map<String, dynamic>>{};
+  final Map<String, DateTime> _lastChartSampleByDevice = <String, DateTime>{};
+  final Map<String, DateTime> _lastRecordSampleByDevice = <String, DateTime>{};
+
   String connectionMessage = 'Desconectado';
   String statusMessage = 'Aguardando conexão e dados.';
   MotorCommandType? lastCommandType;
   DateTime? lastCommandAt;
 
   final Map<String, List<TelemetrySample>> _historyByDevice =
+      <String, List<TelemetrySample>>{};
+  final Map<String, List<TelemetrySample>> _chartByDevice =
       <String, List<TelemetrySample>>{};
   final Map<String, TelemetrySample> _latestByDevice =
       <String, TelemetrySample>{};
@@ -477,7 +497,7 @@ class MotorControlController extends ChangeNotifier {
 
   UnmodifiableListView<TelemetrySample> get history =>
       UnmodifiableListView<TelemetrySample>(
-        _recebeuDadoAtual ? _buildCombinedHistory() : <TelemetrySample>[]
+        _recebeuDadoAtual ? _buildCombinedChartHistory() : <TelemetrySample>[],
       );
 
   UnmodifiableListView<TelemetryHistoryEntry> get historyEntries =>
@@ -875,6 +895,11 @@ class MotorControlController extends ChangeNotifier {
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
     _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
+    _chartByDevice.clear();
+    _lastChartSampleByDevice.clear();
+    _lastRecordSampleByDevice.clear();
+    _dataConfigByDevice.clear();
+    dataAcquisitionSynchronized = false;
     // Uso, dados do motor, versões e histórico voltam (retidos) na próxima conexão.
     _motorUsageByDevice.clear();
     _motorInfoByDevice.clear();
@@ -1859,6 +1884,141 @@ class MotorControlController extends ChangeNotifier {
   void handlePayloadForTest(String topic, String payload) =>
       _handlePayload(topic, payload);
 
+  void _applyDataAcquisitionPayload(String deviceId, String payload) {
+    if (deviceId.isEmpty) return;
+    try {
+      final Object? decoded = jsonDecode(payload);
+      if (decoded is! Map<String, dynamic>) return;
+      _dataConfigByDevice[deviceId] = decoded;
+
+      Map<String, dynamic>? command;
+      Map<String, dynamic>? sensor;
+      for (final Map<String, dynamic> data in _dataConfigByDevice.values) {
+        final String role = '${data['role'] ?? ''}';
+        if (role == 'command') command = data;
+        if (role == 'sensor') sensor = data;
+      }
+
+      DataAcquisitionConfig next = dataAcquisitionConfig;
+      if (command != null) {
+        next = next.copyWith(
+          pzemIntervalMs:
+              DataAcquisitionConfig.readInt(command, 'pzem_interval_ms') ??
+              next.pzemIntervalMs,
+        );
+      }
+      if (sensor != null) {
+        next = next.copyWith(
+          mqttIntervalMs:
+              DataAcquisitionConfig.readInt(sensor, 'mqtt_interval_ms') ??
+              next.mqttIntervalMs,
+          vibrationWindowMs:
+              DataAcquisitionConfig.readInt(sensor, 'vibration_window_ms') ??
+              next.vibrationWindowMs,
+          chartIntervalMs:
+              DataAcquisitionConfig.readInt(sensor, 'chart_interval_ms') ??
+              next.chartIntervalMs,
+          recordIntervalMs:
+              DataAcquisitionConfig.readInt(sensor, 'record_interval_ms') ??
+              next.recordIntervalMs,
+        );
+      }
+      dataAcquisitionConfig = next;
+
+      final int? mqttCommand =
+          command == null
+              ? null
+              : DataAcquisitionConfig.readInt(command, 'mqtt_interval_ms');
+      final int? mqttSensor =
+          sensor == null
+              ? null
+              : DataAcquisitionConfig.readInt(sensor, 'mqtt_interval_ms');
+      dataAcquisitionSynchronized =
+          command != null &&
+          sensor != null &&
+          mqttCommand != null &&
+          mqttCommand == mqttSensor;
+      _notify();
+    } catch (_) {
+      // A placa republica o estado retido; payload ilegivel e ignorado.
+    }
+  }
+
+  /// Grava a mesma política técnica nas duas placas. Os clientes não assumem
+  /// sucesso: o estado só fica sincronizado quando os dois data_config retidos
+  /// voltam do firmware.
+  Future<bool> applyDataAcquisitionConfig(DataAcquisitionConfig config) async {
+    final String? erro = config.validationMessage;
+    if (erro != null) {
+      _pendingMessage = erro;
+      _notify();
+      return false;
+    }
+    if (!isConnected) {
+      _pendingMessage = 'Conecte-se ao MQTT para sincronizar a aquisição.';
+      _notify();
+      return false;
+    }
+
+    final String commandDevice = _benchDeviceId ?? 'esp32-01';
+    String sensorDevice = alarmsDeviceId ?? '';
+    if (sensorDevice.isEmpty) {
+      for (final MapEntry<String, Map<String, dynamic>> entry
+          in _dataConfigByDevice.entries) {
+        if ('${entry.value['role'] ?? ''}' == 'sensor') {
+          sensorDevice = entry.key;
+          break;
+        }
+      }
+    }
+    if (sensorDevice.isEmpty) sensorDevice = 'esp32-02';
+
+    final String? cmdSeq = _service.sendRawCommand(
+      deviceId: commandDevice,
+      action: 'data_config_set',
+      body: <String, dynamic>{
+        'pzem_interval_ms': config.pzemIntervalMs,
+        'mqtt_interval_ms': config.mqttIntervalMs,
+      },
+    );
+    final String? sensorSeq = _service.sendRawCommand(
+      deviceId: sensorDevice,
+      action: 'data_config_set',
+      body: <String, dynamic>{
+        'mqtt_interval_ms': config.mqttIntervalMs,
+        'vibration_window_ms': config.vibrationWindowMs,
+        'chart_interval_ms': config.chartIntervalMs,
+        'record_interval_ms': config.recordIntervalMs,
+      },
+    );
+    if (cmdSeq == null || sensorSeq == null) {
+      _pendingMessage =
+          _service.seal.impedimento(commandDevice) ??
+          _service.seal.impedimento(sensorDevice) ??
+          'Não foi possível enviar a configuração para as duas placas.';
+      _notify();
+      return false;
+    }
+    dataAcquisitionSynchronized = false;
+    statusMessage = 'Configuração enviada; aguardando confirmação das duas placas.';
+    _notify();
+    return true;
+  }
+
+  void requestDataAcquisitionConfig() {
+    if (!isConnected) return;
+    final String commandDevice = _benchDeviceId ?? 'esp32-01';
+    final String sensorDevice = alarmsDeviceId ?? 'esp32-02';
+    _service.sendRawCommand(
+      deviceId: commandDevice,
+      action: 'data_config_list',
+    );
+    _service.sendRawCommand(
+      deviceId: sensorDevice,
+      action: 'data_config_list',
+    );
+  }
+
   void _handlePayload(String topic, String payload) {
     // Partidas e respostas não dependem da configuração ativa: o dispositivo
     // vem do próprio tópico (prefixo/dispositivo/profiles).
@@ -1884,6 +2044,10 @@ class MotorControlController extends ChangeNotifier {
       }
       _conferirManutencao(deviceIdDoTopico);
       _notify();
+      return;
+    }
+    if (topic.endsWith('/data_config')) {
+      _applyDataAcquisitionPayload(deviceIdDoTopico, payload);
       return;
     }
     if (topic.endsWith('/capabilities')) {
@@ -1960,6 +2124,7 @@ class MotorControlController extends ChangeNotifier {
     _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
     _syncStateFromTelemetry(deviceId: deviceId, sample: sample);
 
+    _addSampleToChart(deviceId: deviceId, sample: sample);
     _addSampleToHistory(deviceId: deviceId, sample: sample);
 
     final TelemetryAlert? alert = _evaluateTelemetryAlerts(
@@ -1975,9 +2140,9 @@ class MotorControlController extends ChangeNotifier {
     _notify();
   }
 
-  List<TelemetrySample> _buildCombinedHistory() {
+  List<TelemetrySample> _buildCombinedChartHistory() {
     final List<TelemetrySample> merged =
-        _historyByDevice.values
+        _chartByDevice.values
             .expand((List<TelemetrySample> entries) => entries)
             .toList();
     merged.sort(
@@ -2043,11 +2208,52 @@ class MotorControlController extends ChangeNotifier {
     return removed;
   }
 
+  bool get _hasRemoteSamplingPolicy {
+    for (final Map<String, dynamic> data in _dataConfigByDevice.values) {
+      if ('${data['role'] ?? ''}' == 'sensor') return true;
+    }
+    return false;
+  }
+
+  void _addSampleToChart({
+    required String deviceId,
+    required TelemetrySample sample,
+  }) {
+    final DateTime instante = sample.timestamp;
+    if (_hasRemoteSamplingPolicy) {
+      final DateTime? anterior = _lastChartSampleByDevice[deviceId];
+      if (anterior != null &&
+          instante.difference(anterior).inMilliseconds <
+              dataAcquisitionConfig.chartIntervalMs) {
+        return;
+      }
+      _lastChartSampleByDevice[deviceId] = instante;
+    }
+    final List<TelemetrySample> serie = _chartByDevice.putIfAbsent(
+      deviceId,
+      () => <TelemetrySample>[],
+    );
+    serie.add(sample);
+    if (serie.length > maxChartPoints) {
+      serie.removeAt(0);
+    }
+  }
+
   void _addSampleToHistory({
     required String deviceId,
     required TelemetrySample sample,
     bool persist = true,
   }) {
+    if (persist && _hasRemoteSamplingPolicy) {
+      final DateTime instante = sample.timestamp;
+      final DateTime? anterior = _lastRecordSampleByDevice[deviceId];
+      if (anterior != null &&
+          instante.difference(anterior).inMilliseconds <
+              dataAcquisitionConfig.recordIntervalMs) {
+        return;
+      }
+      _lastRecordSampleByDevice[deviceId] = instante;
+    }
     final List<TelemetrySample> deviceHistory = _historyByDevice.putIfAbsent(
       deviceId,
       () => <TelemetrySample>[],
@@ -2748,7 +2954,11 @@ class MotorControlController extends ChangeNotifier {
     if (lastSeen == null) {
       return false;
     }
-    return DateTime.now().difference(lastSeen) <= _deviceOnlineTimeout;
+    final int adaptiveMs = dataAcquisitionConfig.mqttIntervalMs * 3;
+    final Duration onlineTimeout = Duration(
+      milliseconds: adaptiveMs < 4000 ? 4000 : adaptiveMs,
+    );
+    return DateTime.now().difference(lastSeen) <= onlineTimeout;
   }
 
   String? _latestConnectedDeviceId() {
@@ -2838,7 +3048,11 @@ class MotorControlController extends ChangeNotifier {
   }
 
   void _scheduleSettingsPersist() {
-    if (_disposed || !_settingsRestored) {
+    if (_disposed) {
+      return;
+    }
+    if (!_settingsRestored) {
+      _settingsPersistRequestedBeforeRestore = true;
       return;
     }
     _settingsPersistTimer?.cancel();

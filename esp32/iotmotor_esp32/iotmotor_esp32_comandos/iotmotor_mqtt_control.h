@@ -193,6 +193,21 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!lerSequencia(seq, numero)) return;
   const char* acao = doc["action"] | "";
 
+  // Configuracao tecnica de aquisicao/telemetria. App e painel usam o
+  // mesmo contrato e a placa republica o estado retido em data_config.
+  if (!strcmp(acao, "data_config_list")) {
+    publicarRespostaControle(seq, true, acao, "configuracao publicada");
+    publicarConfigDados();
+    return;
+  }
+  if (!strcmp(acao, "data_config_set")) {
+    const char* motivo = "";
+    const bool ok = salvarConfigDados(doc.as<JsonVariantConst>(), motivo);
+    publicarRespostaControle(seq, ok, acao, motivo);
+    if (ok) publicarConfigDados();
+    return;
+  }
+
   // Lista de partidas: criada ou editada no painel ou no app, vale nos dois.
   if (!strcmp(acao, "profile_list")) {
     publicarRespostaControle(seq, true, acao, "lista publicada");

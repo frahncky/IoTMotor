@@ -561,6 +561,7 @@ class MqttMotorService {
     // Dados do motor, versão do firmware e histórico da placa (retidos).
     client.subscribe(config.motorInfoWildcardTopic, MqttQos.atLeastOnce);
     client.subscribe(config.capabilitiesWildcardTopic, MqttQos.atLeastOnce);
+    client.subscribe(config.dataConfigWildcardTopic, MqttQos.atLeastOnce);
     client.subscribe(config.historyWildcardTopic, MqttQos.atLeastOnce);
   }
 

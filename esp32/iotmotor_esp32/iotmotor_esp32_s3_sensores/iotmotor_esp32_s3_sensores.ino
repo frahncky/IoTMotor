@@ -92,7 +92,22 @@ static const uint8_t MPU_ADDR = 0x68;
 static const uint32_t WIFI_RETRY_MS = 6000UL;
 static const uint32_t WIFI_RADIO_RESET_MS = 30000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
-static const uint32_t PUBLISH_MS = 1000UL;
+static const uint32_t PUBLISH_PADRAO_MS = 1000UL;
+static const uint32_t PUBLISH_MIN_MS = 1000UL;
+static const uint32_t PUBLISH_MAX_MS = 60000UL;
+static const uint32_t VIB_WINDOW_PADRAO_MS = 1000UL;
+static const uint32_t VIB_WINDOW_MIN_MS = 500UL;
+static const uint32_t VIB_WINDOW_MAX_MS = 2000UL;
+static const uint32_t CHART_PADRAO_MS = 1000UL;
+static const uint32_t CHART_MIN_MS = 1000UL;
+static const uint32_t CHART_MAX_MS = 60000UL;
+static const uint32_t RECORD_PADRAO_MS = 1000UL;
+static const uint32_t RECORD_MIN_MS = 1000UL;
+static const uint32_t RECORD_MAX_MS = 600000UL;
+uint32_t publishMs=PUBLISH_PADRAO_MS;
+uint32_t vibrationWindowMs=VIB_WINDOW_PADRAO_MS;
+uint32_t chartIntervalMs=CHART_PADRAO_MS;
+uint32_t recordIntervalMs=RECORD_PADRAO_MS;
 static const uint32_t TEMP_REQUEST_MS = 2000UL;
 static const uint32_t TEMP_WAIT_MS = 800UL; // DS18B20 12-bit: ate 750 ms
 
@@ -106,7 +121,7 @@ uint8_t ds18b20Pin=0;
 // e dos pinos do LED/buzzer 16/17/18/42).
 static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,15,21,38,39,40,41,47,48};
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
-char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96];
+char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96], dataConfigTopic[96];
 char quadroCommandTopic[96];
 uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastPublish=0,lastHistorico=0;
 uint32_t wifiCaiuEm=0;
@@ -174,6 +189,64 @@ bool salvarConfigDoAlarme(bool ligado,bool sons,uint16_t frequencia) {
   alarmeHabilitado=ligado;sonsDeEventos=sons;buzzerHz=frequencia;
   xSemaphoreGive(sensoresMutex);
   return true;
+}
+
+void carregarConfigDados() {
+  Preferences memoria;
+  if(!memoria.begin("iot-dados",true))return;
+  publishMs=constrain((uint32_t)memoria.getUInt("mqtt_ms",PUBLISH_PADRAO_MS),PUBLISH_MIN_MS,PUBLISH_MAX_MS);
+  vibrationWindowMs=constrain((uint32_t)memoria.getUInt("vib_win_ms",VIB_WINDOW_PADRAO_MS),VIB_WINDOW_MIN_MS,VIB_WINDOW_MAX_MS);
+  chartIntervalMs=constrain((uint32_t)memoria.getUInt("chart_ms",CHART_PADRAO_MS),CHART_MIN_MS,CHART_MAX_MS);
+  recordIntervalMs=constrain((uint32_t)memoria.getUInt("record_ms",RECORD_PADRAO_MS),RECORD_MIN_MS,RECORD_MAX_MS);
+  memoria.end();
+}
+
+bool salvarConfigDados(JsonVariantConst doc,const char*& motivo) {
+  const long mqtt=doc["mqtt_interval_ms"] | (long)publishMs;
+  const long janela=doc["vibration_window_ms"] | (long)vibrationWindowMs;
+  const long grafico=doc["chart_interval_ms"] | (long)chartIntervalMs;
+  const long registro=doc["record_interval_ms"] | (long)recordIntervalMs;
+  if(mqtt<(long)PUBLISH_MIN_MS||mqtt>(long)PUBLISH_MAX_MS){motivo="mqtt_interval_ms deve ficar entre 1000 e 60000 ms";return false;}
+  if(janela<(long)VIB_WINDOW_MIN_MS||janela>(long)VIB_WINDOW_MAX_MS){motivo="vibration_window_ms deve ficar entre 500 e 2000 ms";return false;}
+  if(grafico<(long)CHART_MIN_MS||grafico>(long)CHART_MAX_MS){motivo="chart_interval_ms deve ficar entre 1000 e 60000 ms";return false;}
+  if(registro<(long)RECORD_MIN_MS||registro>(long)RECORD_MAX_MS){motivo="record_interval_ms deve ficar entre 1000 e 600000 ms";return false;}
+  // Nao se cria ponto mais rapido que a telemetria que o alimenta.
+  if(grafico<mqtt){motivo="grafico nao pode ser mais rapido que a telemetria";return false;}
+  if(registro<mqtt){motivo="registro nao pode ser mais rapido que a telemetria";return false;}
+  Preferences memoria;
+  if(!memoria.begin("iot-dados",false)){motivo="falha ao abrir configuracao de dados";return false;}
+  memoria.putUInt("mqtt_ms",(uint32_t)mqtt);
+  memoria.putUInt("vib_win_ms",(uint32_t)janela);
+  memoria.putUInt("chart_ms",(uint32_t)grafico);
+  memoria.putUInt("record_ms",(uint32_t)registro);
+  memoria.end();
+  if(sensoresMutex)xSemaphoreTake(sensoresMutex,portMAX_DELAY);
+  publishMs=(uint32_t)mqtt;vibrationWindowMs=(uint32_t)janela;
+  chartIntervalMs=(uint32_t)grafico;recordIntervalMs=(uint32_t)registro;
+  if(sensoresMutex)xSemaphoreGive(sensoresMutex);
+  motivo="configuracao de aquisicao gravada";
+  return true;
+}
+
+void publishDataConfig() {
+  if(!mqtt.connected())return;
+  StaticJsonDocument<512> doc;
+  doc["v"]=1;doc["device_id"]=DEVICE_ID;doc["role"]="sensor";
+  doc["vibration_sampling_hz"]=1000; // Fixo: requisito da cadeia de medicao.
+  doc["vibration_window_ms"]=vibrationWindowMs;
+  doc["mqtt_interval_ms"]=publishMs;
+  doc["chart_interval_ms"]=chartIntervalMs;
+  doc["record_interval_ms"]=recordIntervalMs;
+  doc["history_sample_ms"]=1000;
+  doc["history_bucket_min"]=60;
+  doc["retention_days"]=7;
+  doc["vibration_window_min_ms"]=VIB_WINDOW_MIN_MS;
+  doc["vibration_window_max_ms"]=VIB_WINDOW_MAX_MS;
+  doc["mqtt_min_ms"]=PUBLISH_MIN_MS;doc["mqtt_max_ms"]=PUBLISH_MAX_MS;
+  doc["chart_min_ms"]=CHART_MIN_MS;doc["chart_max_ms"]=CHART_MAX_MS;
+  doc["record_min_ms"]=RECORD_MIN_MS;doc["record_max_ms"]=RECORD_MAX_MS;
+  char payload[512];size_t n=serializeJson(doc,payload,sizeof(payload));
+  if(n)mqtt.publish(dataConfigTopic,(const uint8_t*)payload,(unsigned int)n,true);
 }
 
 // ---- Bipes curtos fora da emergencia ----
@@ -540,7 +613,7 @@ void tarefaSensores(void*) {
       procurarDs18b20(false);
     }
     pollTemperature(now);
-    if((uint32_t)(now-ultimaJanela)>=PUBLISH_MS) {
+    if((uint32_t)(now-ultimaJanela)>=vibrationWindowMs) {
       ultimaJanela=now;
       vibracao::fecharJanela(mpuReady);
       amostrasAtuais=vibracao::amostras;
@@ -701,6 +774,20 @@ void onCommand(char* topic, uint8_t* payload, unsigned int length) {
 
   const char* acao=doc["action"] | "";
   const char* seq=doc["seq"] | "";
+  // Configuracao tecnica compartilhada entre firmware, painel e app.
+  if(!strcmp(acao,"data_config_list")) {
+    publishAck(seq,acao,true,"configuracao publicada");
+    publishDataConfig();
+    return;
+  }
+  if(!strcmp(acao,"data_config_set")) {
+    const char* motivo="";
+    const bool ok=salvarConfigDados(doc.as<JsonVariantConst>(),motivo);
+    publishAck(seq,acao,ok,motivo);
+    if(ok)publishDataConfig();
+    return;
+  }
+
   // O teste de LED deve ser totalmente silencioso.
   if(strcmp(acao,"led_test")) beepDeEvento(1);  // Confirma na bancada os demais comandos.
   // Lista de redes: a senha chega cifrada para a chave desta placa.
@@ -878,6 +965,7 @@ void setup() {
   pinMode(BUZZER_PIN,OUTPUT);noTone(BUZZER_PIN);
   comandoseguro::iniciar(DEVICE_ID);
   carregarConfigDoAlarme();
+  carregarConfigDados();
   alarmes::carregar(VIBRACAO_LIMITE_PADRAO,TEMPERATURA_LIMITE_PADRAO);
   historico::carregar();
   aplicarLed(true,false,false);  // Azul durante a inicializacao/conexao.
@@ -901,6 +989,7 @@ void setup() {
   snprintf(authTopic,sizeof(authTopic),"%s/%s/auth",TOPIC_PREFIX,DEVICE_ID);
   snprintf(alarmLogTopic,sizeof(alarmLogTopic),"%s/%s/alarm_log",TOPIC_PREFIX,DEVICE_ID);
   snprintf(historyTopic,sizeof(historyTopic),"%s/%s/history",TOPIC_PREFIX,DEVICE_ID);
+  snprintf(dataConfigTopic,sizeof(dataConfigTopic),"%s/%s/data_config",TOPIC_PREFIX,DEVICE_ID);
   // Alarmes de tensao e corrente leem a telemetria do quadro de comando.
   snprintf(quadroTelemetryTopic,sizeof(quadroTelemetryTopic),"%s/esp32-01/telemetry",TOPIC_PREFIX);
   snprintf(quadroCommandTopic,sizeof(quadroCommandTopic),"%s/esp32-01/command",TOPIC_PREFIX);
@@ -971,7 +1060,7 @@ void loop() {
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
-        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();publishAlarmLog();
+        mqtt.subscribe(quadroTelemetryTopic,0);publishAlarms();publishAuth();publishAlarmLog();publishDataConfig();
         for(uint8_t d=0;d<historico::DIAS;d++)publishHistory(d);
         pedirBeep(2,buzzerHz,70);  // Dois bipes sempre: placa conectada ao broker.
         Serial.printf("[S3/MQTT] conectado, publicando %s\n",telemetryTopic);
@@ -983,7 +1072,7 @@ void loop() {
   mqtt.loop();
   verificarDesarme(millis());
   now=millis();
-  if(lastPublish==0 || (uint32_t)(now-lastPublish)>=PUBLISH_MS) {
+  if(lastPublish==0 || (uint32_t)(now-lastPublish)>=publishMs) {
     lastPublish=now;publishTelemetry();
   }
   if(alarmes::eventosMudaram)publishAlarmLog();
