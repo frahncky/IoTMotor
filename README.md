@@ -26,7 +26,8 @@ Painel web, app Android e dois ESP32 integrados por MQTT.
 | | |
 | --- | --- |
 | ⚡ **Monitoramento elétrico** | Tensão, corrente, potências, fator de potência, frequência e energia pelo PZEM-004T. |
-| 🌡️ **Condição do motor** | Temperatura por DS18B20 e vibração por MPU6050, com classificação de condição e alarmes configuráveis. |
+| 🌡️ **Condição do motor** | Temperatura por DS18B20 e vibração por MPU6050, com velocidade RMS em mm/s, classificação de condição e alarmes configuráveis. |
+| ⏱️ **Aquisição sincronizada** | O ESP32-01 centraliza os intervalos de leitura elétrica, publicação MQTT, pontos dos gráficos e registro; web, app e ESP32-S3 usam a mesma configuração. |
 | ▶️ **Comando e partidas** | Acionamento remoto e perfis como partida direta e estrela-triângulo, gravados no quadro de comando. |
 | 🧾 **Uso e manutenção** | Dados de placa, carga em % da corrente nominal, horímetro, partidas e lembrete de manutenção. |
 | 📈 **Histórico na própria bancada** | Médias e máximos por hora, com histórico de 7 dias retido na placa mesmo sem o painel aberto. |
@@ -76,7 +77,7 @@ flowchart LR
     S -. mede condição .- M
 ```
 
-As placas publicam telemetria e também mantêm dados importantes localmente, como perfis de partida, alarmes, dados do motor e histórico. O painel e o app utilizam essas informações para representar o estado confirmado da bancada e enviar comandos.
+As placas publicam telemetria e também mantêm dados importantes localmente, como perfis de partida, alarmes, dados do motor e histórico. O ESP32-01 é a autoridade da configuração de aquisição: grava os intervalos em NVS e publica a configuração de forma retida para o painel, o app e o ESP32-S3. O painel e o app utilizam essas informações para representar o estado confirmado da bancada e enviar comandos.
 
 ## 🔌 Hardware
 
