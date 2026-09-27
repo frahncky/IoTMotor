@@ -209,12 +209,14 @@ extension MotorControlBoards on MotorControlController {
     return true;
   }
 
-  /// Placas no ar agora: as que o broker não marcou como `offline` (status
-  /// retido e testamento da própria placa), como no painel web.
+  /// Placas no ar agora: as que anunciaram `online` no status retido (a
+  /// placa publica `online` ao conectar e o broker troca por `offline`, o
+  /// testamento dela, quando cai). Placa só conhecida pelo histórico ou de uma
+  /// conexão anterior, sem status atual, não entra.
   List<String> get maintenanceBoards {
     if (!isConnected) return const <String>[];
     final List<String> placas = _knownDevices
-        .where((String d) => (_statusByDevice[d]?.trim().toLowerCase() ?? '') != 'offline')
+        .where((String d) => _statusByDevice[d]?.trim().toLowerCase() == 'online')
         .toList()
       ..sort();
     return placas;
@@ -232,14 +234,29 @@ extension MotorControlBoards on MotorControlController {
   /// Wi-Fi (`wifi_portal`) ou que se atualize pela internet (`update`).
   /// Nenhuma senha trafega no broker.
   Future<void> sendMaintenanceCommand(String action, List<String> deviceIds) async {
-    if (deviceIds.isEmpty) {
-      _pendingMessage = 'Nenhuma placa no ar para receber o pedido.';
+    // A lista veio de antes do diálogo de confirmação: confere de novo, porque
+    // a placa pode ter caído ou terminado de atualizar enquanto ele estava aberto.
+    final List<String> validas =
+        action == 'update' ? boardsToUpdate : maintenanceBoards;
+    final List<String> alvos = <String>[
+      for (final String placa in deviceIds)
+        if (validas.contains(placa)) placa,
+    ];
+    if (alvos.isEmpty) {
+      _pendingMessage =
+          action == 'update'
+              ? 'Nenhuma placa no ar precisa de atualização agora.'
+              : 'Nenhuma placa no ar para receber o pedido.';
       _notify();
       return;
     }
     final List<String> enviados = <String>[];
-    final List<String> falhas = <String>[];
-    for (final String placa in deviceIds) {
+    final List<String> falhas = <String>[
+      for (final String placa in deviceIds)
+        if (!alvos.contains(placa))
+          '${nomeDaPlaca(placa)}: ${action == 'update' && maintenanceBoards.contains(placa) ? 'já está em dia' : 'saiu do ar'}',
+    ];
+    for (final String placa in alvos) {
       if (_service.sendMaintenanceCommand(action, deviceId: placa)) {
         enviados.add(nomeDaPlaca(placa));
       } else {

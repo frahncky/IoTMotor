@@ -73,6 +73,38 @@ void main() {
     expect(c.boardsToUpdate, isEmpty);
   });
 
+  test('placa sem status atual (só do histórico ou de outra conexão) fica de fora', () {
+    final _ServicoFalso servico = _ServicoFalso();
+    final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
+    addTearDown(c.dispose);
+
+    // Telemetria de uma placa que não anunciou status nesta conexão.
+    servico.onPayload?.call('iotmotor/esp32-09/telemetry', '{"voltage":220}');
+    expect(c.knownDeviceIds, contains('esp32-09'));
+    expect(c.maintenanceBoards, <String>['esp32-01', 'esp32-02']);
+    expect(c.boardsToUpdate, <String>['esp32-01']);
+  });
+
+  test('confere as placas de novo na hora de enviar', () async {
+    final _ServicoFalso servico = _ServicoFalso();
+    final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
+    addTearDown(c.dispose);
+    final List<String> alvos = c.boardsToUpdate;
+
+    // Enquanto o diálogo estava aberto, o quadro terminou de atualizar.
+    servico.onPayload?.call(
+      'iotmotor/esp32-01/capabilities',
+      jsonEncode(<String, String>{'device_id': 'esp32-01', 'firmware_version': firmwarePublicado[0]}),
+    );
+    await c.sendMaintenanceCommand('update', alvos);
+    expect(servico.enviados, isEmpty);
+
+    // E a rede própria não vai para placa que caiu nesse meio tempo.
+    servico.onPayload?.call('iotmotor/esp32-02/status', 'offline');
+    await c.sendMaintenanceCommand('wifi_portal', <String>['esp32-02']);
+    expect(servico.enviados, isEmpty);
+  });
+
   testWidgets('os botões únicos mandam para as placas certas', (WidgetTester tester) async {
     final _ServicoFalso servico = _ServicoFalso();
     final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
