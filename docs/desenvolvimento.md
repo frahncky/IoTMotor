@@ -25,10 +25,12 @@ functions/mqtt.js       Ponte MQTT na porta 443 (Cloudflare Pages Function)
 esp32/iotmotor_esp32/   Firmware das duas placas (veja firmware.md)
 lib/                    App Flutter
   features/iot_motor/
-    controller/           Estado e regras do app
+    controller/           Estado e regras do app: uma classe, dividida por assunto
+                          em partes (alertas, histórico, partidas, placas, dispositivos)
     models/               Telemetria, aquisição, alarmes, dados do motor
     services/             MQTT, selo de comando, atualização do app, armazenamento
     view/                 Abas Início, Histórico, Alertas e Configurações
+      tabs/settings/      Painéis das Configurações (motor, perfis, alertas, manutenção)
 test/                   Testes do app (flutter test)
 tool/                   Simuladores das placas em Dart
 docs/                   Documentação técnica, incluindo vibracao.md, audio.md e imagens SVG
