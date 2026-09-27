@@ -38,11 +38,6 @@ function startupSpeed(progress, kind) {
   return motorClamp(base * (1 - dip), 0, 1);
 }
 
-function vibrationAmplitude(vibrationG) {
-  const value = Number(vibrationG);
-  if (!Number.isFinite(value) || value <= 0.005) return 0;
-  return motorClamp(value * 5, 0, 2.4);
-}
 
 function motionAppearance(speed) {
   const s = motorClamp(Number(speed) || 0, 0, 1);
@@ -59,7 +54,6 @@ if (typeof module !== 'undefined' && module.exports) {
     visualDpsForRpm,
     startupDurationForKind,
     startupSpeed,
-    vibrationAmplitude,
     motionAppearance,
   };
 }
@@ -116,28 +110,6 @@ if (typeof document !== 'undefined') (() => {
     visual.style.setProperty('--motor-marker-opacity', appearance.markerOpacity.toFixed(2));
   }
 
-  function applyVibration(now, running) {
-    if (!stage) return;
-    if (!running || reduceMotion?.matches) {
-      stage.style.transform = '';
-      return;
-    }
-    const amp = vibrationAmplitude(Number(visual.dataset.vibration));
-    if (amp <= 0) {
-      stage.style.transform = '';
-      return;
-    }
-    const t = now / 1000;
-    const x = amp * (
-      0.58 * Math.sin(t * Math.PI * 2 * 17) +
-      0.24 * Math.sin(t * Math.PI * 2 * 29)
-    );
-    const y = amp * (
-      0.46 * Math.sin(t * Math.PI * 2 * 23 + 0.7) +
-      0.20 * Math.sin(t * Math.PI * 2 * 31)
-    );
-    stage.style.transform = `translate(${x.toFixed(2)}px,${y.toFixed(2)}px)`;
-  }
 
   function frame(now) {
     const elapsed = Math.max(0, (now - last) / 1000);
@@ -178,7 +150,6 @@ if (typeof document !== 'undefined') (() => {
     }
 
     applyMotionAppearance();
-    applyVibration(now, running && speed > 0.06);
 
     raf = requestAnimationFrame(frame);
   }
