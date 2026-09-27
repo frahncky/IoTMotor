@@ -163,6 +163,7 @@ test('versão do firmware: em dia, desatualizada ou não informada', () => {
   assert.equal(h.no('wifiUpdateFw').disabled, false, 'firmware atual mantém botão clicável');
   h.no('wifiUpdateFw').fire('click');
   assert.match(h.no('wifiFeedback').textContent, /já está atualizado/i);
+  assert.match(h.no('wifiActionFeedback').textContent, /já está atualizado/i, 'o aviso fica visível junto ao botão OTA');
   assert.equal(h.no('wifiDev0').dataset.update, 'false');
   assert.equal(h.no('wifiDev1').dataset.update, 'true');
   assert.equal(h.no('tabBtn-wifi').dataset.update, 'true', 'a aba Wi-Fi mostra que há atualização');
