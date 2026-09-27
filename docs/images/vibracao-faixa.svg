@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 500" role="img" aria-labelledby="title desc">
+<title id="title">Faixa operacional de vibração do projeto</title>
+<desc id="desc">Gráfico esquemático destacando a faixa aproximadamente útil entre 10 e 180 hertz.</desc>
+<rect width="1100" height="500" rx="24" fill="#f7fafc"/>
+<style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#153746}.h{font-size:27px;font-weight:700}.t{font-size:18px}.axis{stroke:#315d6f;stroke-width:3}.band{fill:#dceff8}.fade{fill:#edf1f3}.mark{stroke:#c88719;stroke-width:3;stroke-dasharray:8 6}.curve{fill:none;stroke:#2d6c86;stroke-width:5}</style>
+<text x="55" y="52" class="h">Faixa operacional documentada da cadeia de vibração</text>
+<rect x="115" y="120" width="120" height="245" class="fade"/><rect x="235" y="120" width="600" height="245" class="band"/><rect x="835" y="120" width="145" height="245" class="fade"/>
+<path d="M115 365H990M115 365V100" class="axis"/>
+<path d="M120 340 C170 335,205 300,235 220 C300 145,690 145,820 175 C855 190,900 260,980 330" class="curve"/>
+<path d="M235 105V370M835 105V370" class="mark"/>
+<text x="235" y="395" text-anchor="middle" class="t">≈10 Hz</text><text x="835" y="395" text-anchor="middle" class="t">≈180 Hz</text>
+<text x="535" y="155" text-anchor="middle" class="t">faixa útil aproximada do projeto</text>
+<text x="170" y="205" text-anchor="middle" class="t">baixas frequências</text><text x="170" y="230" text-anchor="middle" class="t">atenuadas</text>
+<text x="910" y="205" text-anchor="middle" class="t">limitação do</text><text x="910" y="230" text-anchor="middle" class="t">DLPF/sensor</text>
+<text x="115" y="445" class="t">Figura esquemática — não é uma curva de calibração medida nem uma resposta metrológica certificada.</text>
+</svg>
