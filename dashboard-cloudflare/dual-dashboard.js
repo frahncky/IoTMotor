@@ -41,7 +41,7 @@ const ACQ_DEFAULT={revision:0,pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,re
 const ACQ_PRESETS={realtime:{pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,record_ms:1000},monitoring:{pzem_read_ms:1000,publish_ms:2000,chart_ms:2000,record_ms:5000},economic:{pzem_read_ms:5000,publish_ms:5000,chart_ms:5000,record_ms:30000}};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
- acquisition:{...ACQ_DEFAULT},lastChart:{},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
+ acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
 function field(source,keys){for(const key of keys){const n=numeric(source[key]);if(n!==null)return n;}return null;}
 function parseTelemetry(json){
@@ -359,7 +359,7 @@ function render(){
  $('exportBtn').disabled=!state.records.length;updateControl();renderMotorVisual();renderCharts();
 }
 function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
- state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.lastChart={};state.lastRecord={};state.pending=null;state.subscribed=false;
+ state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.lastRecord={};state.pending=null;state.subscribed=false;
  render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
@@ -367,6 +367,27 @@ function disconnect(){const old=state.client;state.generation++;state.client=nul
  window.iotmotorWifi?.disconnect?.();  // Aba Wi-Fi tambem.
  window.iotmotorAlarme?.disconnect?.();window.iotmotorPerfis?.disconnect?.();window.iotmotorMotorInfo?.disconnect?.();window.iotmotorHistorico?.disconnect?.();
  reset();pill('Desconectado');diag('Desconectado.');}
+function chartBucketStart(at,intervalMs){
+ const intervalo=Math.max(1,Number(intervalMs)||1);
+ return Math.floor(Number(at)/intervalo)*intervalo;
+}
+function upsertChartPoint(arr,at,value,intervalMs,maxPoints=120){
+ const numero=Number(value);
+ if(!Array.isArray(arr)||!Number.isFinite(numero))return false;
+ const t=chartBucketStart(at,intervalMs),last=arr[arr.length-1];
+ // MQTT preserva ordem na sessao; um pacote atrasado nao deve reescrever
+ // uma janela que ja foi fechada no grafico.
+ if(last&&t<last.t)return false;
+ if(last&&t===last.t){
+  const quantidade=Number(last.n)||1;
+  const soma=Number.isFinite(last.sum)?last.sum:last.v*quantidade;
+  last.sum=soma+numero;last.n=quantidade+1;last.v=last.sum/last.n;
+  return true;
+ }
+ arr.push({t,v:numero,sum:numero,n:1});
+ if(arr.length>maxPoints)arr.shift();
+ return true;
+}
 function ingest(which,raw,packet){
  if(packet?.retain===true){diag(`Telemetria retida antiga de ${which==='command'?'ESP32 PZEM':'ESP32-S3'} ignorada.`);return false;}
  let json;try{json=JSON.parse(raw);}catch{diag('Mensagem MQTT recebida, mas JSON inválido.');return false;}
@@ -376,8 +397,9 @@ function ingest(which,raw,packet){
  if(which==='command'&&!hasFields&&sample.motorOn===null&&!sample.relays){diag('Mensagem do módulo de comandos sem grandezas nem estado válido.');return false;}
  state[which].sample=sample;state[which].at=Date.now();state[which].count++;
  if(which==='command')window.iotmotorMotorSound?.syncConfirmedState?.(sample.motorOn);
+ const tempoDoGrafico=sample.measuredAt??state[which].at;
  for(const m of METRICS.filter(m=>m.source===which)){
-  if(sample[m.key]!==null && state[which].at-(state.lastChart[m.key]||0)>=state.acquisition.chart_ms){state.lastChart[m.key]=state[which].at;const arr=state.series[m.key];arr.push({t:state[which].at,v:sample[m.key]});if(arr.length>120)arr.shift();}
+  if(sample[m.key]!==null)upsertChartPoint(state.series[m.key],tempoDoGrafico,sample[m.key],state.acquisition.chart_ms);
  }
  if(state[which].at-(state.lastRecord[which]||0)>=state.acquisition.record_ms){state.lastRecord[which]=state[which].at;state.records.push(registroCsv(sample,expected,state[which].at));if(state.records.length>MAX_REGISTROS)state.records.shift();guardarRegistros();}
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
@@ -564,4 +586,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};
