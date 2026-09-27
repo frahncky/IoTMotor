@@ -127,6 +127,16 @@ test('editar o limite de uma linha e confirmar grava so aquele alarme', () => {
   assert.equal(h.timers.size, 0);
 });
 
+test('mudar so o desarme de um alarme redesenha a lista', () => {
+  const h = setup(), c = h.connect();
+  h.telemetry(c); h.alarms(c);
+  const antes = h.linhas();
+  h.alarms(c);
+  assert.equal(h.linhas(), antes);  // Nada mudou: a lista fica como esta.
+  h.alarms(c, [h.PADRAO[0], {...h.PADRAO[1], trip: true}]);
+  assert.notEqual(h.linhas(), antes);
+});
+
 test('o campo do limite pode ser apagado e digitado sem a lista atropelar', () => {
   const h = setup(), c = h.connect();
   h.telemetry(c); h.alarms(c);

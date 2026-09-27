@@ -241,12 +241,17 @@ void publishAlarms() {
 // Ultimos disparos, retidos: o painel abre ja mostrando o que aconteceu.
 void publishAlarmLog() {
   if(!mqtt.connected())return;
-  StaticJsonDocument<1536> doc;
+  // 10 eventos com "trip" passam de 1,5 KB: sobra para nao cortar o fim.
+  DynamicJsonDocument doc(3072);
   doc["device_id"]=DEVICE_ID;
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   alarmes::descreverEventos(doc);
   alarmes::eventosMudaram=false;
   xSemaphoreGive(sensoresMutex);
+  if(doc.overflowed()) {
+    Serial.println("[S3/alarmes] registro nao coube no documento; nao publicado");
+    return;
+  }
   String texto;
   serializeJson(doc,texto);
   if(texto.length())

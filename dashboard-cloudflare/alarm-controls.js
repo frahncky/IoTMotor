@@ -153,7 +153,7 @@
   function assinaturaDaLista() {
     if (!lista) return 'sem-lista:' + String(conectado);
     return JSON.stringify([
-      lista.map(a => [a.id, a.field, a.board, a.above, a.limit, a.on]),
+      lista.map(a => [a.id, a.field, a.board, a.above, a.limit, a.on, a.trip === true]),
       [...(estado?.firing || [])].sort(),
       [...rascunhos.entries()].sort(),
       pronto(), maxAlarmes
