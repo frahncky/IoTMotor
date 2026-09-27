@@ -65,11 +65,12 @@ test('PZEM: calcula potencias derivadas apenas quando ha dados validos',()=>{
 });
 
 test('firmware atual deriva motor ligado a partir dos relés quando motor_on não existe',()=>{
- const ligado=parseTelemetry({device_id:'esp32-01',relays:[true,false,false,false],voltage:220});
+ const ligado=parseTelemetry({device_id:'esp32-01',relays:[true,false,false,false],profile:'estrela-triangulo',voltage:220});
  const desligado=parseTelemetry({device_id:'esp32-01',relays:[false,false,false,false],voltage:220});
  assert.equal(ligado.motorOn,true);
  assert.equal(desligado.motorOn,false);
  assert.deepEqual(ligado.relays,[true,false,false,false]);
+ assert.equal(ligado.profile,'estrela-triangulo');
  // Se motor_on vier explicitamente, ele continua tendo prioridade.
  assert.equal(parseTelemetry({device_id:'esp32-01',motor_on:false,relays:[true,false,false,false],voltage:220}).motorOn,false);
 });
