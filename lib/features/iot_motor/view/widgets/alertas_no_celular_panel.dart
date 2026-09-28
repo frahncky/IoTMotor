@@ -4,7 +4,7 @@ import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/mqtt_connection_config.dart';
 import '../../services/alertas_no_celular.dart';
-import 'glass_panel.dart';
+import 'app_section.dart';
 
 /// Chave dos alertas no celular (Configurações).
 ///
@@ -57,52 +57,29 @@ class _AlertasNoCelularPanelState extends State<AlertasNoCelularPanel> {
   @override
   Widget build(BuildContext context) {
     final TextTheme texto = Theme.of(context).textTheme;
-    return GlassPanel(
-      tint: AppTheme.brandOrange,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.notifications_active_rounded, color: AppTheme.brandOrange),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text('Alertas no celular', style: texto.titleMedium),
-                    Text(
-                      'Avisa quando um alarme da placa dispara, mesmo com o app fechado.',
-                      style: texto.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                key: const ValueKey<String>('alertas_no_celular_switch'),
-                value: _ligado,
-                onChanged: !AlertasNoCelular.suportado || _ocupado ? null : _alternar,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            !AlertasNoCelular.suportado
-                ? 'Disponível só no Android.'
-                : _ligado
-                    ? 'Ligados. O Android mostra uma notificação fixa enquanto o app vigia; '
-                        'os alarmes chegam com som e somem quando voltam ao normal.'
-                    : 'Usa os alarmes gravados na placa de sensores (os mesmos do LED e do '
-                        'buzzer). Ligados, o Android mantém uma notificação fixa e o app usa '
-                        'um pouco de bateria e dados.',
-            style: texto.bodySmall?.copyWith(color: AppTheme.bodySoft),
-          ),
-          if (_aviso != null) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(_aviso!, style: texto.bodySmall?.copyWith(color: AppTheme.danger)),
-          ],
-        ],
+    return AppSection(
+      title: 'Alertas no celular',
+      subtitle: 'Avisa quando um alarme da placa dispara, mesmo com o app fechado.',
+      trailing: Switch(
+        key: const ValueKey<String>('alertas_no_celular_switch'),
+        value: _ligado,
+        onChanged: !AlertasNoCelular.suportado || _ocupado ? null : _alternar,
       ),
+      children: <Widget>[
+        Text(
+          !AlertasNoCelular.suportado
+              ? 'Disponível só no Android.'
+              : _ligado
+                  ? 'Ligados. O Android mostra uma notificação fixa enquanto o app vigia.'
+                  : 'Ligados, o Android mantém uma notificação fixa e o app usa um pouco '
+                      'de bateria e dados.',
+          style: texto.bodySmall,
+        ),
+        if (_aviso != null) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(_aviso!, style: texto.bodySmall?.copyWith(color: AppTheme.danger)),
+        ],
+      ],
     );
   }
 }

@@ -23,8 +23,8 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 600));
-    await tester.tap(find.widgetWithText(Tab, 'Aquisição'));
-    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tap(find.byKey(const ValueKey<String>('config_Aquisição')));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
     expect(find.text('Tempo real'), findsOneWidget);
 
     // Outra tela gravou o perfil Econômico: o campo precisa mostrar isso.

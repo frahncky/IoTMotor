@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/board_alarm.dart';
-import '../../models/device_names.dart';
-import 'glass_panel.dart';
+import 'app_section.dart';
 
 /// Lista de alarmes gravada na placa, a mesma que o painel web edita.
 ///
@@ -21,63 +20,38 @@ class BoardAlarmsPanel extends StatelessWidget {
     final List<BoardAlarm> alarmes = controller.boardAlarms;
     final String? placa = controller.alarmsDeviceId;
 
-    return GlassPanel(
-      tint: AppTheme.brandMint,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Icon(Icons.rule_rounded, color: AppTheme.brandMint),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Alarmes da placa',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-              ),
-              IconButton(
-                tooltip: 'Recarregar a lista da placa',
-                onPressed: placa == null ? null : controller.requestBoardAlarms,
-                icon: const Icon(Icons.refresh_rounded),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            placa == null
-                ? 'Aguardando a lista de alarmes. Conecte ao broker; se a placa '
-                    'estiver online e nada chegar, ela está com firmware antigo.'
-                : '${alarmes.length} de ${controller.boardAlarmsMax} alarmes '
-                    'gravados em ${nomeDaPlaca(placa)}. A placa acende o LED e '
-                    'apita sozinha, mesmo com o app fechado.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          if (placa != null && alarmes.isEmpty)
-            Text(
-              'Nenhum alarme cadastrado: a placa não vai acender nem apitar.',
+    return AppSection(
+      title: 'Alarmes da placa',
+      subtitle:
+          placa == null
+              ? 'Aguardando a placa enviar a lista.'
+              : '${alarmes.length} de ${controller.boardAlarmsMax} · funcionam com o app fechado',
+      trailing: IconButton(
+        tooltip: 'Recarregar a lista da placa',
+        onPressed: placa == null ? null : controller.requestBoardAlarms,
+        icon: const Icon(Icons.refresh_rounded),
+      ),
+      children: <Widget>[
+        if (placa != null && alarmes.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              'Nenhum alarme cadastrado.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-          for (final BoardAlarm alarme in alarmes)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _AlarmTile(alarme: alarme, controller: controller),
-            ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed:
-                  placa == null || alarmes.length >= controller.boardAlarmsMax
-                      ? null
-                      : () => _editar(context, controller, null),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Adicionar alarme'),
-            ),
           ),
-        ],
-      ),
+        for (final BoardAlarm alarme in alarmes)
+          _AlarmTile(alarme: alarme, controller: controller),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed:
+              placa == null || alarmes.length >= controller.boardAlarmsMax
+                  ? null
+                  : () => _editar(context, controller, null),
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('Adicionar alarme'),
+        ),
+      ],
     );
   }
 }
@@ -91,60 +65,56 @@ class _AlarmTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool disparado = alarme.firing;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: disparado ? AppTheme.danger : Colors.white24,
-          width: disparado ? 1.6 : 1,
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  describeAlarm(alarme),
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  <String>[
-                    alarme.fromCommandBoard
-                        ? 'quadro de comando'
-                        : 'sensores do motor',
-                    if (!alarme.enabled) 'desligado',
-                    if (alarme.trip) 'desliga o motor',
-                    if (disparado) 'DISPARADO',
-                  ].join(' · '),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: disparado ? AppTheme.danger : null,
-                  ),
-                ),
-              ],
+    final TextTheme texto = Theme.of(context).textTheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _editar(context, controller, alarme),
+      onLongPress: () => _remover(context, controller, alarme),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              disparado
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_none_rounded,
+              color: disparado ? AppTheme.danger : AppTheme.inkSoft,
             ),
-          ),
-          Switch(
-            value: alarme.enabled,
-            onChanged:
-                (bool ligado) => controller.saveBoardAlarm(
-                  alarme.copyWith(enabled: ligado),
-                ),
-          ),
-          IconButton(
-            tooltip: 'Editar o limite',
-            onPressed: () => _editar(context, controller, alarme),
-            icon: const Icon(Icons.edit_outlined),
-          ),
-          IconButton(
-            tooltip: 'Remover',
-            onPressed: () => _remover(context, controller, alarme),
-            icon: const Icon(Icons.delete_outline_rounded),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    describeAlarm(alarme),
+                    style: texto.bodyLarge?.copyWith(color: AppTheme.ink),
+                  ),
+                  Text(
+                    <String>[
+                      if (disparado) 'Disparado',
+                      if (alarme.trip) 'Desliga o motor',
+                      if (!alarme.enabled) 'Pausado',
+                      if (!disparado && !alarme.trip && alarme.enabled)
+                        alarme.fromCommandBoard
+                            ? 'Quadro de comando'
+                            : 'Sensores',
+                    ].join(' · '),
+                    style: texto.bodySmall?.copyWith(
+                      color: disparado ? AppTheme.danger : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: alarme.enabled,
+              onChanged:
+                  (bool ligado) => controller.saveBoardAlarm(
+                    alarme.copyWith(enabled: ligado),
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -258,7 +228,8 @@ Future<void> _editar(
                     key: const ValueKey<String>('alarme_desarme'),
                     contentPadding: EdgeInsets.zero,
                     value: desarma,
-                    onChanged: (bool valor) => redesenhar(() => desarma = valor),
+                    onChanged:
+                        (bool valor) => redesenhar(() => desarma = valor),
                     title: const Text('Desligar o motor'),
                     subtitle: const Text(
                       'Com o motor ligado, disparar faz o quadro desligar o motor. '
@@ -268,6 +239,17 @@ Future<void> _editar(
                 ],
               ),
               actions: <Widget>[
+                if (alarme != null)
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(dialogo).pop();
+                      _remover(context, controller, alarme);
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppTheme.danger,
+                    ),
+                    child: const Text('Remover'),
+                  ),
                 TextButton(
                   onPressed: () => Navigator.of(dialogo).pop(),
                   child: const Text('Cancelar'),
@@ -302,7 +284,7 @@ Future<void> _editar(
                       ),
                     );
                   },
-                  child: const Text('Gravar na placa'),
+                  child: const Text('Gravar'),
                 ),
               ],
             );

@@ -239,7 +239,8 @@ class AppTheme {
       ),
       listTileTheme: ListTileThemeData(
         iconColor: iconBaseColor,
-        textColor: palette.ink,
+        titleTextStyle: typography.bodyLarge?.copyWith(color: palette.ink),
+        subtitleTextStyle: typography.bodySmall,
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: Colors.transparent,

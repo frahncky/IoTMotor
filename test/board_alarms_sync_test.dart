@@ -53,7 +53,7 @@ void main() {
     final BoardAlarm corrente = c.boardAlarms[1];
     expect(corrente.fromCommandBoard, isTrue);
     expect(corrente.limit, 12.5);
-    expect(describeAlarm(corrente), 'Corrente (A) acima de 12.5');
+    expect(describeAlarm(corrente), 'Corrente acima de 12,5 A');
   });
 
   test('a telemetria diz quais alarmes estão disparados agora', () {

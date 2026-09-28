@@ -93,9 +93,9 @@ void main() {
     await tester.tap(find.byIcon(Icons.history_outlined));
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Histórico'), findsWidgets);
-    expect(find.text('Dispositivo'), findsOneWidget);
+    expect(find.text('Placa'), findsOneWidget);
     expect(find.text('Período'), findsOneWidget);
-    expect(find.text('Ainda sem eventos no histórico.'), findsOneWidget);
+    expect(find.textContaining('Ainda sem eventos.'), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.notification_important_outlined));
     await tester.pump(const Duration(milliseconds: 400));
@@ -104,51 +104,62 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.settings_outlined));
     await tester.pump(const Duration(milliseconds: 900));
-    expect(find.widgetWithText(Tab, 'Conexão'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Motor'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Perfis'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Armazenamento'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Alertas'), findsOneWidget);
-    expect(find.widgetWithText(Tab, 'Telemetria'), findsOneWidget);
-    expect(find.text('Conexão MQTT'), findsOneWidget);
-    expect(find.text('Broker host'), findsOneWidget);
+    for (final String item in <String>[
+      'Conexão',
+      'Placas e atualizações',
+      'Motor',
+      'Notificações',
+      'Aquisição',
+      'Armazenamento',
+    ]) {
+      expect(find.byKey(ValueKey<String>('config_$item')), findsOneWidget);
+    }
+    expect(find.text('Telemetria'), findsNothing);
 
-    await tester.tap(find.widgetWithText(Tab, 'Motor'));
-    await tester.pump(const Duration(milliseconds: 900));
-    expect(find.text('Dados do motor'), findsOneWidget);
+    Future<void> abrir(String item) async {
+      await tester.ensureVisible(find.byKey(ValueKey<String>('config_$item')));
+      await tester.tap(find.byKey(ValueKey<String>('config_$item')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+    }
+
+    Future<void> voltar() async {
+      await tester.pageBack();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+    }
+
+    await abrir('Conexão');
+    expect(find.text('Perfil'), findsOneWidget);
+    expect(find.text('Broker MQTT'), findsOneWidget);
+    expect(find.text('Endereço do broker'), findsOneWidget);
+    expect(find.text('Avançado'), findsOneWidget);
+    await voltar();
+
+    await abrir('Motor');
+    expect(find.text('Dados de placa'), findsOneWidget);
     expect(find.text('Editar dados do motor'), findsOneWidget);
     expect(find.text('Manutenção feita'), findsOneWidget);
     expect(find.text('Zerar horímetro e partidas'), findsOneWidget);
     expect(find.text('Som do motor'), findsOneWidget);
     expect(find.text('Testar som'), findsOneWidget);
+    await voltar();
 
-    await tester.ensureVisible(find.widgetWithText(Tab, 'Armazenamento'));
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.tap(find.byIcon(Icons.storage_rounded));
-    await tester.pump(const Duration(milliseconds: 900));
-    expect(find.text('Local do app'), findsOneWidget);
-    expect(find.text('Remoto no ESP32'), findsOneWidget);
-    expect(find.text('Retenção local'), findsOneWidget);
-    expect(find.text('Retenção remota (ESP32 SD)'), findsOneWidget);
+    await abrir('Armazenamento');
+    expect(find.text('Neste celular'), findsOneWidget);
+    expect(find.text('No cartão SD do ESP32'), findsOneWidget);
     expect(find.text('Dias'), findsWidgets);
     expect(find.text('Meses'), findsWidgets);
     expect(find.text('Anos'), findsWidgets);
     expect(find.text('7 dias'), findsNothing);
-    expect(find.text('90 dias'), findsNothing);
-    expect(find.text('365 dias'), findsNothing);
-    expect(find.text('Aplicar local'), findsOneWidget);
+    expect(find.text('Aplicar'), findsOneWidget);
     expect(find.text('Aplicar no ESP32'), findsOneWidget);
+    await voltar();
 
-    final TabBar settingsTabs =
-        tester.widget<TabBar>(find.byType(TabBar));
-
-    settingsTabs.onTap!(4);
-    await tester.pump(const Duration(milliseconds: 900));
-    expect(find.text('Alertas de Telemetria'), findsOneWidget);
-
-    settingsTabs.onTap!(5);
-    await tester.pump(const Duration(milliseconds: 900));
-    expect(find.text('Formato da Telemetria'), findsOneWidget);
+    await abrir('Notificações');
+    expect(find.text('Alertas no celular'), findsOneWidget);
+    expect(find.text('Limites do app'), findsOneWidget);
+    await voltar();
   });
 
   testWidgets('medições não estouram em tela estreita', (

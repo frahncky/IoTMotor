@@ -133,7 +133,7 @@ const List<AlarmQuantity> kAlarmQuantities = <AlarmQuantity>[
   // Vibração pelo padrão de máquinas elétricas (ISO 10816-3): velocidade RMS.
   AlarmQuantity(
     field: 'vibration_mms',
-    label: 'Vibração (RMS)',
+    label: 'Vibração',
     unit: 'mm/s',
     fromCommandBoard: false,
     min: 0.1,
@@ -196,10 +196,13 @@ AlarmQuantity? alarmQuantityFor(String field) {
   return null;
 }
 
-/// Rótulo de um alarme para as telas: "Corrente (A) acima de 12.5".
+/// Rótulo curto de um alarme para as telas: "Corrente acima de 12,5 A".
 String describeAlarm(BoardAlarm alarm) {
   final AlarmQuantity? q = alarmQuantityFor(alarm.field);
-  final String nome = q?.labelWithUnit ?? alarm.field;
+  final String nome = q?.label ?? alarm.field;
   final String lado = alarm.above ? 'acima de' : 'abaixo de';
-  return '$nome $lado ${alarm.limit}';
+  String limite = alarm.limit.toString().replaceAll('.', ',');
+  if (limite.endsWith(',0')) limite = limite.substring(0, limite.length - 2);
+  final String unidade = q == null || q.unit.isEmpty ? '' : ' ${q.unit}';
+  return '$nome $lado $limite$unidade';
 }
