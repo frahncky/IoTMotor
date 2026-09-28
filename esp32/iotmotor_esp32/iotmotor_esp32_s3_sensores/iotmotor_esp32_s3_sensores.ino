@@ -402,7 +402,7 @@ void atualizarSinalizacao(uint32_t now) {
     const bool aceso=((now/500UL)&1U)==0U;
     aplicarLed(aceso,false,false);
     if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
-    beepsRestantes=0;beepTocando=false;
+    atualizarBeeps(now);  // Termina o bipe em curso; zerar deixaria o tom preso.
     return;
   }
 
@@ -410,7 +410,8 @@ void atualizarSinalizacao(uint32_t now) {
     if(estadoCritico) aplicarLed(false,false,true);  // falha parada: vermelho fixo
     else aplicarLed(true,false,false);               // conectado/parado: azul fixo
     if(buzzerLigado){noTone(BUZZER_PIN);buzzerLigado=false;}
-    beepsRestantes=0;beepTocando=false;
+    // Motor parado nao apita alarme, mas o bipe pedido pelo painel toca.
+    atualizarBeeps(now);
     return;
   }
 
