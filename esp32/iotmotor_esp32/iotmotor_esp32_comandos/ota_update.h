@@ -32,15 +32,21 @@ extern const uint8_t otaCertificadosRaizFim[] asm("_binary_x509_crt_bundle_end")
 // e nao retorna. Em caso de falha devolve false e preenche "motivo".
 inline bool atualizarPelaInternet(const char* arquivo, String& motivo) {
   if (WiFi.status() != WL_CONNECTED) { motivo = "sem Wi-Fi"; return false; }
+  // Nao use o objeto global httpUpdate aqui: ele nasce com timeout interno de
+  // apenas 8 s. O GitHub entrega releases por redirecionamento HTTPS e, em
+  // redes lentas, esse limite fazia a placa abandonar a OTA antes da gravacao.
+  // O timeout maior vale tanto para cabecalhos/redirecionamentos quanto para a
+  // leitura do binario.
   WiFiClientSecure tls;
   tls.setCACertBundle(otaCertificadosRaiz, otaCertificadosRaizFim - otaCertificadosRaiz);
-  tls.setTimeout(20000);
-  httpUpdate.rebootOnUpdate(true);
-  httpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);  // O GitHub redireciona o download.
+  tls.setTimeout(60000);
+  HTTPUpdate atualizador(60000);
+  atualizador.rebootOnUpdate(true);
+  atualizador.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   const String url = String(OTA_BASE_URL) + arquivo;
   Serial.printf("[OTA] baixando %s\n", url.c_str());
   watchdog::pausar();  // O download leva minutos; so roda com as saidas paradas.
-  const t_httpUpdate_return resultado = httpUpdate.update(tls, url);
+  const t_httpUpdate_return resultado = atualizador.update(tls, url);
   watchdog::retomar();
   switch (resultado) {
     case HTTP_UPDATE_OK:  // Nao deve chegar aqui: rebootOnUpdate reinicia antes.
@@ -50,7 +56,7 @@ inline bool atualizarPelaInternet(const char* arquivo, String& motivo) {
       motivo = "sem atualizacao disponivel";
       break;
     default:
-      motivo = String("falha ") + httpUpdate.getLastError() + ": " + httpUpdate.getLastErrorString();
+      motivo = String("falha ") + atualizador.getLastError() + ": " + atualizador.getLastErrorString();
       break;
   }
   Serial.printf("[OTA] %s\n", motivo.c_str());
