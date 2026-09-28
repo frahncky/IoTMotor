@@ -74,7 +74,7 @@ void publicarRespostaControle(const char* seq, bool aceito, const char* acao, co
   resposta["action"] = acao;
   resposta["reason"] = motivo;
   resposta["phase"] = nomeEtapa();
-  char payload[256];
+  char payload[384];  // Cabe o motivo longo de uma falha de OTA (proxy | github).
   size_t len = serializeJson(resposta, payload, sizeof(payload));
   if (len) mqttClient.publish(topicoResposta, reinterpret_cast<const uint8_t*>(payload),
                               static_cast<unsigned int>(len), false);
@@ -266,10 +266,14 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
       publicarRespostaControle(seq, false, acao, "saidas ligadas: pare antes de atualizar");
       return;
     }
+    // seq aponta para o buffer do PubSubClient, que o publish logo abaixo
+    // sobrescreve: a resposta de falha usa uma copia.
+    char seqDoPedido[20];
+    strlcpy(seqDoPedido, seq, sizeof(seqDoPedido));
     publicarRespostaControle(seq, true, acao, "baixando firmware");
     String motivo;
     atualizarPelaInternet(OTA_ARQUIVO, motivo);  // Sucesso reinicia a placa.
-    publicarRespostaControle(seq, false, acao, motivo.c_str());
+    publicarRespostaControle(seqDoPedido, false, "update", motivo.c_str());
     return;
   }
 
