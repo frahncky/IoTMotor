@@ -6,6 +6,7 @@ on:
       - 'dashboard-cloudflare/**'
       - 'functions/**'
       - 'esp32/**'
+      - 'lib/features/iot_motor/models/motor_info.dart'
       - '.github/workflows/cloudflare-dashboard.yml'
   pull_request:
     paths:
@@ -39,6 +40,7 @@ jobs:
           node --check dashboard-cloudflare/mqtt-shared.js
           node --check dashboard-cloudflare/motor-sound.js
           node --input-type=module --check < functions/mqtt.js
+          node --input-type=module --check < 'functions/firmware/[file].js'
       - name: Run web tests
         run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs dashboard-cloudflare/motor-info.test.cjs dashboard-cloudflare/motor-animation.test.cjs dashboard-cloudflare/board-history.test.cjs dashboard-cloudflare/mqtt-shared.test.cjs
       - name: Verify MQTT-only firmware and controls
