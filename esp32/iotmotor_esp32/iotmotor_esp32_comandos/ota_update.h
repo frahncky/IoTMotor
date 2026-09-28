@@ -15,7 +15,8 @@
 #include "watchdog.h"
 
 // Release fixo "firmware-latest", atualizado pelo workflow publish-firmware.yml.
-#define OTA_BASE_URL "https://github.com/frahncky/IoTMotor/releases/download/firmware-latest/"
+#define OTA_BASE_URL "https://iotmotor.pages.dev/firmware/"
+#define OTA_FALLBACK_URL "https://github.com/frahncky/IoTMotor/releases/download/firmware-latest/"
 
 // Certificados raiz da Mozilla que ja vem compilados no mbedTLS do core ESP32
 // (CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL). Com eles a placa confere
@@ -30,26 +31,19 @@ extern const uint8_t otaCertificadosRaizFim[] asm("_binary_x509_crt_bundle_end")
 
 // Baixa OTA_BASE_URL + arquivo e regrava a placa. Em caso de sucesso reinicia
 // e nao retorna. Em caso de falha devolve false e preenche "motivo".
-inline bool atualizarPelaInternet(const char* arquivo, String& motivo) {
-  if (WiFi.status() != WL_CONNECTED) { motivo = "sem Wi-Fi"; return false; }
-  // Nao use o objeto global httpUpdate aqui: ele nasce com timeout interno de
-  // apenas 8 s. O GitHub entrega releases por redirecionamento HTTPS e, em
-  // redes lentas, esse limite fazia a placa abandonar a OTA antes da gravacao.
-  // O timeout maior vale tanto para cabecalhos/redirecionamentos quanto para a
-  // leitura do binario.
+inline bool tentarAtualizacaoUrl(const String& url, String& motivo) {
   WiFiClientSecure tls;
   tls.setCACertBundle(otaCertificadosRaiz, otaCertificadosRaizFim - otaCertificadosRaiz);
   tls.setTimeout(60000);
   HTTPUpdate atualizador(60000);
   atualizador.rebootOnUpdate(true);
   atualizador.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-  const String url = String(OTA_BASE_URL) + arquivo;
   Serial.printf("[OTA] baixando %s\n", url.c_str());
-  watchdog::pausar();  // O download leva minutos; so roda com as saidas paradas.
+  watchdog::pausar();
   const t_httpUpdate_return resultado = atualizador.update(tls, url);
   watchdog::retomar();
   switch (resultado) {
-    case HTTP_UPDATE_OK:  // Nao deve chegar aqui: rebootOnUpdate reinicia antes.
+    case HTTP_UPDATE_OK:
       motivo = "atualizado";
       return true;
     case HTTP_UPDATE_NO_UPDATES:
@@ -60,5 +54,19 @@ inline bool atualizarPelaInternet(const char* arquivo, String& motivo) {
       break;
   }
   Serial.printf("[OTA] %s\n", motivo.c_str());
+  return false;
+}
+
+inline bool atualizarPelaInternet(const char* arquivo, String& motivo) {
+  if (WiFi.status() != WL_CONNECTED) { motivo = "sem Wi-Fi"; return false; }
+
+  const String principal = String(OTA_BASE_URL) + arquivo;
+  if (tentarAtualizacaoUrl(principal, motivo)) return true;
+
+  const String primeiraFalha = motivo;
+  const String fallback = String(OTA_FALLBACK_URL) + arquivo;
+  if (tentarAtualizacaoUrl(fallback, motivo)) return true;
+
+  motivo = String("proxy: ") + primeiraFalha + " | github: " + motivo;
   return false;
 }
