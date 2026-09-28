@@ -6,15 +6,17 @@ import '../../../../../app/versao.dart';
 import '../../../controller/motor_control_controller.dart';
 import '../../../models/device_names.dart';
 import '../../../services/app_update_service.dart';
+import '../../widgets/app_section.dart';
 
-/// Firmware das placas e atualização do app, dentro da aba "Conexão".
+/// Firmware das placas e atualização do app (Configurações > Placas).
 class DeviceMaintenanceSection extends StatefulWidget {
   const DeviceMaintenanceSection({super.key, required this.controller});
 
   final MotorControlController controller;
 
   @override
-  State<DeviceMaintenanceSection> createState() => _DeviceMaintenanceSectionState();
+  State<DeviceMaintenanceSection> createState() =>
+      _DeviceMaintenanceSectionState();
 }
 
 class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
@@ -29,61 +31,87 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   /// A senha do Wi-Fi não é enviada por MQTT: o broker é público. O app apenas
   /// pede que a placa abra a própria rede, onde a senha é digitada.
   Widget _buildMaintenanceSection(BuildContext context) {
-    final List<String> placas = <String>{
-      ...widget.controller.firmwareByDevice.keys,
-      ...widget.controller.firmwareUpdateDeviceIds,
-    }.toList()..sort();
-    final bool otaEmAndamento = widget.controller.firmwareUpdateDeviceIds
-        .any(widget.controller.isFirmwareUpdating);
+    final List<String> placas =
+        <String>{
+            ...widget.controller.firmwareByDevice.keys,
+            ...widget.controller.firmwareUpdateDeviceIds,
+          }.toList()
+          ..sort();
+    final bool otaEmAndamento = widget.controller.firmwareUpdateDeviceIds.any(
+      widget.controller.isFirmwareUpdating,
+    );
+    final bool temAtualizacao = widget.controller.boardsToUpdate.isNotEmpty;
+    final Widget iconeFirmware =
+        otaEmAndamento && !temAtualizacao
+            ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+            : const Icon(Icons.system_update_alt_rounded);
+    final Widget textoFirmware = Text(
+      otaEmAndamento && !temAtualizacao
+          ? 'Atualizando firmware…'
+          : 'Atualizar firmware',
+    );
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
-          'Manutenção do ESP32',
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        const SizedBox(height: 4),
-        // Versão/estado OTA de cada placa. Durante o reboot da OTA, mantém
-        // "Atualizando firmware…" em vez de trocar para "desconectado".
-        for (final String placa in placas)
-          _buildFirmwareLine(context, placa),
-        // Versão instalada do app, com o nome dela.
-        FutureBuilder<PackageInfo>(
-          future: PackageInfo.fromPlatform(),
-          builder: (BuildContext context, AsyncSnapshot<PackageInfo> pacote) => Text(
-            'App: versão ${pacote.data?.version ?? '…'} — $nomeDaVersao.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.bodySoft),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
+        AppSection(
+          title: 'Firmware das placas',
           children: <Widget>[
-            OutlinedButton.icon(
-              // Nunca fica desabilitado: o toque informa por que a ação
-              // não pode ser executada naquele instante.
-              onPressed: () => _acaoCadastrarWifi(context),
-              icon: const Icon(Icons.wifi_password_rounded),
-              label: const Text('Cadastrar Wi-Fi'),
-            ),
-            OutlinedButton.icon(
-              // O botão permanece clicável. Se não houver OTA aplicável,
-              // o toque explica o motivo em vez de deixar o controle cinza.
-              onPressed: () => _acaoAtualizarFirmware(context),
-              icon:
-                  otaEmAndamento && widget.controller.boardsToUpdate.isEmpty
-                      ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                      : const Icon(Icons.system_update_alt_rounded),
-              label: Text(
-                otaEmAndamento && widget.controller.boardsToUpdate.isEmpty
-                    ? 'Atualizando firmware…'
-                    : 'Atualizar firmware',
+            if (placas.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Nenhuma placa informou a versão ainda.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
               ),
+            // Versão/estado OTA de cada placa. Durante o reboot da OTA,
+            // mantém "Atualizando firmware…" em vez de "desconectado".
+            for (final String placa in placas)
+              _buildFirmwareLine(context, placa),
+            const SizedBox(height: 8),
+            AppButtons(
+              children: <Widget>[
+                // Nunca fica desabilitado: o toque informa por que a ação
+                // não pode ser executada naquele instante. Em destaque só
+                // quando há firmware novo para instalar.
+                if (temAtualizacao)
+                  FilledButton.icon(
+                    onPressed: () => _acaoAtualizarFirmware(context),
+                    icon: iconeFirmware,
+                    label: textoFirmware,
+                  )
+                else
+                  OutlinedButton.icon(
+                    onPressed: () => _acaoAtualizarFirmware(context),
+                    icon: iconeFirmware,
+                    label: textoFirmware,
+                  ),
+                OutlinedButton.icon(
+                  onPressed: () => _acaoCadastrarWifi(context),
+                  icon: const Icon(Icons.wifi_password_rounded),
+                  label: const Text('Cadastrar Wi-Fi'),
+                ),
+              ],
             ),
+          ],
+        ),
+        appSectionGap,
+        AppSection(
+          title: 'Este app',
+          children: <Widget>[
+            FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder:
+                  (BuildContext context, AsyncSnapshot<PackageInfo> pacote) =>
+                      AppInfoRow(
+                        label: 'Versão ${pacote.data?.version ?? '…'}',
+                        value: nomeDaVersao,
+                      ),
+            ),
+            const SizedBox(height: 8),
             OutlinedButton.icon(
               // Continua clicável durante a verificação; um novo toque apenas
               // informa que a checagem já está em andamento.
@@ -96,7 +124,7 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
                       )
                       : const Icon(Icons.phone_android_rounded),
               label: Text(
-                _verificandoAppUpdate ? 'Verificando...' : 'Atualizar este app',
+                _verificandoAppUpdate ? 'Verificando…' : 'Atualizar este app',
               ),
             ),
           ],
@@ -108,13 +136,17 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   Future<void> _acaoCadastrarWifi(BuildContext context) async {
     if (!widget.controller.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Conecte ao MQTT para cadastrar uma rede Wi-Fi.')),
+        const SnackBar(
+          content: Text('Conecte ao MQTT para cadastrar uma rede Wi-Fi.'),
+        ),
       );
       return;
     }
     if (widget.controller.maintenanceBoards.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nenhuma placa compatível está conectada agora.')),
+        const SnackBar(
+          content: Text('Nenhuma placa compatível está conectada agora.'),
+        ),
       );
       return;
     }
@@ -124,7 +156,9 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   Future<void> _acaoAtualizarApp() async {
     if (_verificandoAppUpdate) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A verificação de atualização já está em andamento.')),
+        const SnackBar(
+          content: Text('A verificação de atualização já está em andamento.'),
+        ),
       );
       return;
     }
@@ -134,7 +168,9 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   Future<void> _acaoAtualizarFirmware(BuildContext context) async {
     if (!widget.controller.isConnected) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Conecte ao MQTT para atualizar o firmware.')),
+        const SnackBar(
+          content: Text('Conecte ao MQTT para atualizar o firmware.'),
+        ),
       );
       return;
     }
@@ -151,9 +187,9 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
               : widget.controller.maintenanceBoards.isEmpty
               ? 'Nenhuma placa está conectada agora.'
               : 'O firmware das placas conectadas já está atualizado.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(mensagem)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(mensagem)));
       return;
     }
 
@@ -171,36 +207,52 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
   }
 
   Widget _buildFirmwareLine(BuildContext context, String placa) {
+    final TextTheme texto = Theme.of(context).textTheme;
     final String? ota = widget.controller.firmwareUpdateLabel(placa);
-    if (ota != null) {
-      final bool concluida = widget.controller.firmwareUpdateSucceeded(placa);
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(
-          '${nomeDaPlaca(placa)}: $ota.',
-          key: ValueKey<String>('firmware_update_$placa'),
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: concluida ? AppTheme.brandMint : AppTheme.brandOrange,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
-    }
+    final ({String texto, bool atualizar})? firmware = widget.controller
+        .firmwareOf(placa);
+    if (ota == null && firmware == null) return const SizedBox.shrink();
 
-    final ({String texto, bool atualizar})? firmware =
-        widget.controller.firmwareOf(placa);
-    if (firmware == null) return const SizedBox.shrink();
+    final bool concluida =
+        ota != null && widget.controller.firmwareUpdateSucceeded(placa);
+    final bool atencao = ota != null ? !concluida : firmware!.atualizar;
+    final Color cor = atencao ? AppTheme.brandOrange : AppTheme.brandMint;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        '${nomeDaPlaca(placa)}: firmware ${firmware.texto}'
-        '${firmware.atualizar ? ' — use "Atualizar firmware"' : ''}.',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color:
-              firmware.atualizar
-                  ? AppTheme.brandOrange
-                  : AppTheme.bodySoft,
-        ),
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            atencao ? Icons.system_update_alt_rounded : Icons.check_circle,
+            size: 20,
+            color: cor,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  nomeDaPlaca(placa),
+                  style: texto.bodyLarge?.copyWith(color: AppTheme.ink),
+                ),
+                if (ota != null)
+                  Text(
+                    ota,
+                    key: ValueKey<String>('firmware_update_$placa'),
+                    style: texto.bodySmall?.copyWith(color: cor),
+                  )
+                else
+                  Text(
+                    firmware!.texto,
+                    style: texto.bodySmall?.copyWith(
+                      color: firmware.atualizar ? cor : null,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -439,7 +491,9 @@ class _DeviceMaintenanceSectionState extends State<DeviceMaintenanceSection> {
           ),
     );
     if (confirmado ?? false) {
-      await widget.controller.sendMaintenanceCommand('wifi_portal', <String>[escolhida]);
+      await widget.controller.sendMaintenanceCommand('wifi_portal', <String>[
+        escolhida,
+      ]);
     }
   }
 }

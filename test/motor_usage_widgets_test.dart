@@ -53,7 +53,7 @@ void main() {
     expect(find.textContaining('Horímetro 2100,0 h · 3 partidas hoje'), findsOneWidget);
     expect(find.textContaining('Manutenção vencida há 100 h'), findsOneWidget);
     expect(find.textContaining('Quadro de comando: firmware v11-velho'), findsOneWidget);
-    expect(find.textContaining('Motor ligado 0 h 45 min em 7 dias'), findsOneWidget);
+    expect(find.text('Motor ligado 0 h 45 min'), findsOneWidget);
     await tester.tap(find.text('Temperatura'));
     await tester.pump();
 

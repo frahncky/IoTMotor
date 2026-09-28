@@ -5,8 +5,7 @@ import '../../../../../app/theme/app_theme.dart';
 import '../../../controller/motor_control_controller.dart';
 import '../../../models/mqtt_connection_config.dart';
 import '../../../services/mqtt_settings_validators.dart';
-import '../../widgets/glass_panel.dart';
-import 'settings_common.dart';
+import '../../widgets/app_section.dart';
 
 /// Aba "Perfis": perfis MQTT salvos, editor e exclusão.
 class ProfilesSettingsPanel extends ConsumerStatefulWidget {
@@ -30,60 +29,43 @@ class _ProfilesSettingsPanelState extends ConsumerState<ProfilesSettingsPanel> {
   Widget _buildProfilesPanel(BuildContext context) {
     final MqttProfilesState profilesState = ref.watch(mqttProfilesProvider);
     final String? activeId = profilesState.activeProfileId;
+    final bool podeExcluir = profilesState.profiles.length > 1;
 
-    return GlassPanel(
-      tint: AppTheme.brandBlue,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          buildPanelTitle(
-            context,
-            icon: Icons.account_tree_rounded,
-            color: AppTheme.brandBlue,
-            title: 'Perfis MQTT',
-            subtitle: 'Salve e alterne rapidamente entre brokers e tópicos.',
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: <Widget>[
-              FilledButton.icon(
+    return AppSection(
+      title: 'Perfil',
+      subtitle: 'Toque em um perfil para usá-lo.',
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+      children: <Widget>[
+        if (profilesState.profiles.isEmpty)
+          Text('Nenhum perfil salvo.', style: Theme.of(context).textTheme.bodyMedium)
+        else
+          for (final MqttProfile profile in profilesState.profiles)
+            _buildProfileTile(
+              context,
+              profile: profile,
+              isActive: profile.id == activeId,
+              podeExcluir: podeExcluir,
+            ),
+        const SizedBox(height: 4),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: TextButton.icon(
                 onPressed: () => _openProfileEditor(),
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('Novo perfil'),
               ),
-              OutlinedButton.icon(
-                onPressed: _saveCurrentConnectionAsProfile,
-                icon: const Icon(Icons.save_rounded),
-                label: const Text('Salvar conexão atual'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (profilesState.profiles.isEmpty)
-            buildInlineNotice(
-              context,
-              icon: Icons.info_outline_rounded,
-              color: AppTheme.brandBlue,
-              text: 'Nenhum perfil MQTT salvo.',
-            )
-          else
-            Column(
-              children: <Widget>[
-                for (final MqttProfile profile in profilesState.profiles)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _buildProfileTile(
-                      context,
-                      profile: profile,
-                      isActive: profile.id == activeId,
-                    ),
-                  ),
-              ],
             ),
-        ],
-      ),
+            Expanded(
+              child: TextButton.icon(
+                onPressed: _saveCurrentConnectionAsProfile,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Salvar atual'),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -91,72 +73,40 @@ class _ProfilesSettingsPanelState extends ConsumerState<ProfilesSettingsPanel> {
     BuildContext context, {
     required MqttProfile profile,
     required bool isActive,
+    required bool podeExcluir,
   }) {
-    final Color color = isActive ? AppTheme.brandMint : AppTheme.brandBlue;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        color: AppTheme.surfaceSoft.withValues(alpha: 0.94),
-        border: Border.all(color: color.withValues(alpha: 0.34)),
+    return ListTile(
+      key: ValueKey<String>('perfil_${profile.id}'),
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        isActive ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+        color: isActive ? AppTheme.brandMint : AppTheme.labelSoft,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(
-            isActive ? Icons.check_circle_rounded : Icons.dns_rounded,
-            color: color,
-            size: 22,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  profile.name,
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${profile.config.host}:${profile.config.port} | '
-                  '${profile.config.topicPrefix} | '
-                  '${profile.config.useTls ? 'TLS' : 'TCP'}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-          Wrap(
-            spacing: 4,
-            children: <Widget>[
-              IconButton(
-                tooltip: isActive ? 'Perfil ativo' : 'Ativar perfil',
-                onPressed:
-                    isActive
-                        ? null
-                        : () => ref
-                            .read(mqttProfilesProvider.notifier)
-                            .setActiveProfile(profile.id),
-                icon: const Icon(Icons.playlist_add_check_rounded),
-              ),
-              IconButton(
-                tooltip: 'Editar perfil',
-                onPressed: () => _openProfileEditor(initial: profile),
-                icon: const Icon(Icons.edit_rounded),
-              ),
-              IconButton(
-                tooltip: 'Excluir perfil',
-                onPressed:
-                    ref.watch(mqttProfilesProvider).profiles.length <= 1
-                        ? null
-                        : () => _confirmDeleteProfile(profile),
-                icon: const Icon(Icons.delete_outline_rounded),
+      title: Text(profile.name),
+      subtitle: Text(
+        '${profile.config.host}:${profile.config.port}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap:
+          isActive
+              ? null
+              : () => ref.read(mqttProfilesProvider.notifier).setActiveProfile(profile.id),
+      trailing: PopupMenuButton<String>(
+        tooltip: 'Opções do perfil',
+        onSelected: (String acao) {
+          if (acao == 'editar') _openProfileEditor(initial: profile);
+          if (acao == 'excluir') _confirmDeleteProfile(profile);
+        },
+        itemBuilder:
+            (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(value: 'editar', child: Text('Editar')),
+              PopupMenuItem<String>(
+                value: 'excluir',
+                enabled: podeExcluir,
+                child: const Text('Excluir'),
               ),
             ],
-          ),
-        ],
       ),
     );
   }

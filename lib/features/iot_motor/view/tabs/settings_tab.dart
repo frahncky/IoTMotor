@@ -10,8 +10,7 @@ import '../../services/mqtt_path_check.dart';
 import '../widgets/alertas_no_celular_panel.dart';
 import '../widgets/connection_path_dialog.dart';
 import '../../services/mqtt_settings_validators.dart';
-import '../widgets/delayed_reveal.dart';
-import '../widgets/glass_panel.dart';
+import '../widgets/app_section.dart';
 import 'settings/alert_settings_panel.dart';
 import 'settings/device_maintenance_section.dart';
 import 'settings/motor_settings_panel.dart';
@@ -46,10 +45,19 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   int _lastAcqRevision = -1;
   _RetentionUnit _retentionUnit = _RetentionUnit.days;
   _RetentionUnit _remoteRetentionUnit = _RetentionUnit.days;
-  int _selectedSettingsTab = 0;
   bool _isTestingLocalComm = false;
 
   MotorControlController get controller => widget.controller;
+
+  /// As telas de cada seção são empilhadas por cima do app e leem este estado
+  /// (campos e escolhas): mudou aqui, elas se redesenham também.
+  final ValueNotifier<int> _versao = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _versao.value++;
+  }
 
   @override
   void initState() {
@@ -82,6 +90,7 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     _acqPublishController.dispose();
     _acqChartController.dispose();
     _acqRecordController.dispose();
+    _versao.dispose();
     super.dispose();
   }
 
@@ -95,352 +104,222 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 7,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1320),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                DelayedReveal(
-                  delay: const Duration(milliseconds: 120),
-                  child: _buildTabHeader(context),
-                ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: IndexedStack(
-                    index: _selectedSettingsTab,
-                    children: <Widget>[
-                      _buildTabScrollView(
-                        key: 'settings_connection',
-                        delay: const Duration(milliseconds: 180),
-                        child: _buildConnectionPanel(context),
-                      ),
-                      _buildTabScrollView(
-                        key: 'settings_motor',
-                        delay: const Duration(milliseconds: 180),
-                        child: MotorSettingsPanel(controller: controller),
-                      ),
-                      _buildTabScrollView(
-                        key: 'settings_profiles',
-                        delay: const Duration(milliseconds: 180),
-                        child: ProfilesSettingsPanel(
-                          controller: controller,
-                          validateConnection: () =>
-                              _connectionFormKey.currentState?.validate() ?? false,
-                        ),
-                      ),
-                      _buildTabScrollView(
-                        key: 'settings_storage',
-                        delay: const Duration(milliseconds: 180),
-                        child: _buildStoragePanel(context),
-                      ),
-                      _buildTabScrollView(
-                        key: 'settings_alerts',
-                        delay: const Duration(milliseconds: 180),
-                        child: Column(
-                          children: <Widget>[
-                            AlertasNoCelularPanel(controller: controller),
-                            const SizedBox(height: 12),
-                            AlertSettingsPanel(controller: controller),
-                          ],
-                        ),
-                      ),
-                      _buildTabScrollView(
-                        key: 'settings_telemetry',
-                        delay: const Duration(milliseconds: 180),
-                        child: _buildTelemetryFormatPanel(context),
-                      ),
-                      _buildTabScrollView(
-                        key: 'settings_acquisition',
-                        delay: const Duration(milliseconds: 180),
-                        child: _buildAcquisitionPanel(context),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+    final ({String texto, bool atualizar})? firmwareQuadro = controller
+        .firmwareOf('esp32-01');
+    final bool atualizacao = controller.boardsToUpdate.isNotEmpty;
+    return ListView(
+      key: const ValueKey<String>('tab_configuracoes'),
+      padding: appPagePadding,
+      children: <Widget>[
+        _grupo(context, 'Conexão', <Widget>[
+          _item(
+            icon: Icons.cloud_outlined,
+            titulo: 'Conexão',
+            subtitulo:
+                controller.isConnected
+                    ? 'Conectado · ${controller.connectionHost}'
+                    : 'Desconectado · ${controller.connectionHost}',
+            abrir: () => _abrir('Conexão', _buildConnectionPage),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabHeader(BuildContext context) {
-    return GlassPanel(
-      tint: AppTheme.brandBlue,
-      radius: 18,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: TabBar(
-        isScrollable: true,
-        onTap: (int index) {
-          setState(() {
-            _selectedSettingsTab = index;
-          });
-        },
-        dividerColor: Colors.transparent,
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicator: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: AppTheme.brandMint.withValues(alpha: 0.22),
-          border: Border.all(color: AppTheme.brandMint.withValues(alpha: 0.35)),
-        ),
-        labelColor: AppTheme.brandMint,
-        unselectedLabelColor: AppTheme.inkSoft,
-        labelStyle: Theme.of(
-          context,
-        ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
-        unselectedLabelStyle: Theme.of(context).textTheme.labelLarge,
-        tabs: const <Widget>[
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.settings_input_component_rounded),
-            text: 'Conexão',
-          ),
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.electric_bolt_rounded),
-            text: 'Motor',
-          ),
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.account_tree_rounded),
-            text: 'Perfis',
-          ),
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.storage_rounded),
-            text: 'Armazenamento',
-          ),
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.notification_important_rounded),
-            text: 'Alertas',
-          ),
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.data_object_rounded),
-            text: 'Telemetria',
-          ),
-          Tab(
-            height: 48,
-            iconMargin: EdgeInsets.only(bottom: 2),
-            icon: Icon(Icons.speed_rounded),
-            text: 'Aquisição',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabScrollView({
-    required String key,
-    required Duration delay,
-    required Widget child,
-  }) {
-    return SingleChildScrollView(
-      key: ValueKey<String>(key),
-      padding: const EdgeInsets.only(bottom: 96),
-      child: DelayedReveal(delay: delay, child: child),
-    );
-  }
-
-  Widget _buildConnectionPanel(BuildContext context) {
-    return Form(
-      key: _connectionFormKey,
-      child: GlassPanel(
-        tint: AppTheme.brandBlue,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final double fieldWidth = fieldWidthFor(constraints.maxWidth);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                buildPanelTitle(
-                  context,
-                  icon: Icons.settings_input_component_rounded,
-                  color: AppTheme.brandBlue,
-                  title: 'Conexão MQTT',
-                  subtitle: 'Broker, tópicos e comunicação local do ESP32.',
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: <Widget>[
-                    _textField(
-                      width: fieldWidth,
-                      label: 'Broker host',
-                      controllerField: controller.brokerController,
-                      validator: MqttSettingsValidators.validateBroker,
-                      helperText:
-                          'Rede que bloqueia MQTT: ws://test.mosquitto.org '
-                          'na porta 8080',
-                    ),
-                    _textField(
-                      width: fieldWidth,
-                      label: 'Porta',
-                      controllerField: controller.portController,
-                      keyboardType: TextInputType.number,
-                      validator: MqttSettingsValidators.validatePort,
-                    ),
-                    _textField(
-                      width: fieldWidth,
-                      label: 'Client ID',
-                      controllerField: controller.clientIdController,
-                      validator: MqttSettingsValidators.validateClientId,
-                    ),
-                    _textField(
-                      width: fieldWidth,
-                      label: 'Topic prefix',
-                      controllerField: controller.topicPrefixController,
-                      validator: MqttSettingsValidators.validateTopicPrefix,
-                    ),
-                    _textField(
-                      width: fieldWidth,
-                      label: 'Usuário (opcional)',
-                      controllerField: controller.usernameController,
-                    ),
-                    _textField(
-                      width: fieldWidth,
-                      label: 'Senha (opcional)',
-                      controllerField: controller.passwordController,
-                      obscureText: true,
-                    ),
-                    // Só aparece se a placa foi gravada exigindo comando
-                    // cifrado; por padrão os comandos viajam abertos.
-                    if (controller.commandPasswordNeeded)
-                      _textField(
-                        width: fieldWidth,
-                        label: 'Senha de comando',
-                        controllerField: controller.commandPasswordController,
-                        obscureText: true,
-                      ),
-                    SizedBox(
-                      width: fieldWidth,
-                      child: DropdownButtonFormField<String>(
-                        // initialValue só vale na criação: a chave recria o
-                        // campo quando a placa escolhida muda por fora.
-                        key: ValueKey<String>(controller.deviceIdController.text),
-                        initialValue:
-                            controller.deviceIdController.text.isEmpty
-                                ? null
-                                : controller.deviceIdController.text,
-                        decoration: const InputDecoration(
-                          labelText: 'Motor em Operação',
-                          hintText: 'Selecione o ID do dispositivo',
-                        ),
-                        items: () {
-                          final Set<String> allIds = {
-                            ...controller.knownDeviceIds,
-                            ...controller.connectedDeviceIds,
-                            if (controller.deviceIdController.text.isNotEmpty)
-                              controller.deviceIdController.text,
-                          };
-
-                          final List<String> sortedIds =
-                              allIds.toList()..sort();
-
-                          return sortedIds.map<DropdownMenuItem<String>>((id) {
-                            final isOnline = controller.connectedDeviceIds
-                                .contains(id);
-                            final isKnown = controller.knownDeviceIds.contains(
-                              id,
-                            );
-
-                            return DropdownMenuItem<String>(
-                              value: id,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.circle,
-                                    size: 10,
-                                    color:
-                                        isOnline
-                                            ? AppTheme.brandMint
-                                            : Colors.grey,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    isKnown
-                                        ? nomeComId(id)
-                                        : '${nomeDaPlaca(id)} (manual)',
-                                  ),
-                                ],
-                              ),
-                            );
-                          }).toList();
-                        }(),
-                        onChanged: (val) {
-                          controller.setDeviceId(val ?? '');
-                          controller.refreshPreview();
-                        },
-                      ),
-                    ),
-                    _textField(
-                      width: fieldWidth,
-                      label: 'IP do ESP32 (local)',
-                      controllerField: _espIpController,
-                      keyboardType: TextInputType.url,
-                    ),
-                    FilledButton.icon(
-                      onPressed:
-                          _isTestingLocalComm
-                              ? null
-                              : () => _testLocalCommunication(ref),
-                      icon:
-                          _isTestingLocalComm
-                              ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                              : const Icon(Icons.wifi_tethering_rounded),
-                      label: Text(
-                        _isTestingLocalComm
-                            ? 'Testando...'
-                            : 'Testar comunicação local',
-                      ),
-                    ),
+          _item(
+            icon: Icons.memory_rounded,
+            titulo: 'Placas e atualizações',
+            subtitulo:
+                atualizacao
+                    ? 'Atualização de firmware disponível'
+                    : firmwareQuadro == null
+                    ? 'Firmware, Wi-Fi das placas e versão do app'
+                    : 'Firmware em dia',
+            destaque: atualizacao,
+            abrir:
+                () => _abrir(
+                  'Placas e atualizações',
+                  (BuildContext context) => <Widget>[
+                    DeviceMaintenanceSection(controller: controller),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: <Widget>[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(999),
-                        color: AppTheme.brandBlue.withValues(alpha: 0.12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Switch(
-                            value: controller.useTls,
-                            onChanged: controller.setTls,
-                          ),
-                          Text(controller.useTls ? 'TLS ativo' : 'TLS inativo'),
-                        ],
-                      ),
+          ),
+        ]),
+        appSectionGap,
+        _grupo(context, 'Motor e alarmes', <Widget>[
+          _item(
+            icon: Icons.electric_bolt_rounded,
+            titulo: 'Motor',
+            subtitulo: 'Dados de placa, manutenção e som',
+            abrir:
+                () => _abrir(
+                  'Motor',
+                  (BuildContext context) => <Widget>[
+                    MotorSettingsPanel(controller: controller),
+                  ],
+                ),
+          ),
+          _item(
+            icon: Icons.notifications_active_outlined,
+            titulo: 'Notificações',
+            subtitulo: 'Alertas no celular e limites do app',
+            abrir: () => _abrir('Notificações', _buildNotificationsPage),
+          ),
+        ]),
+        appSectionGap,
+        _grupo(context, 'Dados', <Widget>[
+          _item(
+            icon: Icons.speed_rounded,
+            titulo: 'Aquisição',
+            subtitulo: 'Intervalos de leitura, envio e registro',
+            abrir: () => _abrir('Aquisição', _buildAcquisitionPage),
+          ),
+          _item(
+            icon: Icons.storage_rounded,
+            titulo: 'Armazenamento',
+            subtitulo: controller.historyRetentionSummary,
+            abrir: () => _abrir('Armazenamento', _buildStoragePage),
+          ),
+        ]),
+      ],
+    );
+  }
+
+  Widget _grupo(BuildContext context, String titulo, List<Widget> itens) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+          child: Text(
+            titulo.toUpperCase(),
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(letterSpacing: 0.8),
+          ),
+        ),
+        Material(
+          color: AppTheme.surfaceSoft,
+          borderRadius: BorderRadius.circular(16),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: <Widget>[
+              for (int i = 0; i < itens.length; i++) ...<Widget>[
+                if (i > 0)
+                  Divider(
+                    height: 1,
+                    indent: 56,
+                    color: AppTheme.inputBorder.withValues(alpha: 0.3),
+                  ),
+                itens[i],
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _item({
+    required IconData icon,
+    required String titulo,
+    required String subtitulo,
+    required VoidCallback abrir,
+    bool destaque = false,
+  }) {
+    return ListTile(
+      key: ValueKey<String>('config_$titulo'),
+      leading: Icon(icon, color: destaque ? AppTheme.brandOrange : null),
+      title: Text(titulo),
+      subtitle: Text(
+        subtitulo,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: destaque ? AppTheme.brandOrange : null),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: abrir,
+    );
+  }
+
+  /// Abre a seção numa tela própria, com voltar, por cima da barra inferior.
+  void _abrir(String titulo, List<Widget> Function(BuildContext) corpo) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (BuildContext context) => Scaffold(
+              appBar: AppBar(title: Text(titulo)),
+              body: ListenableBuilder(
+                listenable: Listenable.merge(<Listenable>[controller, _versao]),
+                builder:
+                    (BuildContext context, _) => ListView(
+                      padding: appPagePadding,
+                      children: corpo(context),
                     ),
+              ),
+            ),
+      ),
+    );
+  }
+
+  List<Widget> _buildConnectionPage(BuildContext context) {
+    final TextTheme texto = Theme.of(context).textTheme;
+    return <Widget>[
+      ProfilesSettingsPanel(
+        controller: controller,
+        validateConnection:
+            () => _connectionFormKey.currentState?.validate() ?? false,
+      ),
+      appSectionGap,
+      Form(
+        key: _connectionFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AppSection(
+              title: 'Broker MQTT',
+              children: <Widget>[
+                _textField(
+                  label: 'Endereço do broker',
+                  controllerField: controller.brokerController,
+                  validator: MqttSettingsValidators.validateBroker,
+                  helperText:
+                      'Em rede que bloqueia MQTT: ws://test.mosquitto.org, porta 8080',
+                ),
+                _textField(
+                  label: 'Porta',
+                  controllerField: controller.portController,
+                  keyboardType: TextInputType.number,
+                  validator: MqttSettingsValidators.validatePort,
+                ),
+                _textField(
+                  label: 'Usuário (opcional)',
+                  controllerField: controller.usernameController,
+                ),
+                _textField(
+                  label: 'Senha (opcional)',
+                  controllerField: controller.passwordController,
+                  obscureText: true,
+                ),
+                // Só aparece se a placa foi gravada exigindo comando
+                // cifrado; por padrão os comandos viajam abertos.
+                if (controller.commandPasswordNeeded)
+                  _textField(
+                    label: 'Senha de comando',
+                    controllerField: controller.commandPasswordController,
+                    obscureText: true,
+                  ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('TLS'),
+                  subtitle: const Text('Conexão cifrada com o broker'),
+                  value: controller.useTls,
+                  onChanged: controller.setTls,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  controller.connectionMessage,
+                  key: const ValueKey<String>('connection_message'),
+                  style: texto.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                AppButtons(
+                  children: <Widget>[
                     FilledButton.icon(
                       onPressed:
                           controller.isBusy ? null : _handleConnectionToggle,
@@ -462,71 +341,177 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                       icon: const Icon(Icons.travel_explore_rounded),
                       label: const Text('Testar caminhos de conexão'),
                     ),
-                    Chip(
-                      avatar: Icon(
-                        controller.isConnected
-                            ? Icons.check_circle_rounded
-                            : Icons.radio_button_unchecked_rounded,
-                        size: 16,
-                      ),
-                      label: Text(controller.connectionMessage),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.brandBlue.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: AppTheme.brandBlue.withValues(alpha: 0.16),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        'Dispositivos: ${controller.devicesPresenceSummary}',
-                        key: const ValueKey<String>('connection_devices_summary'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Clientes: ${controller.commandClientsSummary}',
-                        key: const ValueKey<String>('connection_clients_summary'),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                buildInlineNotice(
-                  context,
-                  icon: Icons.info_outline_rounded,
-                  color: AppTheme.brandBlue,
-                  text: controller.statusMessage,
-                ),
-                const SizedBox(height: 12),
-                DeviceMaintenanceSection(controller: controller),
-                const SizedBox(height: 12),
-                _buildTopicPreview(context),
               ],
-            );
-          },
+            ),
+            appSectionGap,
+            _recolhido(
+              context,
+              key: 'config_avancado',
+              titulo: 'Avançado',
+              subtitulo: 'Identificação, tópicos e comunicação local',
+              children: <Widget>[
+                _textField(
+                  label: 'Client ID',
+                  controllerField: controller.clientIdController,
+                  validator: MqttSettingsValidators.validateClientId,
+                ),
+                _textField(
+                  label: 'Prefixo dos tópicos',
+                  controllerField: controller.topicPrefixController,
+                  validator: MqttSettingsValidators.validateTopicPrefix,
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: DropdownButtonFormField<String>(
+                    // initialValue só vale na criação: a chave recria o
+                    // campo quando a placa escolhida muda por fora.
+                    key: ValueKey<String>(controller.deviceIdController.text),
+                    initialValue:
+                        controller.deviceIdController.text.isEmpty
+                            ? null
+                            : controller.deviceIdController.text,
+                    decoration: const InputDecoration(
+                      labelText: 'Placa em destaque',
+                      hintText: 'Automático',
+                    ),
+                    items: () {
+                      final Set<String> allIds = <String>{
+                        ...controller.knownDeviceIds,
+                        ...controller.connectedDeviceIds,
+                        if (controller.deviceIdController.text.isNotEmpty)
+                          controller.deviceIdController.text,
+                      };
+                      final List<String> sortedIds = allIds.toList()..sort();
+                      return sortedIds.map<DropdownMenuItem<String>>((
+                        String id,
+                      ) {
+                        final bool isOnline = controller.connectedDeviceIds
+                            .contains(id);
+                        final bool isKnown = controller.knownDeviceIds.contains(
+                          id,
+                        );
+                        return DropdownMenuItem<String>(
+                          value: id,
+                          child: Row(
+                            children: <Widget>[
+                              Icon(
+                                Icons.circle,
+                                size: 10,
+                                color: isOnline ? AppTheme.online : Colors.grey,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                isKnown
+                                    ? nomeComId(id)
+                                    : '${nomeDaPlaca(id)} (manual)',
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList();
+                    }(),
+                    onChanged: (String? val) {
+                      controller.setDeviceId(val ?? '');
+                      controller.refreshPreview();
+                    },
+                  ),
+                ),
+                _textField(
+                  label: 'IP do ESP32 (rede local)',
+                  controllerField: _espIpController,
+                  keyboardType: TextInputType.url,
+                ),
+                OutlinedButton.icon(
+                  onPressed:
+                      _isTestingLocalComm
+                          ? null
+                          : () => _testLocalCommunication(ref),
+                  icon:
+                      _isTestingLocalComm
+                          ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Icon(Icons.wifi_tethering_rounded),
+                  label: Text(
+                    _isTestingLocalComm
+                        ? 'Testando...'
+                        : 'Testar comunicação local',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                AppInfoRow(
+                  key: const ValueKey<String>('connection_devices_summary'),
+                  label: 'Dispositivos',
+                  value: controller.devicesPresenceSummary,
+                ),
+                AppInfoRow(
+                  key: const ValueKey<String>('connection_clients_summary'),
+                  label: 'Clientes',
+                  value: controller.commandClientsSummary,
+                ),
+                AppInfoRow(label: 'Comandos', value: controller.commandTopic),
+                AppInfoRow(
+                  label: 'Telemetria',
+                  value: controller.telemetryTopic,
+                ),
+                AppInfoRow(label: 'Status', value: controller.statusTopic),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// Seção que abre e fecha, para o que só se ajusta de vez em quando.
+  Widget _recolhido(
+    BuildContext context, {
+    required String key,
+    required String titulo,
+    required String subtitulo,
+    required List<Widget> children,
+  }) {
+    return Material(
+      color: AppTheme.surfaceSoft,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: ValueKey<String>(key),
+          // Recolhido, os campos continuam montados: o Form da conexão
+          // precisa validá-los mesmo com "Avançado" fechado.
+          maintainState: true,
+          title: Text(titulo, style: Theme.of(context).textTheme.titleMedium),
+          subtitle: Text(
+            subtitulo,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
         ),
       ),
     );
   }
 
+  List<Widget> _buildNotificationsPage(BuildContext context) {
+    return <Widget>[
+      AlertasNoCelularPanel(controller: controller),
+      appSectionGap,
+      _recolhido(
+        context,
+        key: 'config_limites_app',
+        titulo: 'Limites do app',
+        subtitulo:
+            'Avisos extras do app. Os alarmes da placa ficam na aba Alertas.',
+        children: <Widget>[AlertSettingsPanel(controller: controller)],
+      ),
+    ];
+  }
 
   void _syncAcquisitionControllers({bool force = false}) {
     final AcquisitionConfig cfg = controller.acquisitionConfig;
@@ -537,7 +522,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     _acqChartController.text = (cfg.chartMs / 1000).toStringAsFixed(0);
     _acqRecordController.text = (cfg.recordMs / 1000).toStringAsFixed(0);
     _acqPreset = 'custom';
-    for (final MapEntry<String, AcquisitionConfig> entry in AcquisitionConfig.presets.entries) {
+    for (final MapEntry<String, AcquisitionConfig> entry
+        in AcquisitionConfig.presets.entries) {
       final AcquisitionConfig p = entry.value;
       if (p.pzemReadMs == cfg.pzemReadMs &&
           p.publishMs == cfg.publishMs &&
@@ -554,11 +540,14 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
       final int? s = int.tryParse(campo.text.trim());
       return s == null ? null : s * 1000;
     }
+
     final int? pzem = ms(_acqPzemController);
     final int? pub = ms(_acqPublishController);
     final int? chart = ms(_acqChartController);
     final int? record = ms(_acqRecordController);
-    if (pzem == null || pub == null || chart == null || record == null) return null;
+    if (pzem == null || pub == null || chart == null || record == null) {
+      return null;
+    }
     return AcquisitionConfig(
       revision: controller.acquisitionConfig.revision,
       pzemReadMs: pzem,
@@ -568,171 +557,162 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     );
   }
 
-  Widget _buildAcquisitionPanel(BuildContext context) {
+  List<Widget> _buildAcquisitionPage(BuildContext context) {
     final AcquisitionConfig cfg = controller.acquisitionConfig;
-    return GlassPanel(
-      tint: AppTheme.brandMint,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return <Widget>[
+      AppSection(
+        title: 'Intervalos',
+        subtitle: 'Valem para o app, o painel web e as placas.',
         children: <Widget>[
-          buildPanelTitle(
-            context,
-            icon: Icons.speed_rounded,
-            color: AppTheme.brandMint,
-            title: 'Aquisição e registro de dados',
-            subtitle: 'Configuração única do sistema. Alterações feitas aqui também valem no painel web e nas placas.',
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DropdownButtonFormField<String>(
+              initialValue: _acqPreset,
+              decoration: const InputDecoration(labelText: 'Perfil'),
+              items: const <DropdownMenuItem<String>>[
+                DropdownMenuItem(value: 'custom', child: Text('Personalizado')),
+                DropdownMenuItem(value: 'realtime', child: Text('Tempo real')),
+                DropdownMenuItem(
+                  value: 'monitoring',
+                  child: Text('Monitoramento'),
+                ),
+                DropdownMenuItem(value: 'economic', child: Text('Econômico')),
+              ],
+              onChanged: (String? value) {
+                if (value == null) return;
+                setState(() {
+                  _acqPreset = value;
+                  final AcquisitionConfig? p = AcquisitionConfig.presets[value];
+                  if (p != null) {
+                    _acqPzemController.text = '${p.pzemReadMs ~/ 1000}';
+                    _acqPublishController.text = '${p.publishMs ~/ 1000}';
+                    _acqChartController.text = '${p.chartMs ~/ 1000}';
+                    _acqRecordController.text = '${p.recordMs ~/ 1000}';
+                  }
+                });
+              },
+            ),
           ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: _acqPreset,
-            decoration: const InputDecoration(labelText: 'Perfil'),
-            items: const <DropdownMenuItem<String>>[
-              DropdownMenuItem(value: 'custom', child: Text('Personalizado')),
-              DropdownMenuItem(value: 'realtime', child: Text('Tempo real')),
-              DropdownMenuItem(value: 'monitoring', child: Text('Monitoramento')),
-              DropdownMenuItem(value: 'economic', child: Text('Econômico')),
-            ],
-            onChanged: (String? value) {
-              if (value == null) return;
-              setState(() {
-                _acqPreset = value;
-                final AcquisitionConfig? p = AcquisitionConfig.presets[value];
-                if (p != null) {
-                  _acqPzemController.text = '${p.pzemReadMs ~/ 1000}';
-                  _acqPublishController.text = '${p.publishMs ~/ 1000}';
-                  _acqChartController.text = '${p.chartMs ~/ 1000}';
-                  _acqRecordController.text = '${p.recordMs ~/ 1000}';
-                }
-              });
-            },
+          _textField(
+            label: 'Leitura elétrica',
+            suffixText: 's',
+            controllerField: _acqPzemController,
+            keyboardType: TextInputType.number,
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: <Widget>[
-              _textField(width: 210, label: 'Aquisição elétrica (s)', controllerField: _acqPzemController, keyboardType: TextInputType.number),
-              _textField(width: 210, label: 'Publicação MQTT (s)', controllerField: _acqPublishController, keyboardType: TextInputType.number),
-              _textField(width: 210, label: 'Pontos do gráfico (s)', controllerField: _acqChartController, keyboardType: TextInputType.number),
-              _textField(width: 210, label: 'Registro de dados (s)', controllerField: _acqRecordController, keyboardType: TextInputType.number),
-            ],
+          _textField(
+            label: 'Envio pelo MQTT',
+            suffixText: 's',
+            controllerField: _acqPublishController,
+            keyboardType: TextInputType.number,
           ),
-          const SizedBox(height: 14),
-          buildInlineNotice(
-            context,
-            icon: Icons.lock_clock_rounded,
-            color: AppTheme.brandBlue,
-            text: 'Parâmetros protegidos: vibração ${cfg.vibrationHz} Hz, janela RMS ${cfg.vibrationWindowMs ~/ 1000} s, histórico consolidado a cada ${cfg.historyBucketS ~/ 60} min por ${cfg.historyRetentionDays} dias.',
+          _textField(
+            label: 'Pontos do gráfico',
+            suffixText: 's',
+            controllerField: _acqChartController,
+            keyboardType: TextInputType.number,
           ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          _textField(
+            label: 'Registro de dados',
+            suffixText: 's',
+            controllerField: _acqRecordController,
+            keyboardType: TextInputType.number,
+          ),
+          Text(
+            cfg.revision > 0
+                ? 'Sincronizado com o quadro · revisão ${cfg.revision}'
+                : 'Aguardando a configuração do quadro de comando',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          AppButtons(
             children: <Widget>[
               FilledButton.icon(
-                onPressed: controller.isConnected
-                    ? () async {
-                        final AcquisitionConfig? nova = _acquisitionFromFields();
-                        if (nova == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Informe os quatro intervalos em segundos.')),
-                          );
-                          return;
+                onPressed:
+                    controller.isConnected
+                        ? () async {
+                          final AcquisitionConfig? nova =
+                              _acquisitionFromFields();
+                          if (nova == null) {
+                            _showSnackBar(
+                              'Informe os quatro intervalos em segundos.',
+                            );
+                            return;
+                          }
+                          final String? erro = nova.validate();
+                          if (erro != null) {
+                            _showSnackBar(erro);
+                            return;
+                          }
+                          await controller.saveAcquisitionConfig(nova);
                         }
-                        final String? erro = nova.validate();
-                        if (erro != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(erro)));
-                          return;
-                        }
-                        await controller.saveAcquisitionConfig(nova);
-                      }
-                    : null,
+                        : null,
                 icon: const Icon(Icons.sync_rounded),
                 label: const Text('Gravar e sincronizar'),
               ),
               OutlinedButton.icon(
-                onPressed: controller.isConnected ? controller.requestAcquisitionConfig : null,
+                onPressed:
+                    controller.isConnected
+                        ? controller.requestAcquisitionConfig
+                        : null,
                 icon: const Icon(Icons.refresh_rounded),
                 label: const Text('Ler da placa'),
-              ),
-              Chip(
-                label: Text(cfg.revision > 0
-                    ? 'Sincronizado · revisão ${cfg.revision}'
-                    : 'Aguardando ESP32-01'),
               ),
             ],
           ),
         ],
       ),
-    );
+      appSectionGap,
+      AppSection(
+        title: 'Fixos no firmware',
+        children: <Widget>[
+          AppInfoRow(
+            label: 'Amostragem da vibração',
+            value: '${cfg.vibrationHz} Hz',
+          ),
+          AppInfoRow(
+            label: 'Janela RMS',
+            value: '${cfg.vibrationWindowMs ~/ 1000} s',
+          ),
+          AppInfoRow(
+            label: 'Histórico da placa',
+            value:
+                'a cada ${cfg.historyBucketS ~/ 60} min, ${cfg.historyRetentionDays} dias',
+          ),
+        ],
+      ),
+    ];
   }
 
-  Widget _buildStoragePanel(BuildContext context) {
-    return Form(
-      key: _storageFormKey,
-      child: GlassPanel(
-        tint: AppTheme.brandMint,
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final double fieldWidth = fieldWidthFor(constraints.maxWidth);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  List<Widget> _buildStoragePage(BuildContext context) {
+    return <Widget>[
+      Form(
+        key: _storageFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AppSection(
+              title: 'Neste celular',
+              subtitle: controller.historyRetentionSummary,
               children: <Widget>[
-                buildPanelTitle(
-                  context,
-                  icon: Icons.storage_rounded,
-                  color: AppTheme.brandMint,
-                  title: 'Armazenamento',
-                  subtitle: 'Retenção local do app e política remota do SD.',
+                _retentionField(
+                  label: 'Guardar por',
+                  controllerField: _retentionController,
+                  focusNode: _retentionFocusNode,
+                  unit: _retentionUnit,
+                  fieldLabel: 'a retenção local',
+                  onSubmitted: _applyRetentionDays,
+                ),
+                _buildRetentionUnitSelector(
+                  selected: _retentionUnit,
+                  onChanged: _setRetentionUnit,
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  'Local do app',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                AppButtons(
                   children: <Widget>[
-                    SizedBox(
-                      width: fieldWidth,
-                      child: TextFormField(
-                        controller: _retentionController,
-                        focusNode: _retentionFocusNode,
-                        keyboardType: TextInputType.number,
-                        textInputAction: TextInputAction.done,
-                        decoration: InputDecoration(
-                          labelText: 'Retenção local',
-                          suffixText: _retentionUnitLabel(_retentionUnit),
-                          hintText: 'Ex: 30',
-                        ),
-                        autovalidateMode: AutovalidateMode.onUserInteraction,
-                        validator:
-                            (String? value) =>
-                                MqttSettingsValidators.validateDecimal(
-                                  value,
-                                  fieldLabel: 'a retenção local',
-                                  min: 0,
-                                  allowZero: false,
-                                ),
-                        onFieldSubmitted: (_) => _applyRetentionDays(),
-                      ),
-                    ),
-                    _buildRetentionUnitSelector(
-                      selected: _retentionUnit,
-                      onChanged: _setRetentionUnit,
-                    ),
-                    Chip(
-                      avatar: const Icon(Icons.timeline_rounded, size: 16),
-                      label: Text(controller.historyRetentionSummary),
-                    ),
-                    OutlinedButton.icon(
+                    FilledButton.icon(
                       onPressed: _applyRetentionDays,
                       icon: const Icon(Icons.check_rounded),
-                      label: const Text('Aplicar local'),
+                      label: const Text('Aplicar'),
                     ),
                     OutlinedButton.icon(
                       onPressed:
@@ -744,49 +724,28 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'Remoto no ESP32',
-                  style: Theme.of(context).textTheme.titleMedium,
+              ],
+            ),
+            appSectionGap,
+            AppSection(
+              title: 'No cartão SD do ESP32',
+              subtitle: controller.remoteHistoryRetentionSummary,
+              children: <Widget>[
+                _retentionField(
+                  label: 'Guardar por',
+                  controllerField: _remoteRetentionController,
+                  focusNode: _remoteRetentionFocusNode,
+                  unit: _remoteRetentionUnit,
+                  fieldLabel: 'a retenção remota',
+                  onSubmitted: _applyRemoteRetentionDays,
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                _buildRetentionUnitSelector(
+                  selected: _remoteRetentionUnit,
+                  onChanged: _setRemoteRetentionUnit,
+                ),
+                const SizedBox(height: 12),
+                AppButtons(
                   children: <Widget>[
-                    SizedBox(
-                      width: fieldWidth,
-                      child: TextFormField(
-                        controller: _remoteRetentionController,
-                        focusNode: _remoteRetentionFocusNode,
-                        keyboardType: TextInputType.number,
-                        textInputAction: TextInputAction.done,
-                        decoration: InputDecoration(
-                          labelText: 'Retenção remota (ESP32 SD)',
-                          suffixText: _retentionUnitLabel(_remoteRetentionUnit),
-                          hintText: 'Ex: 30',
-                        ),
-                        autovalidateMode: AutovalidateMode.onUserInteraction,
-                        validator:
-                            (String? value) =>
-                                MqttSettingsValidators.validateDecimal(
-                                  value,
-                                  fieldLabel: 'a retenção remota',
-                                  min: 0,
-                                  allowZero: false,
-                                ),
-                        onFieldSubmitted: (_) => _applyRemoteRetentionDays(),
-                      ),
-                    ),
-                    _buildRetentionUnitSelector(
-                      selected: _remoteRetentionUnit,
-                      onChanged: _setRemoteRetentionUnit,
-                    ),
-                    Chip(
-                      avatar: const Icon(Icons.sd_storage_rounded, size: 16),
-                      label: Text(controller.remoteHistoryRetentionSummary),
-                    ),
                     FilledButton.icon(
                       onPressed: _applyAndSendRemoteRetention,
                       icon: const Icon(Icons.cloud_upload_rounded),
@@ -795,78 +754,42 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
                   ],
                 ),
               ],
-            );
-          },
+            ),
+          ],
         ),
       ),
-    );
+    ];
   }
 
-  Widget _buildTelemetryFormatPanel(BuildContext context) {
-    return GlassPanel(
-      tint: AppTheme.brandOrange,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          buildPanelTitle(
-            context,
-            icon: Icons.data_object_rounded,
-            color: AppTheme.brandOrange,
-            title: 'Formato da Telemetria',
-            subtitle: 'Payloads aceitos no tópico de telemetria.',
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.surfaceSoft.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: AppTheme.brandOrange.withValues(alpha: 0.4),
-              ),
-            ),
-            child: SelectableText(
-              '{"voltage":220.4,"current":3.9,"power":858,"pf":0.98,"frequency":60,"energy":1.234,"vibration_mms":2.1,"temperature":37.8}\n'
-              'ou\n'
-              '{"voltage":220.4}\n'
-              '{"current":3.9}\n'
-              '{"power":858,"pf":0.98,"frequency":60,"energy":1.234}\n'
-              '{"vibration_mms":2.1}\n'
-              '{"temperature":37.8}\n'
-              'ou\n'
-              '{"data":{"voltage":"220.4","current":"3.9","power":"858","pf":"0.98","frequency":"60","energy":"1.234","vibration_mms":"2.1","temperature":"37.8"}}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-                color: AppTheme.inkSoft,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopicPreview(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: AppTheme.surfaceSoft.withValues(alpha: 0.94),
-        border: Border.all(color: AppTheme.brandBlue.withValues(alpha: 0.36)),
-      ),
-      child: SelectableText(
-        'Tópico de comando: ${controller.commandTopic}\n'
-        'Tópico de telemetria: ${controller.telemetryTopic}\n'
-        'Tópico de status: ${controller.statusTopic}\n'
-        'Tópico de solicitação: ${controller.telemetryRequestTopic}\n'
-        'Dispositivos conectados: ${controller.connectedDeviceIds.isEmpty ? '--' : controller.connectedDeviceIds.join(', ')}\n'
-        'Dispositivos conhecidos: ${controller.knownDeviceIds.isEmpty ? '--' : controller.knownDeviceIds.join(', ')}',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          fontFamily: 'monospace',
-          color: AppTheme.inkSoft,
+  Widget _retentionField({
+    required String label,
+    required TextEditingController controllerField,
+    required FocusNode focusNode,
+    required _RetentionUnit unit,
+    required String fieldLabel,
+    required bool Function() onSubmitted,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: controllerField,
+        focusNode: focusNode,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          labelText: label,
+          suffixText: _retentionUnitLabel(unit),
+          hintText: 'Ex: 30',
         ),
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        validator:
+            (String? value) => MqttSettingsValidators.validateDecimal(
+              value,
+              fieldLabel: fieldLabel,
+              min: 0,
+              allowZero: false,
+            ),
+        onFieldSubmitted: (_) => onSubmitted(),
       ),
     );
   }
@@ -875,8 +798,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     required _RetentionUnit selected,
     required ValueChanged<_RetentionUnit> onChanged,
   }) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return SizedBox(
+      width: double.infinity,
       child: SegmentedButton<_RetentionUnit>(
         showSelectedIcon: false,
         selected: <_RetentionUnit>{selected},
@@ -902,8 +825,8 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
           padding: const WidgetStatePropertyAll<EdgeInsets>(
             EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           ),
-          textStyle: const WidgetStatePropertyAll<TextStyle>(
-            TextStyle(fontWeight: FontWeight.w700),
+          textStyle: WidgetStatePropertyAll<TextStyle?>(
+            Theme.of(context).textTheme.labelLarge,
           ),
         ),
       ),
@@ -911,7 +834,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   }
 
   Widget _textField({
-    required double width,
     required String label,
     required TextEditingController controllerField,
     TextInputType? keyboardType,
@@ -920,19 +842,22 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     String? suffixText,
     String? helperText,
   }) {
-    return settingsTextField(
-      width: width,
-      label: label,
-      controllerField: controllerField,
-      keyboardType: keyboardType,
-      obscureText: obscureText,
-      validator: validator,
-      suffixText: suffixText,
-      helperText: helperText,
-      onChanged: () {
-        setState(() {});
-        controller.refreshPreview();
-      },
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: settingsTextField(
+        width: double.infinity,
+        label: label,
+        controllerField: controllerField,
+        keyboardType: keyboardType,
+        obscureText: obscureText,
+        validator: validator,
+        suffixText: suffixText,
+        helperText: helperText,
+        onChanged: () {
+          setState(() {});
+          controller.refreshPreview();
+        },
+      ),
     );
   }
 
@@ -957,7 +882,21 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     }
 
     if (!(_connectionFormKey.currentState?.validate() ?? false)) {
-      _showSnackBar('Revise os dados da conexão MQTT.');
+      // Os campos de "Avançado" podem estar recolhidos: diz onde olhar.
+      final bool avancado =
+          MqttSettingsValidators.validateClientId(
+                controller.clientIdController.text,
+              ) !=
+              null ||
+          MqttSettingsValidators.validateTopicPrefix(
+                controller.topicPrefixController.text,
+              ) !=
+              null;
+      _showSnackBar(
+        avancado
+            ? 'Revise o Client ID ou o prefixo dos tópicos em "Avançado".'
+            : 'Revise os dados da conexão MQTT.',
+      );
       return;
     }
 

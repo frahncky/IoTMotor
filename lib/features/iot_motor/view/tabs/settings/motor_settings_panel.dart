@@ -5,8 +5,7 @@ import '../../../../../app/theme/app_theme.dart';
 import '../../../controller/motor_control_controller.dart';
 import '../../../models/device_names.dart';
 import '../../../models/motor_info.dart';
-import '../../widgets/glass_panel.dart';
-import 'settings_common.dart';
+import '../../widgets/app_section.dart';
 
 /// Aba "Motor" das configurações: dados de placa, som e ações do motor.
 class MotorSettingsPanel extends ConsumerStatefulWidget {
@@ -31,215 +30,182 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
     final bool disponivel =
         controller.isConnected && controller.motorDeviceId != null;
     final sound = ref.watch(motorSoundServiceProvider);
+    final TextTheme texto = Theme.of(context).textTheme;
 
     final List<Widget> dados = <Widget>[];
-    void chip(String rotulo, String valor) {
-      dados.add(Chip(label: Text('$rotulo: $valor')));
+    void linha(String rotulo, String valor) {
+      dados.add(AppInfoRow(label: rotulo, value: valor));
     }
 
     if (info != null) {
       if (info.currentA != null) {
-        chip(
-          'Corrente',
-          '${_motorPair(info.currentA, info.currentYA)} A',
-        );
+        linha('Corrente', '${_motorPair(info.currentA, info.currentYA)} A');
       }
       if (info.voltageV != null) {
-        chip(
-          'Tensão',
-          '${_motorPair(info.voltageV, info.voltageYV)} V',
-        );
+        linha('Tensão', '${_motorPair(info.voltageV, info.voltageYV)} V');
       }
-      if (info.powerCv != null) chip('Potência', '${_motorNumber(info.powerCv)} cv');
-      if (info.rpm != null) chip('Rotação', '${_motorNumber(info.rpm, casas: 0)} rpm');
-      if (info.serviceFactor != null) chip('Fator de serviço', _motorNumber(info.serviceFactor));
-      if (info.phases != null) chip('Tipo', info.phases == 3 ? 'Trifásico' : 'Monofásico');
-      if (info.connectionLabel != null) chip('Ligação', info.connectionLabel!);
+      if (info.powerCv != null) linha('Potência', '${_motorNumber(info.powerCv)} cv');
+      if (info.rpm != null) linha('Rotação', '${_motorNumber(info.rpm, casas: 0)} rpm');
+      if (info.serviceFactor != null) linha('Fator de serviço', _motorNumber(info.serviceFactor));
+      if (info.phases != null) linha('Tipo', info.phases == 3 ? 'Trifásico' : 'Monofásico');
+      if (info.connectionLabel != null) linha('Ligação', info.connectionLabel!);
       if (info.maintIntervalH != null && info.maintIntervalH! > 0) {
-        chip('Manutenção', 'a cada ${_motorNumber(info.maintIntervalH, casas: 0)} h');
+        linha('Manutenção', 'a cada ${_motorNumber(info.maintIntervalH, casas: 0)} h');
       }
     }
 
-    return GlassPanel(
-      tint: AppTheme.brandBlue,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          buildPanelTitle(
-            context,
-            icon: Icons.electric_bolt_rounded,
-            color: AppTheme.brandBlue,
-            title: 'Dados do motor',
-            subtitle: 'Dados da placa do motor gravados no quadro de comando.',
-          ),
-          const SizedBox(height: 12),
-          if (controller.motorDeviceId != null)
-            Text(
-              'Quadro: ${nomeComId(controller.motorDeviceId!)}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppTheme.bodySoft,
-              ),
-            ),
-          if (controller.motorDeviceId != null) const SizedBox(height: 8),
-          if (dados.isEmpty)
-            buildInlineNotice(
-              context,
-              icon: Icons.info_outline_rounded,
-              color: AppTheme.brandBlue,
-              text: controller.isConnected
-                  ? 'Ainda não há dados de placa cadastrados para este motor.'
-                  : 'Conecte ao MQTT para ler os dados gravados no quadro.',
-            )
-          else
-            Wrap(spacing: 8, runSpacing: 8, children: dados),
-          if (uso != null) ...<Widget>[
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AppSection(
+          title: 'Dados de placa',
+          subtitle:
+              controller.motorDeviceId == null
+                  ? null
+                  : 'Gravados em ${nomeDaPlaca(controller.motorDeviceId!)}',
+          children: <Widget>[
+            if (dados.isEmpty)
+              Text(
+                controller.isConnected
+                    ? 'Nenhum dado cadastrado para este motor.'
+                    : 'Conecte ao broker para ler os dados gravados no quadro.',
+                style: texto.bodyMedium,
+              )
+            else
+              ...dados,
             const SizedBox(height: 12),
+            AppButtons(
+              children: <Widget>[
+                FilledButton.icon(
+                  onPressed: disponivel ? () => _editMotorInfo(context) : null,
+                  icon: const Icon(Icons.edit_rounded),
+                  label: const Text('Editar dados do motor'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        appSectionGap,
+        AppSection(
+          title: 'Uso e manutenção',
+          children: <Widget>[
             Text(
-              usageLine(uso),
-              style: Theme.of(context).textTheme.bodyMedium,
+              uso == null ? 'Sem leitura do horímetro ainda.' : usageLine(uso),
+              style: texto.bodyMedium,
+            ),
+            if (manutencao != null) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(
+                manutencao.texto,
+                style: texto.bodyMedium?.copyWith(
+                  color: manutencao.vencida ? AppTheme.brandOrange : null,
+                  fontWeight: manutencao.vencida ? FontWeight.w700 : null,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            AppButtons(
+              children: <Widget>[
+                OutlinedButton.icon(
+                  onPressed:
+                      disponivel
+                          ? () => _confirmMotorAction(
+                            context,
+                            titulo: 'Manutenção feita',
+                            texto:
+                                'Registrar a manutenção como feita agora? '
+                                'O próximo lembrete contará a partir do horímetro atual.',
+                            acao: controller.markMotorMaintenanceDone,
+                          )
+                          : null,
+                  icon: const Icon(Icons.check_circle_outline_rounded),
+                  label: const Text('Manutenção feita'),
+                ),
+                TextButton.icon(
+                  onPressed:
+                      disponivel && !controller.isMotorRunning
+                          ? () => _confirmMotorAction(
+                            context,
+                            titulo: 'Zerar horímetro e partidas',
+                            texto:
+                                'Zerar o horímetro e os contadores de partidas? '
+                                'Use esta opção ao trocar o motor. O motor deve estar parado.',
+                            acao: controller.resetMotorCounters,
+                          )
+                          : null,
+                  icon: const Icon(Icons.restart_alt_rounded),
+                  label: const Text('Zerar horímetro e partidas'),
+                ),
+              ],
             ),
           ],
-          if (manutencao != null) ...<Widget>[
-            const SizedBox(height: 8),
-            buildInlineNotice(
-              context,
-              icon: manutencao.vencida
-                  ? Icons.warning_amber_rounded
-                  : Icons.settings_outlined,
-              color: manutencao.vencida
-                  ? AppTheme.brandOrange
-                  : AppTheme.brandBlue,
-              text: manutencao.texto,
-            ),
-          ],
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: <Widget>[
-              FilledButton.icon(
-                onPressed: disponivel ? () => _editMotorInfo(context) : null,
-                icon: const Icon(Icons.edit_rounded),
-                label: const Text('Editar dados do motor'),
-              ),
-              OutlinedButton.icon(
-                onPressed: disponivel
-                    ? () => _confirmMotorAction(
-                          context,
-                          titulo: 'Manutenção feita',
-                          texto:
-                              'Registrar a manutenção como feita agora? '
-                              'O próximo lembrete contará a partir do horímetro atual.',
-                          acao: controller.markMotorMaintenanceDone,
-                        )
-                    : null,
-                icon: const Icon(Icons.check_circle_outline_rounded),
-                label: const Text('Manutenção feita'),
-              ),
-              OutlinedButton.icon(
-                onPressed: disponivel && !controller.isMotorRunning
-                    ? () => _confirmMotorAction(
-                          context,
-                          titulo: 'Zerar horímetro e partidas',
-                          texto:
-                              'Zerar o horímetro e os contadores de partidas? '
-                              'Use esta opção ao trocar o motor. O motor deve estar parado.',
-                          acao: controller.resetMotorCounters,
-                        )
-                    : null,
-                icon: const Icon(Icons.restart_alt_rounded),
-                label: const Text('Zerar horímetro e partidas'),
-              ),
-            ],
+        ),
+        appSectionGap,
+        AppSection(
+          title: 'Som do motor',
+          subtitle: 'Acompanha o estado confirmado do motor.',
+          trailing: Switch(
+            value: sound.enabled,
+            onChanged: (bool value) {
+              sound.setEnabled(value);
+            },
           ),
-          const SizedBox(height: 18),
-          Divider(color: AppTheme.inputBorder.withValues(alpha: 0.35)),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Icon(Icons.volume_up_rounded, color: AppTheme.brandMint),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Som do motor',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              Switch(
-                value: sound.enabled,
-                onChanged: (bool value) {
-                  sound.setEnabled(value);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Usa o mesmo som da página web e acompanha o estado confirmado do motor.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppTheme.bodySoft,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              const Icon(Icons.volume_down_rounded, size: 18),
-              Expanded(
-                child: Slider(
-                  value: sound.volume,
-                  min: 0,
-                  max: 1,
-                  divisions: 20,
-                  label: '${sound.volumePercent}%',
-                  onChanged: (double value) {
-                    sound.setVolume(value);
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 46,
-                child: Text(
-                  '${sound.volumePercent}%',
-                  textAlign: TextAlign.end,
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              OutlinedButton.icon(
-                onPressed: controller.isMotorRunning
-                    ? null
-                    : () {
-                        if (sound.testing) {
-                          sound.stopTest();
-                        } else {
-                          sound.testSound();
-                        }
-                      },
-                icon: Icon(
-                  sound.testing
-                      ? Icons.stop_circle_outlined
-                      : Icons.play_circle_outline_rounded,
-                ),
-                label: Text(sound.testing ? 'Parar teste' : 'Testar som'),
-              ),
-              if (sound.lastError != null)
-                Text(
-                  sound.lastError!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppTheme.danger,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(Icons.volume_down_rounded, size: 20),
+                Expanded(
+                  child: Slider(
+                    value: sound.volume,
+                    min: 0,
+                    max: 1,
+                    divisions: 20,
+                    label: '${sound.volumePercent}%',
+                    onChanged: (double value) {
+                      sound.setVolume(value);
+                    },
                   ),
                 ),
-            ],
-          ),
-        ],
-      ),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    '${sound.volumePercent}%',
+                    textAlign: TextAlign.end,
+                    style: texto.labelMedium,
+                  ),
+                ),
+              ],
+            ),
+            if (sound.lastError != null)
+              Text(
+                sound.lastError!,
+                style: texto.bodySmall?.copyWith(color: AppTheme.danger),
+              ),
+            AppButtons(
+              children: <Widget>[
+                OutlinedButton.icon(
+                  onPressed:
+                      controller.isMotorRunning
+                          ? null
+                          : () {
+                            if (sound.testing) {
+                              sound.stopTest();
+                            } else {
+                              sound.testSound();
+                            }
+                          },
+                  icon: Icon(
+                    sound.testing
+                        ? Icons.stop_circle_outlined
+                        : Icons.play_circle_outline_rounded,
+                  ),
+                  label: Text(sound.testing ? 'Parar teste' : 'Testar som'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
     );
   }
 
