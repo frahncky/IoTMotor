@@ -85,7 +85,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     super.dispose();
   }
 
-  bool get _connected => widget.controller.isConnected;
+  bool get _connected => widget.controller.hasLiveMotorState;
   bool get _running => _connected && widget.controller.isMotorRunning;
 
   _AlarmParts get _alarms =>
@@ -115,7 +115,8 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     } else if (_reduceMotion) {
       _motion.settle(running: running);
     }
-    final bool needsFrames = _connected &&
+    final bool needsFrames =
+        _connected &&
         !_reduceMotion &&
         (running || _motion.moving || _alarms.blinks);
     if (needsFrames && !_ticker.isActive) {
@@ -183,13 +184,14 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     return SizedBox(
       width: double.infinity,
       child: GlassPanel(
-        tint: alarms.any
-            ? AppTheme.danger
-            : running
+        tint:
+            alarms.any
+                ? AppTheme.danger
+                : running
                 ? AppTheme.online
                 : connected
-                    ? AppTheme.brandBlue
-                    : AppTheme.offline,
+                ? AppTheme.brandBlue
+                : AppTheme.offline,
         padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
@@ -220,7 +222,9 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
 
             final Widget details = Column(
               crossAxisAlignment:
-                  compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+                  compact
+                      ? CrossAxisAlignment.center
+                      : CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Row(
@@ -231,20 +235,24 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                       height: 10,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: running
-                            ? AppTheme.online
-                            : connected
+                        color:
+                            running
+                                ? AppTheme.online
+                                : connected
                                 ? AppTheme.labelSoft
                                 : AppTheme.offline,
-                        boxShadow: running
-                            ? <BoxShadow>[
-                                BoxShadow(
-                                  color: AppTheme.online.withValues(alpha: 0.35),
-                                  blurRadius: 7,
-                                  spreadRadius: 2,
-                                ),
-                              ]
-                            : null,
+                        boxShadow:
+                            running
+                                ? <BoxShadow>[
+                                  BoxShadow(
+                                    color: AppTheme.online.withValues(
+                                      alpha: 0.35,
+                                    ),
+                                    blurRadius: 7,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                                : null,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -310,10 +318,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      details,
-                      uso,
-                    ],
+                    children: <Widget>[details, uso],
                   ),
                 ),
               ],
@@ -339,7 +344,10 @@ double? motorHeat(double? temperature, double limit) {
 double temperatureLimit(List<BoardAlarm> alarms) {
   double? menor;
   for (final BoardAlarm a in alarms) {
-    if (a.field != 'temperature' || !a.above || !a.enabled || !a.limit.isFinite) {
+    if (a.field != 'temperature' ||
+        !a.above ||
+        !a.enabled ||
+        !a.limit.isFinite) {
       continue;
     }
     menor = menor == null ? a.limit : math.min(menor, a.limit);
@@ -361,9 +369,10 @@ class _AlarmParts {
   factory _AlarmParts.of(MotorControlController controller) {
     bool temperatura = false, vibracao = false, outro = false;
     for (final String id in controller.liveFiringAlarmIds) {
-      String field = id == 'temp'
-          ? 'temperature'
-          : id == 'vib'
+      String field =
+          id == 'temp'
+              ? 'temperature'
+              : id == 'vib'
               ? 'vibration_mms'
               : '';
       for (final BoardAlarm a in controller.boardAlarms) {
@@ -377,7 +386,11 @@ class _AlarmParts {
         outro = true;
       }
     }
-    return _AlarmParts(temperature: temperatura, vibration: vibracao, other: outro);
+    return _AlarmParts(
+      temperature: temperatura,
+      vibration: vibracao,
+      other: outro,
+    );
   }
 
   final bool temperature;
@@ -456,12 +469,14 @@ class _MotorPainter extends CustomPainter {
 
   static Paint _fill(Color c) => Paint()..color = c;
 
-  static Paint _stroke(Color c, double w) => Paint()
-    ..color = c
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = w;
+  static Paint _stroke(Color c, double w) =>
+      Paint()
+        ..color = c
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w;
 
-  static Paint _shader(Gradient g, Rect r) => Paint()..shader = g.createShader(r);
+  static Paint _shader(Gradient g, Rect r) =>
+      Paint()..shader = g.createShader(r);
 
   /// Preenche e contorna a mesma forma, como `fill` + `stroke` no SVG.
   static void _shape(Canvas c, Path p, Paint fill, Paint stroke) {
@@ -470,10 +485,14 @@ class _MotorPainter extends CustomPainter {
   }
 
   static Path _rrect(double x, double y, double w, double h, double r) =>
-      Path()..addRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(r)));
+      Path()..addRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(x, y, w, h), Radius.circular(r)),
+      );
 
   static Path _oval(double cx, double cy, double rx, double ry) =>
-      Path()..addOval(Rect.fromCenter(center: Offset(cx, cy), width: rx * 2, height: ry * 2));
+      Path()..addOval(
+        Rect.fromCenter(center: Offset(cx, cy), width: rx * 2, height: ry * 2),
+      );
 
   static Path _poly(List<Offset> pts) => Path()..addPolygon(pts, true);
 
@@ -488,7 +507,10 @@ class _MotorPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double scale = math.min(size.width / _w, size.height / _h);
     canvas.save();
-    canvas.translate((size.width - _w * scale) / 2, (size.height - _h * scale) / 2);
+    canvas.translate(
+      (size.width - _w * scale) / 2,
+      (size.height - _h * scale) / 2,
+    );
     canvas.scale(scale);
     if (dimmed) {
       canvas.saveLayer(
@@ -507,13 +529,14 @@ class _MotorPainter extends CustomPainter {
     );
 
     // Tampa traseira da ventoinha.
-    final Path rear = Path()
-      ..moveTo(145, 155)
-      ..cubicTo(112, 163, 94, 190, 94, 241)
-      ..cubicTo(94, 289, 112, 318, 145, 327)
-      ..lineTo(176, 328)
-      ..lineTo(176, 155)
-      ..close();
+    final Path rear =
+        Path()
+          ..moveTo(145, 155)
+          ..cubicTo(112, 163, 94, 190, 94, 241)
+          ..cubicTo(94, 289, 112, 318, 145, 327)
+          ..lineTo(176, 328)
+          ..lineTo(176, 155)
+          ..close();
     _shape(
       canvas,
       rear,
@@ -541,14 +564,19 @@ class _MotorPainter extends CustomPainter {
       ..scale(.46, 1)
       ..translate(-118, -240);
     _rotateAbout(canvas, 118, 240, angle);
-    final Path blade = Path()
-      ..moveTo(113, 231)
-      ..cubicTo(104, 215, 107, 197, 118, 191)
-      ..cubicTo(125, 204, 126, 219, 121, 234)
-      ..close();
-    final Paint bladeFill = _fill(const Color(0xFF15485D).withValues(alpha: look.bladeOpacity));
-    final Paint bladeStroke =
-        _stroke(const Color(0xFF73A9BB).withValues(alpha: look.bladeOpacity), 2);
+    final Path blade =
+        Path()
+          ..moveTo(113, 231)
+          ..cubicTo(104, 215, 107, 197, 118, 191)
+          ..cubicTo(125, 204, 126, 219, 121, 234)
+          ..close();
+    final Paint bladeFill = _fill(
+      const Color(0xFF15485D).withValues(alpha: look.bladeOpacity),
+    );
+    final Paint bladeStroke = _stroke(
+      const Color(0xFF73A9BB).withValues(alpha: look.bladeOpacity),
+      2,
+    );
     if (motionBlur && look.blurPx > 0) {
       final MaskFilter blur = MaskFilter.blur(BlurStyle.normal, look.blurPx);
       bladeFill.maskFilter = blur;
@@ -573,7 +601,8 @@ class _MotorPainter extends CustomPainter {
     );
     _shape(
       canvas,
-      Path()..addOval(Rect.fromCircle(center: const Offset(118, 240), radius: 10)),
+      Path()
+        ..addOval(Rect.fromCircle(center: const Offset(118, 240), radius: 10)),
       _fill(const Color(0xFF0B2330)),
       _stroke(const Color(0xFFBDD9E2), 3),
     );
@@ -583,20 +612,24 @@ class _MotorPainter extends CustomPainter {
       _oval(111, 240, 28, 54),
       _stroke(const Color(0xFF7DB4C5).withValues(alpha: .9), 4),
     );
-    final Paint grid = _stroke(const Color(0xFF5F93A5).withValues(alpha: .5), 3);
+    final Paint grid = _stroke(
+      const Color(0xFF5F93A5).withValues(alpha: .5),
+      3,
+    );
     canvas
       ..drawLine(const Offset(111, 188), const Offset(111, 292), grid)
       ..drawLine(const Offset(91, 206), const Offset(130, 274), grid)
       ..drawLine(const Offset(91, 274), const Offset(130, 206), grid);
-    final Path shade = Path()
-      ..moveTo(123, 185)
-      ..cubicTo(143, 195, 151, 214, 151, 240)
-      ..cubicTo(151, 267, 143, 286, 123, 296)
-      ..lineTo(141, 322)
-      ..lineTo(175, 328)
-      ..lineTo(175, 155)
-      ..lineTo(141, 156)
-      ..close();
+    final Path shade =
+        Path()
+          ..moveTo(123, 185)
+          ..cubicTo(143, 195, 151, 214, 151, 240)
+          ..cubicTo(151, 267, 143, 286, 123, 296)
+          ..lineTo(141, 322)
+          ..lineTo(175, 328)
+          ..lineTo(175, 155)
+          ..lineTo(141, 156)
+          ..close();
     canvas.drawPath(
       shade,
       _shader(_rear, const Rect.fromLTRB(123, 155, 175, 328))
@@ -610,12 +643,39 @@ class _MotorPainter extends CustomPainter {
       _shader(_body, const Rect.fromLTWH(154, 143, 330, 194)),
       _stroke(const Color(0xFF77AEBE), 5),
     );
-    const List<double> finTop = <double>[149, 146, 144, 143, 142, 142, 143, 144, 146, 149];
-    const List<double> finHeight = <double>[181, 187, 190, 192, 193, 193, 192, 190, 187, 181];
+    const List<double> finTop = <double>[
+      149,
+      146,
+      144,
+      143,
+      142,
+      142,
+      143,
+      144,
+      146,
+      149,
+    ];
+    const List<double> finHeight = <double>[
+      181,
+      187,
+      190,
+      192,
+      193,
+      193,
+      192,
+      190,
+      187,
+      181,
+    ];
     final Paint finFill = _fill(const Color(0xFF0B4055));
     final Paint finStroke = _stroke(const Color(0xFF3B829A), 2);
     for (int i = 0; i < finTop.length; i++) {
-      _shape(canvas, _rrect(188 + 26.0 * i, finTop[i], 14, finHeight[i], 5), finFill, finStroke);
+      _shape(
+        canvas,
+        _rrect(188 + 26.0 * i, finTop[i], 14, finHeight[i], 5),
+        finFill,
+        finStroke,
+      );
     }
     final double? h = heat;
     if (h != null && h > 0) {
@@ -642,21 +702,63 @@ class _MotorPainter extends CustomPainter {
     // Pés e base.
     final Paint footFill = _fill(const Color(0xFF0B3749));
     final Paint footStroke = _stroke(const Color(0xFF6196A8), 4);
-    _shape(canvas, _poly(const <Offset>[Offset(174, 324), Offset(252, 324), Offset(264, 369), Offset(161, 369)]), footFill, footStroke);
-    _shape(canvas, _poly(const <Offset>[Offset(369, 324), Offset(450, 324), Offset(464, 369), Offset(357, 369)]), footFill, footStroke);
+    _shape(
+      canvas,
+      _poly(const <Offset>[
+        Offset(174, 324),
+        Offset(252, 324),
+        Offset(264, 369),
+        Offset(161, 369),
+      ]),
+      footFill,
+      footStroke,
+    );
+    _shape(
+      canvas,
+      _poly(const <Offset>[
+        Offset(369, 324),
+        Offset(450, 324),
+        Offset(464, 369),
+        Offset(357, 369),
+      ]),
+      footFill,
+      footStroke,
+    );
     _shape(canvas, _rrect(158, 361, 313, 18, 5), footFill, footStroke);
 
     // Caixa de ligação.
     _shape(
       canvas,
-      _poly(const <Offset>[Offset(247, 95), Offset(379, 95), Offset(404, 118), Offset(386, 155), Offset(239, 155), Offset(221, 118)]),
+      _poly(const <Offset>[
+        Offset(247, 95),
+        Offset(379, 95),
+        Offset(404, 118),
+        Offset(386, 155),
+        Offset(239, 155),
+        Offset(221, 118),
+      ]),
       _shader(_box, const Rect.fromLTRB(221, 95, 404, 155)),
       _stroke(const Color(0xFF88BBCA), 5),
     );
-    _shape(canvas, _rrect(237, 78, 152, 34, 9), _fill(const Color(0xFF2D6E88)), _stroke(const Color(0xFF9AC8D5), 5));
-    _shape(canvas, _rrect(255, 68, 116, 15, 6), _fill(const Color(0xFF163F53)), _stroke(const Color(0xFF75A7B7), 4));
+    _shape(
+      canvas,
+      _rrect(237, 78, 152, 34, 9),
+      _fill(const Color(0xFF2D6E88)),
+      _stroke(const Color(0xFF9AC8D5), 5),
+    );
+    _shape(
+      canvas,
+      _rrect(255, 68, 116, 15, 6),
+      _fill(const Color(0xFF163F53)),
+      _stroke(const Color(0xFF75A7B7), 4),
+    );
     for (final double x in const <double>[282, 346]) {
-      _shape(canvas, _oval(x, 122, 10, 10), _fill(const Color(0xFF071E29)), _stroke(const Color(0xFF91BDCA), 4));
+      _shape(
+        canvas,
+        _oval(x, 122, 10, 10),
+        _fill(const Color(0xFF071E29)),
+        _stroke(const Color(0xFF91BDCA), 4),
+      );
     }
 
     // Tampa dianteira, rolamento e parafusos.
@@ -672,20 +774,38 @@ class _MotorPainter extends CustomPainter {
       _shader(_endcap, const Rect.fromLTRB(423, 165, 549, 315)),
       _stroke(const Color(0xFF5B93A6), 5),
     );
-    _shape(canvas, _oval(486, 240, 43, 52), _fill(const Color(0xFF082B3A)), _stroke(const Color(0xFF9BC2CE), 5));
-    final Paint spoke = _stroke(const Color(0xFF5E9DB3).withValues(alpha: .78), 7);
+    _shape(
+      canvas,
+      _oval(486, 240, 43, 52),
+      _fill(const Color(0xFF082B3A)),
+      _stroke(const Color(0xFF9BC2CE), 5),
+    );
+    final Paint spoke = _stroke(
+      const Color(0xFF5E9DB3).withValues(alpha: .78),
+      7,
+    );
     const List<List<double>> spokes = <List<double>>[
-      <double>[486, 168, 486, 190], <double>[486, 290, 486, 312],
-      <double>[432, 240, 454, 240], <double>[518, 240, 540, 240],
-      <double>[450, 190, 464, 205], <double>[508, 276, 523, 292],
-      <double>[450, 290, 465, 275], <double>[508, 204, 523, 189],
+      <double>[486, 168, 486, 190],
+      <double>[486, 290, 486, 312],
+      <double>[432, 240, 454, 240],
+      <double>[518, 240, 540, 240],
+      <double>[450, 190, 464, 205],
+      <double>[508, 276, 523, 292],
+      <double>[450, 290, 465, 275],
+      <double>[508, 204, 523, 189],
     ];
     for (final List<double> s in spokes) {
       canvas.drawLine(Offset(s[0], s[1]), Offset(s[2], s[3]), spoke);
     }
     const List<Offset> bolts = <Offset>[
-      Offset(486, 157), Offset(486, 323), Offset(417, 240), Offset(555, 240),
-      Offset(437, 179), Offset(535, 179), Offset(437, 301), Offset(535, 301),
+      Offset(486, 157),
+      Offset(486, 323),
+      Offset(417, 240),
+      Offset(555, 240),
+      Offset(437, 179),
+      Offset(535, 179),
+      Offset(437, 301),
+      Offset(535, 301),
     ];
     final Paint boltFill = _fill(const Color(0xFFD0DDE1));
     final Paint boltStroke = _stroke(const Color(0xFF617680), 2);
@@ -707,7 +827,12 @@ class _MotorPainter extends CustomPainter {
       const Offset(638, 229),
       _stroke(Colors.white.withValues(alpha: .32), 5),
     );
-    _shape(canvas, _oval(658, 240, 15, 19), _fill(const Color(0xFF8599A1)), _stroke(const Color(0xFFE0EBEE), 3));
+    _shape(
+      canvas,
+      _oval(658, 240, 15, 19),
+      _fill(const Color(0xFF8599A1)),
+      _stroke(const Color(0xFFE0EBEE), 3),
+    );
     canvas.drawPath(_oval(658, 240, 7, 10), _fill(const Color(0xFF31464E)));
     canvas.save();
     _rotateAbout(canvas, 658, 240, angle);
@@ -718,11 +843,20 @@ class _MotorPainter extends CustomPainter {
     );
     canvas
       ..drawCircle(const Offset(658, 230), 2.6, _fill(const Color(0xFFF0BB69)))
-      ..drawCircle(const Offset(658, 230), 2.6, _stroke(const Color(0xFFFFE4AD), 1));
+      ..drawCircle(
+        const Offset(658, 230),
+        2.6,
+        _stroke(const Color(0xFFFFE4AD), 1),
+      );
     canvas.restore();
 
     // Placa de identificação.
-    _shape(canvas, _rrect(260, 216, 100, 61, 7), _fill(const Color(0xFFB8C4C8)), _stroke(const Color(0xFF52666E), 3));
+    _shape(
+      canvas,
+      _rrect(260, 216, 100, 61, 7),
+      _fill(const Color(0xFFB8C4C8)),
+      _stroke(const Color(0xFF52666E), 3),
+    );
     final Paint plateLine = _fill(const Color(0xFF75868C));
     canvas
       ..drawPath(_rrect(269, 225, 82, 6, 2), plateLine)
@@ -733,8 +867,14 @@ class _MotorPainter extends CustomPainter {
     // Rotor visível no eixo.
     canvas.save();
     _rotateAbout(canvas, 622, 240, angle);
-    _shape(canvas, _oval(622, 240, 15, 15), _fill(const Color(0xFF0A2631)), _stroke(const Color(0xFFB2D0D8), 4));
-    final Paint rotorLine = _stroke(const Color(0xFFD5E6EA), 6)..strokeCap = StrokeCap.round;
+    _shape(
+      canvas,
+      _oval(622, 240, 15, 15),
+      _fill(const Color(0xFF0A2631)),
+      _stroke(const Color(0xFFB2D0D8), 4),
+    );
+    final Paint rotorLine = _stroke(const Color(0xFFD5E6EA), 6)
+      ..strokeCap = StrokeCap.round;
     canvas
       ..drawLine(const Offset(622, 227), const Offset(622, 253), rotorLine)
       ..drawLine(const Offset(609, 240), const Offset(635, 240), rotorLine);
@@ -744,20 +884,50 @@ class _MotorPainter extends CustomPainter {
     if (alarmVibration || alarmTemperature) {
       final double o = blinkOpacity();
       if (alarmVibration) {
-        final Paint wave = _stroke(const Color(0xFFFF6B6B).withValues(alpha: o), 9)
-          ..strokeCap = StrokeCap.round;
+        final Paint wave = _stroke(
+          const Color(0xFFFF6B6B).withValues(alpha: o),
+          9,
+        )..strokeCap = StrokeCap.round;
         canvas
-          ..drawPath(Path()..moveTo(140, 334)..cubicTo(128, 347, 128, 368, 140, 381), wave)
-          ..drawPath(Path()..moveTo(118, 322)..cubicTo(98, 344, 98, 372, 118, 394), wave)
-          ..drawPath(Path()..moveTo(490, 334)..cubicTo(502, 347, 502, 368, 490, 381), wave)
-          ..drawPath(Path()..moveTo(512, 322)..cubicTo(532, 344, 532, 372, 512, 394), wave);
+          ..drawPath(
+            Path()
+              ..moveTo(140, 334)
+              ..cubicTo(128, 347, 128, 368, 140, 381),
+            wave,
+          )
+          ..drawPath(
+            Path()
+              ..moveTo(118, 322)
+              ..cubicTo(98, 344, 98, 372, 118, 394),
+            wave,
+          )
+          ..drawPath(
+            Path()
+              ..moveTo(490, 334)
+              ..cubicTo(502, 347, 502, 368, 490, 381),
+            wave,
+          )
+          ..drawPath(
+            Path()
+              ..moveTo(512, 322)
+              ..cubicTo(532, 344, 532, 372, 512, 394),
+            wave,
+          );
       }
       if (alarmTemperature) {
         canvas.save();
         canvas.translate(222, 208);
         canvas
-          ..drawCircle(Offset.zero, 38, _fill(const Color(0xFFE5484D).withValues(alpha: o)))
-          ..drawCircle(Offset.zero, 38, _stroke(const Color(0xFFFFD6D6).withValues(alpha: o), 5));
+          ..drawCircle(
+            Offset.zero,
+            38,
+            _fill(const Color(0xFFE5484D).withValues(alpha: o)),
+          )
+          ..drawCircle(
+            Offset.zero,
+            38,
+            _stroke(const Color(0xFFFFD6D6).withValues(alpha: o), 5),
+          );
         final Paint glyph = _fill(Colors.white.withValues(alpha: o));
         canvas
           ..drawPath(_rrect(-7, -26, 14, 36, 7), glyph)

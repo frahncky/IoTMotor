@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:iotmotor/app/theme/app_theme.dart';
 import 'package:iotmotor/features/iot_motor/controller/motor_control_controller.dart';
-import 'package:iotmotor/features/iot_motor/models/device_names.dart';
 import 'package:iotmotor/features/iot_motor/models/mqtt_connection_config.dart';
 import 'package:iotmotor/features/iot_motor/services/alertas_no_celular.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/settings_tab.dart';
@@ -226,42 +225,26 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
     );
   }
 
-  /// Uma linha só: se está conectado e quantas placas estão no ar.
-  String _statusText(MotorControlController controller) {
-    if (!controller.isConnected) {
-      return controller.isBusy ? 'Conectando…' : 'Desconectado';
-    }
-    if (controller.hasStaleTelemetry) return 'Conectado · sem dados recentes';
-    final int placas = controller.connectedDeviceCount;
-    return switch (placas) {
-      0 => 'Conectado · nenhuma placa no ar',
-      1 => 'Conectado · 1 placa no ar',
-      _ => 'Conectado · $placas placas no ar',
-    };
-  }
-
-  /// Conexão, placas, leituras, alertas e quem mais está usando.
-  ///
-  /// Sem contagem de segundos: o texto mudaria o tempo todo enquanto corre.
+  /// Resumo curto do topo: sistema, as duas placas e clientes conectados.
   String _tickerText(MotorControlController controller) {
-    final String status = _statusText(controller);
-    if (!controller.isConnected) return status;
     final List<String> conectadas = controller.connectedDeviceIds;
-    final List<String> partes = <String>[
-      status,
-      for (final String placa in controller.knownDeviceIds)
-        '${nomeDaPlaca(placa)} ${conectadas.contains(placa) ? 'no ar' : 'fora do ar'}',
-      if (!controller.hasStaleTelemetry &&
-          controller.latestTelemetryReceivedAt != null)
-        'Leituras em dia',
-      _primeiraMaiuscula(controller.alertStatusSummary),
-      'Usando agora: ${controller.commandClientsSummary.split(' · ').skip(1).join(' · ')}',
-    ];
-    return '${partes.join('   •   ')}   •';
+    final bool comandos = conectadas.contains('esp32-01');
+    final bool sensores = conectadas.contains('esp32-02');
+    final String sistema =
+        !controller.isConnected
+            ? (controller.isBusy ? 'Conectando' : 'Offline')
+            : controller.hasStaleTelemetry || !comandos || !sensores
+            ? 'Atenção'
+            : 'Online';
+    final String clientes = controller.commandClientsSummary
+        .split(' · ')
+        .skip(1)
+        .join(' · ');
+    return 'Sistema: $sistema   •   '
+        'Dispositivos: Comandos ${comandos ? 'online' : 'offline'} · '
+        'Sensores ${sensores ? 'online' : 'offline'}   •   '
+        'Clientes: $clientes';
   }
-
-  static String _primeiraMaiuscula(String texto) =>
-      texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
 
   Color _statusColor(MotorControlController controller) {
     if (controller.hasStaleTelemetry) {

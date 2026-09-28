@@ -42,7 +42,7 @@ jobs:
           node --input-type=module --check < functions/mqtt.js
           node --input-type=module --check < 'functions/firmware/[file].js'
       - name: Run web tests
-        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs dashboard-cloudflare/motor-info.test.cjs dashboard-cloudflare/motor-animation.test.cjs dashboard-cloudflare/board-history.test.cjs dashboard-cloudflare/mqtt-shared.test.cjs
+        run: node --test dashboard-cloudflare/dual-dashboard.test.cjs dashboard-cloudflare/hardware-mirror.test.cjs dashboard-cloudflare/wifi-manager.test.cjs dashboard-cloudflare/alarm-controls.test.cjs dashboard-cloudflare/command-seal.test.cjs dashboard-cloudflare/motor-info.test.cjs dashboard-cloudflare/motor-animation.test.cjs dashboard-cloudflare/board-history.test.cjs dashboard-cloudflare/mqtt-shared.test.cjs dashboard-cloudflare/remote-controls.test.cjs
       - name: Verify MQTT-only firmware and controls
         run: |
           python3 - <<'PY'
@@ -89,7 +89,7 @@ jobs:
                   'FIRMWARE_PUBLICADO (%s) diferente do firmware_version de %s' % (versao, ino.name)
           # O app mostra o mesmo aviso de firmware novo (lib/.../motor_info.dart).
           app_dart = Path('lib/features/iot_motor/models/motor_info.dart').read_text()
-          no_app = re.search(r"firmwarePublicado = <String>\['([^']+)', '([^']+)'\]", app_dart)
+          no_app = re.search(r"firmwarePublicado = <String>\[\s*'([^']+)',\s*'([^']+)',?\s*\]", app_dart)
           assert no_app and no_app.groups() == publicado.groups(), 'firmwarePublicado do app diferente do painel'
           # Lista de alarmes: a placa guarda, o painel edita, o S3 ouve o quadro.
           sensores = (s3 / 'iotmotor_esp32_s3_sensores.ino').read_text()

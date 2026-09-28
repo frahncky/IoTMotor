@@ -9,8 +9,9 @@ void main() {
   testWidgets('cartão animado mostra estado e partida selecionada', (
     WidgetTester tester,
   ) async {
-    final MotorControlController controller =
-        MotorControlController(loadSettings: false);
+    final MotorControlController controller = MotorControlController(
+      loadSettings: false,
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -24,7 +25,10 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 120));
 
-    expect(find.byKey(const ValueKey<String>('motor_animation_paint')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('motor_animation_paint')),
+      findsOneWidget,
+    );
     expect(find.text('Desconectado'), findsOneWidget);
     expect(find.textContaining('Rotação de placa:'), findsOneWidget);
 
@@ -34,9 +38,9 @@ void main() {
   testWidgets('desconexão interrompe imediatamente a animação do motor', (
     WidgetTester tester,
   ) async {
-    final MotorControlController controller =
-        MotorControlController(loadSettings: false)
-          ..isConnected = true;
+    final MotorControlController controller = MotorControlController(
+      loadSettings: false,
+    )..isConnected = true;
 
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
@@ -70,9 +74,9 @@ void main() {
   testWidgets('motor parado não mantém o desenho animando', (
     WidgetTester tester,
   ) async {
-    final MotorControlController controller =
-        MotorControlController(loadSettings: false)
-          ..isConnected = true;
+    final MotorControlController controller = MotorControlController(
+      loadSettings: false,
+    )..isConnected = true;
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
       '{"relays":[false,false,false,false],"motor_running":false}',
@@ -124,9 +128,9 @@ void main() {
   testWidgets('movimento reduzido mostra o estado final sem animar', (
     WidgetTester tester,
   ) async {
-    final MotorControlController controller =
-        MotorControlController(loadSettings: false)
-          ..isConnected = true;
+    final MotorControlController controller = MotorControlController(
+      loadSettings: false,
+    )..isConnected = true;
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
       '{"relays":[true,false,false,false],"motor_running":true}',
@@ -159,9 +163,9 @@ void main() {
   testWidgets('alarme de corrente acende o cartão sem ícone no desenho', (
     WidgetTester tester,
   ) async {
-    final MotorControlController controller =
-        MotorControlController(loadSettings: false)
-          ..isConnected = true;
+    final MotorControlController controller = MotorControlController(
+      loadSettings: false,
+    )..isConnected = true;
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
       '{"relays":[false,false,false,false],"motor_running":false,"alarms_firing":["current"]}',

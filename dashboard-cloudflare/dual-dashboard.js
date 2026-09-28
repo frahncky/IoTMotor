@@ -18,7 +18,7 @@ let gravarRegistrosTimer=null;
 const PONTE=typeof location!=='undefined'&&location.protocol==='https:'
  ?`wss://${location.host}/mqtt`:'wss://test.mosquitto.org:8081';
 const DEFAULT={broker:PONTE,prefix:'iotmotor',commandDevice:'esp32-01',sensorDevice:'esp32-02'};
-const TELEMETRY_STALE_MS=6000;
+const TELEMETRY_STALE_MS=10000;
 // Quem já usava o broker direto passa para a ponte uma vez, sem perder nada.
 const BROKER_ANTIGO=['wss://test.mosquitto.org:8081','wss://test.mosquitto.org:8081/'];
 const METRICS=[
@@ -42,6 +42,7 @@ const ACQ_PRESETS={realtime:{pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,rec
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
  acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
+let commandWasFresh=false;
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
 function field(source,keys){for(const key of keys){const n=numeric(source[key]);if(n!==null)return n;}return null;}
 function parseTelemetry(json){
@@ -84,18 +85,25 @@ function text(id,value){$(id).textContent=String(value);}
 function diag(message){text('diagnostic',message);}
 function pill(message,kind=''){text('connectionText',message);$('connection').className=`pill ${kind}`.trim();$('connectBtn').textContent=state.client?'Desconectar':'Conectar ao MQTT';}
 function topic(device,kind){return `${state.config.prefix}/${device}/${kind}`;}
-function freshness(which){return state.connected&&state.subscribed&&state[which].at>0&&Date.now()-state[which].at<TELEMETRY_STALE_MS;}
+function telemetryFresh({brokerReady,status,statusAt=0,at=0,now=Date.now()}){
+ if(!brokerReady||at<=0||now-at>=TELEMETRY_STALE_MS)return false;
+ const st=String(status||'').trim().toLowerCase();
+ return !(st==='offline'&&statusAt>=at);
+}
+function freshness(which){const s=state[which];return telemetryFresh({
+ brokerReady:state.connected&&state.subscribed,status:s.status,statusAt:s.statusAt,at:s.at
+});}
 // Conexao do dispositivo: telemetria recente prevalece; senao usa o status retido/LWT mais novo.
 function deviceConnection({brokerOk,status,statusAt=0,at=0,now=Date.now(),firmwareState=''}) {
  if(firmwareState==='updating')return {label:'atualizando firmware',kind:'wait'};
  if(firmwareState==='updated')return {label:'atualizado · conectado',kind:'live'};
  if(!brokerOk)return {label:'broker desconectado',kind:''};
- const fresh=at>0&&now-at<TELEMETRY_STALE_MS,st=String(status||'').trim().toLowerCase();
+ const fresh=telemetryFresh({brokerReady:brokerOk,status,statusAt,at,now}),st=String(status||'').trim().toLowerCase();
  if(st==='offline'&&statusAt>=at)return {label:'desconectado',kind:'error'};
  if(fresh)return {label:'conectado',kind:'live'};
  if(st==='offline')return {label:'desconectado',kind:'error'};
- if(st==='online')return {label:at?'online · sem dados há mais de 6 s':'online · aguardando dados',kind:'wait'};
- return {label:at?'sem dados há mais de 6 s':'sem sinal',kind:at?'error':''};
+ if(st==='online')return {label:at?'online · sem dados há mais de 10 s':'online · aguardando dados',kind:'wait'};
+ return {label:at?'sem dados há mais de 10 s':'sem sinal',kind:at?'error':''};
 }
 function renderDevice(id,which,name){
  const s=state[which];
@@ -271,6 +279,8 @@ function commandPendingLabel(pending,motorOn){
 function renderMotorVisual(){
  const root=$('motorVisual');if(!root)return;
  const commandFresh=freshness('command'),sensorFresh=freshness('sensor');
+ if(commandWasFresh&&!commandFresh)window.iotmotorMotorSound?.stopForDisconnect?.();
+ commandWasFresh=commandFresh;
  const cmd=commandFresh?state.command.sample:null,sensor=sensorFresh?state.sensor.sample:null;
  const visual=motorVisualState({brokerReady:state.connected&&state.subscribed,commandFresh,motorOn:cmd?.motorOn});
  const pendente=commandPendingLabel(window.iotmotorRemoteControls?.pendente?.()||null,cmd?.motorOn);
@@ -373,7 +383,7 @@ function render(){
  text('sensorAge',state.sensor.at?new Date(state.sensor.at).toLocaleTimeString('pt-BR'):'—');
  $('exportBtn').disabled=!state.records.length;updateControl();renderMotorVisual();renderCharts();
 }
-function reset(){state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
+function reset(){commandWasFresh=false;state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
  state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.lastRecord={};state.pending=null;state.subscribed=false;
  render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
@@ -601,4 +611,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};

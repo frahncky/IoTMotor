@@ -363,6 +363,12 @@ void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
     publicarRespostaControle(seq, false, acao, "modo instrumentacao: acionamento desligado");
     return;
   }
+  // Intertravamento local: clientes desatualizados tambem nao conseguem
+  // partir o motor sem o PZEM confirmar uma leitura valida de tensao.
+  if (!pzemOk || !isfinite(ultimaTensao) || ultimaTensao <= 0.0f) {
+    publicarRespostaControle(seq, false, acao, "sem leitura valida de tensao");
+    return;
+  }
   if (strcmp(doc["boot"] | "", sessaoControle)) {
     publicarRespostaControle(seq, false, acao, "session_mismatch");
     return;

@@ -114,7 +114,8 @@ inline bool reordenar(JsonArrayConst ordem) {
 }
 
 // Carrega a lista. Na primeira vez, semeia com as redes de wifi_local.h e com
-// a rede antiga do portal; depois disso a lista pertence ao usuario.
+// a rede antiga do portal. Nos boots seguintes, preserva a lista do usuario e
+// acrescenta apenas redes novas de wifi_local.h que ainda nao estejam nela.
 inline void carregar(const char* const* ssidsIniciais, const char* const* senhasIniciais, uint8_t n) {
   Preferences memoria;
   memoria.begin("iot-redes", false);
@@ -131,6 +132,13 @@ inline void carregar(const char* const* ssidsIniciais, const char* const* senhas
       if (ssid.length()) adicionar(ssid.c_str(), senha.c_str(), -1, false);
     }
     memoria.end();
+    bool mudou = false;
+    for (uint8_t i = 0; i < n; ++i) {
+      if (indiceDe(ssidsIniciais[i]) < 0 &&
+          adicionar(ssidsIniciais[i], senhasIniciais[i], -1, false))
+        mudou = true;
+    }
+    if (mudou) salvar();
     return;
   }
   memoria.putBool("ok", true);

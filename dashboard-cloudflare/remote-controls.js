@@ -1,11 +1,22 @@
 'use strict';
+function linkLossMode(seconds) {
+  return Number.isFinite(seconds) && seconds < 0 ? 'keep' : 'stop';
+}
+function normalizeLinkLossWait(value, fallback = 10) {
+  const seconds = Number(value);
+  return Number.isInteger(seconds) && seconds >= 0 && seconds <= 3600
+    ? seconds : fallback;
+}
+if (typeof module !== 'undefined' && module.exports)
+  module.exports = {linkLossMode, normalizeLinkLossWait};
 // Controle remoto MQTT sem chave ou jumper: exclusivamente para ensaios sem motor/contatores.
 (() => {
+  if (typeof document === 'undefined') return;
   const $ = id => document.getElementById(id);
   const start = $('startBtn'), stop = $('stopBtn');
   if (!start || !stop) return;
   let client = null, connected = false, prefix = '', device = '', boot = '';
-  let updatedAt = 0, relays = null, pending = null, sequence = 0;
+  let updatedAt = 0, relays = null, voltage = null, pending = null, sequence = 0;
   const topic = kind => `${prefix}/${device}/${kind}`;
 
   // Presença dos clientes que efetivamente podem publicar comandos.
@@ -76,9 +87,9 @@
     renderCommandClients();
     return true;
   }
-  // Janela de telemetria "recente". Medido no broker publico: intervalos de
-  // 8 a 20 s sao comuns, e 10 s desabilitavam os botoes o tempo todo.
-  const recent = () => Boolean(boot && Date.now() - updatedAt < 25000 && relays);
+  // Depois de 10 s sem telemetria, o estado do quadro deixa de ser confiavel.
+  const recent = () => Boolean(boot && Date.now() - updatedAt < 10000 && relays);
+  const hasVoltage = () => recent() && Number.isFinite(voltage) && voltage > 0;
   // Modo instrumentação: a placa avisa na telemetria se aciona ou não.
   let aciona = true;
   // Segundos que o ensaio segue sem rede (-1 = sem limite), vindos da placa.
@@ -107,16 +118,29 @@
       dur.disabled = !connected || !recent();
       if (ensaio !== null && !ensaioEditando) dur.value = String(ensaio);
     }
+    const modoQueda = $('quedaModo');
+    const tempoQueda = $('quedaTempoField');
+    if (modoQueda) {
+      modoQueda.disabled = !connected || !recent();
+      if (queda !== null && !quedaEditando)
+        modoQueda.value = linkLossMode(queda);
+    }
+    const manterLigado = quedaEditando
+      ? modoQueda?.value === 'keep'
+      : queda !== null && queda < 0;
+    if (tempoQueda) tempoQueda.hidden = manterLigado;
     const sel = $('quedaSel');
     if (sel) {
-      sel.disabled = !connected || !recent();
+      sel.disabled = !connected || !recent() || manterLigado;
       // Sem mexer no que a pessoa acabou de escolher e ainda não confirmou.
-      if (queda !== null && !quedaEditando) sel.value = String(queda);
+      if (queda !== null && queda >= 0 && !quedaEditando)
+        sel.value = [...sel.options].some(option => option.value === String(queda))
+          ? String(queda) : 'custom';
     }
     refreshCustom('ensaioSel', 'ensaioCustomWrap', 'ensaioCustom', 'ensaioCustomApply',
       ensaio, ensaioEditando);
     refreshCustom('quedaSel', 'quedaCustomWrap', 'quedaCustom', 'quedaCustomApply',
-      queda, quedaEditando);
+      queda !== null && queda >= 0 ? queda : null, quedaEditando);
     const modo = $('modoBtn');
     if (modo) {
       modo.disabled = !connected || !recent();
@@ -126,7 +150,8 @@
         : 'A placa está em modo instrumentação: nenhum contator é acionado';
     }
     // A pagina pode pedir a partida com MQTT conectado; nenhum jumper/chave.
-    start.disabled = !connected || Boolean(pending && pending.action === 'start');
+    start.disabled = !connected || !recent() || !hasVoltage() ||
+      Boolean(pending && pending.action === 'start');
     stop.disabled = !connected; // Parada prioritária mesmo durante uma partida pendente.
     // Manutencao (Wi-Fi e firmware) so com as saidas confirmadas desligadas.
     const paradas = Array.isArray(relays) && relays.every(v => !v);
@@ -148,7 +173,7 @@
     let settings;
     try { settings = configuration(); } catch (e) { feedback(e.message); return; }
     if (client) client.end(true);
-    connected = false; boot = ''; updatedAt = 0; relays = null; pending = null;
+    connected = false; boot = ''; updatedAt = 0; relays = null; voltage = null; pending = null;
     prefix = settings.p; device = settings.d;
     const active = window.mqtt.connect(settings.url, {
       clientId: `iotmotor_control_${Math.random().toString(36).slice(2, 12)}`,
@@ -195,6 +220,9 @@
         boot = data.boot;
         updatedAt = Date.now();
         relays = data.relays;
+        const measuredVoltage = Number(data.voltage);
+        voltage = data.pzem_ok !== false && Number.isFinite(measuredVoltage) && measuredVoltage > 0
+          ? measuredVoltage : null;
         if (pending && ((pending.action === 'start' && relays.some(Boolean)) ||
                         (pending.action === 'stop' && relays.every(v => !v)))) {
           feedback(pending.action === 'start' ? 'ESP32 informou contatores ligados.' :
@@ -246,6 +274,7 @@
     if (action === 'start') {
       if (!aciona) {feedback('A placa está em modo instrumentação: nenhum contator é acionado.');return;}
       if (!recent()) {feedback('Aguardando telemetria recente do ESP32-01.');return;}
+      if (!hasVoltage()) {feedback('Partida bloqueada: aguardando leitura valida de tensao.');return;}
       if (relays.some(Boolean)) {feedback('Há contatores ligados; desligue antes de iniciar.');return;}
       // A partida vem da lista gravada na placa (local-controls.js).
       comando.profile = window.iotmotorPartidaSelecionada?.() || '';
@@ -299,7 +328,7 @@
   function desconectar() {
     stopPresence(true);
     if (client) client.end(true);
-    client = null; connected = false; boot = ''; updatedAt = 0; relays = null; pending = null;
+    client = null; connected = false; boot = ''; updatedAt = 0; relays = null; voltage = null; pending = null;
     window.iotmotorSelo?.esquecer(device);
     feedback('Desconectado do broker; comandos indisponíveis.');
     refresh();
@@ -365,6 +394,26 @@
   $('quedaCustomApply')?.addEventListener('click', () =>
     aplicarOutroValor('link_grace', 'quedaCustom', 0, 3600,
       valor => { quedaEditando = valor; }));
+  $('quedaModo')?.addEventListener('change', () => {
+    const manter = $('quedaModo').value === 'keep';
+    if (manter && !confirm(
+      'O motor continuara ligado sem rede. O limite do ensaio e as protecoes continuam valendo. Continuar?')) {
+      refresh();
+      return;
+    }
+    let segundos = -1;
+    if (!manter) {
+      const selecionado = $('quedaSel').value;
+      const candidato = selecionado === 'custom'
+        ? Number(String($('quedaCustom')?.value || '10'))
+        : Number(selecionado);
+      segundos = normalizeLinkLossWait(candidato);
+    }
+    quedaEditando = true;
+    manutencao('link_grace', null, {seconds: segundos});
+    setTimeout(() => { quedaEditando = false; refresh(); }, 6000);
+    refresh();
+  });
   $('ensaioSel')?.addEventListener('change', () => {
     const segundos = Number($('ensaioSel').value);
     ensaioEditando = true;
@@ -380,10 +429,6 @@
   $('quedaSel')?.addEventListener('change', () => {
     const segundos = Number($('quedaSel').value);
     quedaEditando = true;
-    const aviso = segundos < 0
-      ? 'O ensaio vai continuar mesmo sem rede, até o limite configurado do ensaio.\n\nNinguém consegue mandar parar pelo painel enquanto a rede estiver fora. Continuar?'
-      : null;
-    if (aviso !== null && !confirm(aviso)) { quedaEditando = false; refresh(); return; }
     manutencao('link_grace', null, {seconds: segundos});
     setTimeout(() => { quedaEditando = false; refresh(); }, 6000);
   });

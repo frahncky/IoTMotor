@@ -7,7 +7,8 @@ extension MotorControlBoards on MotorControlController {
   ({String texto, bool atualizar})? firmwareOf(String deviceId) {
     if (!firmwareByDevice.containsKey(deviceId)) return null;
     final String instalado = firmwareByDevice[deviceId]!;
-    final int indice = instalado.startsWith('s3-') || deviceId == 'esp32-02' ? 1 : 0;
+    final int indice =
+        instalado.startsWith('s3-') || deviceId == 'esp32-02' ? 1 : 0;
     return firmwareSituation(instalado, firmwarePublicado[indice]);
   }
 
@@ -22,7 +23,8 @@ extension MotorControlBoards on MotorControlController {
     const String chave = 'manutencao';
     final String alertKey = '$deviceId:$chave';
     if (status == null || !status.vencida) {
-      if (_activeAlertKeys.contains(alertKey)) _resolveTelemetryAlert(deviceId: deviceId, metricKey: chave);
+      if (_activeAlertKeys.contains(alertKey))
+        _resolveTelemetryAlert(deviceId: deviceId, metricKey: chave);
       return;
     }
     if (_activeAlertKeys.contains(alertKey)) return;
@@ -31,7 +33,8 @@ extension MotorControlBoards on MotorControlController {
       deviceId: deviceId,
       metricKey: chave,
       title: 'Manutenção do motor',
-      message: '${status.texto}. Depois do serviço, use "Manutenção feita" no painel.',
+      message:
+          '${status.texto}. Depois do serviço, use "Manutenção feita" no painel.',
       severity: TelemetryAlertSeverity.warning,
     );
   }
@@ -43,7 +46,10 @@ extension MotorControlBoards on MotorControlController {
     if (deviceId.isEmpty) return;
     alarmsDeviceId = deviceId;
     boardAlarms = BoardAlarm.listFromPayload(payload);
-    boardAlarmsMax = BoardAlarm.maxFromPayload(payload, fallback: boardAlarmsMax);
+    boardAlarmsMax = BoardAlarm.maxFromPayload(
+      payload,
+      fallback: boardAlarmsMax,
+    );
     _notify();
   }
 
@@ -61,7 +67,8 @@ extension MotorControlBoards on MotorControlController {
       body: <String, dynamic>{'config': config.toBoard()},
     );
     if (seq == null) {
-      statusMessage = _service.seal.impedimento(dev) ??
+      statusMessage =
+          _service.seal.impedimento(dev) ??
           'Conecte ao MQTT antes de gravar a configuração.';
       _notify();
       return false;
@@ -80,7 +87,8 @@ extension MotorControlBoards on MotorControlController {
   Future<bool> saveBoardAlarm(BoardAlarm alarme) async {
     final String? dev = alarmsDeviceId;
     if (dev == null) {
-      _pendingMessage = 'A placa de sensores ainda não publicou a lista de alarmes.';
+      _pendingMessage =
+          'A placa de sensores ainda não publicou a lista de alarmes.';
       _notify();
       return false;
     }
@@ -90,7 +98,8 @@ extension MotorControlBoards on MotorControlController {
       body: <String, dynamic>{'alarm': alarme.toBoard()},
     );
     if (seq == null) {
-      _pendingMessage = _service.seal.impedimento(dev) ??
+      _pendingMessage =
+          _service.seal.impedimento(dev) ??
           'Conecte-se ao broker antes de enviar comandos.';
       _notify();
       return false;
@@ -110,7 +119,8 @@ extension MotorControlBoards on MotorControlController {
       body: <String, dynamic>{'id': id},
     );
     if (seq == null) {
-      _pendingMessage = _service.seal.impedimento(dev) ??
+      _pendingMessage =
+          _service.seal.impedimento(dev) ??
           'Conecte-se ao broker antes de enviar comandos.';
       _notify();
       return false;
@@ -139,13 +149,15 @@ extension MotorControlBoards on MotorControlController {
     for (int i = 2; i < 99; i++) {
       if (!usados.contains('$raiz$i')) return '$raiz$i';
     }
-    return raiz + DateTime.now().millisecondsSinceEpoch.toString().substring(10);
+    return raiz +
+        DateTime.now().millisecondsSinceEpoch.toString().substring(10);
   }
 
   Future<bool> saveMotorInfo(Map<String, dynamic> motor) async {
     final String? dev = _motorDeviceId;
     if (dev == null) {
-      _pendingMessage = 'Aguardando o quadro de comando para gravar os dados do motor.';
+      _pendingMessage =
+          'Aguardando o quadro de comando para gravar os dados do motor.';
       _notify();
       return false;
     }
@@ -155,7 +167,8 @@ extension MotorControlBoards on MotorControlController {
       body: <String, dynamic>{'motor': motor},
     );
     if (seq == null) {
-      _pendingMessage = _service.seal.impedimento(dev) ??
+      _pendingMessage =
+          _service.seal.impedimento(dev) ??
           'Conecte-se ao broker antes de gravar os dados do motor.';
       _notify();
       return false;
@@ -177,7 +190,8 @@ extension MotorControlBoards on MotorControlController {
       action: 'maintenance_done',
     );
     if (seq == null) {
-      _pendingMessage = _service.seal.impedimento(dev) ??
+      _pendingMessage =
+          _service.seal.impedimento(dev) ??
           'Não foi possível registrar a manutenção.';
       _notify();
       return false;
@@ -199,12 +213,47 @@ extension MotorControlBoards on MotorControlController {
       action: 'motor_counters_reset',
     );
     if (seq == null) {
-      _pendingMessage = _service.seal.impedimento(dev) ??
+      _pendingMessage =
+          _service.seal.impedimento(dev) ??
           'Não foi possível zerar o horímetro e as partidas.';
       _notify();
       return false;
     }
     statusMessage = 'Pedido para zerar horímetro e partidas enviado.';
+    _notify();
+    return true;
+  }
+
+  /// Grava no quadro o comportamento quando Wi-Fi ou MQTT cair.
+  /// `-1` mantem as saidas; de 0 a 3600 desliga depois desse intervalo.
+  Future<bool> saveLinkGraceSeconds(int seconds) async {
+    if (seconds != -1 && (seconds < 0 || seconds > 3600)) {
+      _pendingMessage = 'Informe uma espera entre 0 e 3600 segundos.';
+      _notify();
+      return false;
+    }
+    final String? dev = _benchDeviceId;
+    if (dev == null || !_hasFreshTelemetryFrom(dev)) {
+      _pendingMessage = 'Aguardando telemetria recente do quadro de comando.';
+      _notify();
+      return false;
+    }
+    final String? seq = _service.sendRawCommand(
+      deviceId: dev,
+      action: 'link_grace',
+      body: <String, dynamic>{'seconds': seconds},
+    );
+    if (seq == null) {
+      _pendingMessage =
+          _service.seal.impedimento(dev) ??
+          'Nao foi possivel gravar o comportamento da conexao.';
+      _notify();
+      return false;
+    }
+    statusMessage =
+        seconds < 0
+            ? 'Configuracao enviada: manter ligado se a conexao cair.'
+            : 'Configuracao enviada: desligar apos $seconds s sem conexao.';
     _notify();
     return true;
   }
@@ -215,10 +264,14 @@ extension MotorControlBoards on MotorControlController {
   /// conexão anterior, sem status atual, não entra.
   List<String> get maintenanceBoards {
     if (!isConnected) return const <String>[];
-    final List<String> placas = _knownDevices
-        .where((String d) => _statusByDevice[d]?.trim().toLowerCase() == 'online')
-        .toList()
-      ..sort();
+    final List<String> placas =
+        _knownDevices
+            .where(
+              (String d) =>
+                  _statusByDevice[d]?.trim().toLowerCase() == 'online',
+            )
+            .toList()
+          ..sort();
     return placas;
   }
 
@@ -227,8 +280,7 @@ extension MotorControlBoards on MotorControlController {
   /// sem o tópico `capabilities`) também entra.
   List<String> get boardsToUpdate => <String>[
     for (final String placa in maintenanceBoards)
-      if (!isFirmwareUpdating(placa) &&
-          (firmwareOf(placa)?.atualizar ?? true))
+      if (!isFirmwareUpdating(placa) && (firmwareOf(placa)?.atualizar ?? true))
         placa,
   ];
 
@@ -373,7 +425,10 @@ extension MotorControlBoards on MotorControlController {
   /// Pede a cada placa de [deviceIds], no tópico dela, que abra o portal de
   /// Wi-Fi (`wifi_portal`) ou que se atualize pela internet (`update`).
   /// Nenhuma senha trafega no broker.
-  Future<void> sendMaintenanceCommand(String action, List<String> deviceIds) async {
+  Future<void> sendMaintenanceCommand(
+    String action,
+    List<String> deviceIds,
+  ) async {
     // A lista veio de antes do diálogo de confirmação: confere de novo, porque
     // a placa pode ter caído ou terminado de atualizar enquanto ele estava aberto.
     final List<String> validas =
@@ -397,14 +452,18 @@ extension MotorControlBoards on MotorControlController {
           '${nomeDaPlaca(placa)}: ${action == 'update' && maintenanceBoards.contains(placa) ? 'já está em dia' : 'saiu do ar'}',
     ];
     for (final String placa in alvos) {
-      final String? seq =
-          _service.sendMaintenanceCommand(action, deviceId: placa);
+      final String? seq = _service.sendMaintenanceCommand(
+        action,
+        deviceId: placa,
+      );
       if (seq != null) {
         enviados.add(nomeDaPlaca(placa));
         if (action == 'update') _iniciarAtualizacaoFirmware(placa, seq);
       } else {
-        falhas.add('${nomeDaPlaca(placa)}: '
-            '${_service.seal.impedimento(placa) ?? 'sem conexão com o broker'}');
+        falhas.add(
+          '${nomeDaPlaca(placa)}: '
+          '${_service.seal.impedimento(placa) ?? 'sem conexão com o broker'}',
+        );
       }
     }
     if (enviados.isNotEmpty) {
@@ -414,7 +473,8 @@ extension MotorControlBoards on MotorControlController {
               ? 'Pedido enviado: $quem vai abrir a rede IoTMotor- por 3 minutos.'
               : 'Pedido enviado para $quem: baixar o firmware e reiniciar.';
     }
-    if (falhas.isNotEmpty) _pendingMessage = 'Pedido não enviado. ${falhas.join('; ')}.';
+    if (falhas.isNotEmpty)
+      _pendingMessage = 'Pedido não enviado. ${falhas.join('; ')}.';
     _notify();
   }
 }

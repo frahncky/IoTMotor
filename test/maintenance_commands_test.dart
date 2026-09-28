@@ -12,6 +12,8 @@ import 'package:iotmotor/features/iot_motor/view/tabs/settings/device_maintenanc
 /// Registra os comandos de manutenção em vez de publicar no broker.
 class _ServicoFalso extends MqttMotorService {
   final List<(String, String?)> enviados = <(String, String?)>[];
+  final List<(String, String, Map<String, dynamic>)> comandos =
+      <(String, String, Map<String, dynamic>)>[];
 
   @override
   MqttConnectionConfig? get activeConfig => const MqttConnectionConfig(
@@ -30,42 +32,104 @@ class _ServicoFalso extends MqttMotorService {
   }
 
   @override
+  String? sendRawCommand({
+    required String deviceId,
+    required String action,
+    Map<String, dynamic> body = const <String, dynamic>{},
+  }) {
+    comandos.add((deviceId, action, Map<String, dynamic>.from(body)));
+    return comandos.length.toString();
+  }
+
+  @override
   Future<void> disconnect({bool silent = false}) async {}
 }
 
-MotorControlController _duasPlacas(_ServicoFalso servico, {required String versaoQuadro}) {
-  final MotorControlController c =
-      MotorControlController(service: servico, loadSettings: false)..isConnected = true;
+MotorControlController _duasPlacas(
+  _ServicoFalso servico, {
+  required String versaoQuadro,
+}) {
+  final MotorControlController c = MotorControlController(
+    service: servico,
+    loadSettings: false,
+  )..isConnected = true;
   servico.onPayload?.call('iotmotor/esp32-01/status', 'online');
   servico.onPayload?.call('iotmotor/esp32-02/status', 'online');
   servico.onPayload?.call(
     'iotmotor/esp32-01/capabilities',
-    jsonEncode(<String, String>{'device_id': 'esp32-01', 'firmware_version': versaoQuadro}),
+    jsonEncode(<String, String>{
+      'device_id': 'esp32-01',
+      'firmware_version': versaoQuadro,
+    }),
   );
   servico.onPayload?.call(
     'iotmotor/esp32-02/capabilities',
-    jsonEncode(<String, String>{'device_id': 'esp32-02', 'firmware_version': firmwarePublicado[1]}),
+    jsonEncode(<String, String>{
+      'device_id': 'esp32-02',
+      'firmware_version': firmwarePublicado[1],
+    }),
   );
   return c;
 }
 
 void main() {
-  test('atualizar firmware vai para a placa desatualizada, no tópico dela', () async {
+  test('perda de conexao e lida e gravada no quadro', () async {
     final _ServicoFalso servico = _ServicoFalso();
-    final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
+    final MotorControlController c = _duasPlacas(
+      servico,
+      versaoQuadro: firmwarePublicado[0],
+    );
     addTearDown(c.dispose);
+    servico.onPayload?.call(
+      'iotmotor/esp32-01/telemetry',
+      jsonEncode(<String, dynamic>{
+        'device_id': 'esp32-01',
+        'boot': '0123456789abcdef',
+        'relays': <bool>[false, false, false, false],
+        'voltage': 220,
+        'pzem_ok': true,
+        'link_grace_s': 10,
+      }),
+    );
 
-    expect(c.maintenanceBoards, <String>['esp32-01', 'esp32-02']);
-    expect(c.boardsToUpdate, <String>['esp32-01']);
+    expect(c.linkGraceSeconds, 10);
+    expect(await c.saveLinkGraceSeconds(-1), isTrue);
+    expect(servico.comandos.single.$1, 'esp32-01');
+    expect(servico.comandos.single.$2, 'link_grace');
+    expect(servico.comandos.single.$3, <String, dynamic>{'seconds': -1});
 
-    await c.sendMaintenanceCommand('update', c.boardsToUpdate);
-    expect(servico.enviados, <(String, String?)>[('update', 'esp32-01')]);
-    expect(servico.enviados.any(((String, String?) e) => e.$2 == 'auto'), isFalse);
+    expect(await c.saveLinkGraceSeconds(3601), isFalse);
+    expect(servico.comandos, hasLength(1));
   });
+
+  test(
+    'atualizar firmware vai para a placa desatualizada, no tópico dela',
+    () async {
+      final _ServicoFalso servico = _ServicoFalso();
+      final MotorControlController c = _duasPlacas(
+        servico,
+        versaoQuadro: 'v16-desarme',
+      );
+      addTearDown(c.dispose);
+
+      expect(c.maintenanceBoards, <String>['esp32-01', 'esp32-02']);
+      expect(c.boardsToUpdate, <String>['esp32-01']);
+
+      await c.sendMaintenanceCommand('update', c.boardsToUpdate);
+      expect(servico.enviados, <(String, String?)>[('update', 'esp32-01')]);
+      expect(
+        servico.enviados.any(((String, String?) e) => e.$2 == 'auto'),
+        isFalse,
+      );
+    },
+  );
 
   test('placa fora do ar não recebe pedido de manutenção', () {
     final _ServicoFalso servico = _ServicoFalso();
-    final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
+    final MotorControlController c = _duasPlacas(
+      servico,
+      versaoQuadro: 'v16-desarme',
+    );
     addTearDown(c.dispose);
 
     servico.onPayload?.call('iotmotor/esp32-01/status', 'offline');
@@ -73,28 +137,40 @@ void main() {
     expect(c.boardsToUpdate, isEmpty);
   });
 
-  test('placa sem status atual (só do histórico ou de outra conexão) fica de fora', () {
-    final _ServicoFalso servico = _ServicoFalso();
-    final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
-    addTearDown(c.dispose);
+  test(
+    'placa sem status atual (só do histórico ou de outra conexão) fica de fora',
+    () {
+      final _ServicoFalso servico = _ServicoFalso();
+      final MotorControlController c = _duasPlacas(
+        servico,
+        versaoQuadro: 'v16-desarme',
+      );
+      addTearDown(c.dispose);
 
-    // Telemetria de uma placa que não anunciou status nesta conexão.
-    servico.onPayload?.call('iotmotor/esp32-09/telemetry', '{"voltage":220}');
-    expect(c.knownDeviceIds, contains('esp32-09'));
-    expect(c.maintenanceBoards, <String>['esp32-01', 'esp32-02']);
-    expect(c.boardsToUpdate, <String>['esp32-01']);
-  });
+      // Telemetria de uma placa que não anunciou status nesta conexão.
+      servico.onPayload?.call('iotmotor/esp32-09/telemetry', '{"voltage":220}');
+      expect(c.knownDeviceIds, contains('esp32-09'));
+      expect(c.maintenanceBoards, <String>['esp32-01', 'esp32-02']);
+      expect(c.boardsToUpdate, <String>['esp32-01']);
+    },
+  );
 
   test('confere as placas de novo na hora de enviar', () async {
     final _ServicoFalso servico = _ServicoFalso();
-    final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
+    final MotorControlController c = _duasPlacas(
+      servico,
+      versaoQuadro: 'v16-desarme',
+    );
     addTearDown(c.dispose);
     final List<String> alvos = c.boardsToUpdate;
 
     // Enquanto o diálogo estava aberto, o quadro terminou de atualizar.
     servico.onPayload?.call(
       'iotmotor/esp32-01/capabilities',
-      jsonEncode(<String, String>{'device_id': 'esp32-01', 'firmware_version': firmwarePublicado[0]}),
+      jsonEncode(<String, String>{
+        'device_id': 'esp32-01',
+        'firmware_version': firmwarePublicado[0],
+      }),
     );
     await c.sendMaintenanceCommand('update', alvos);
     expect(servico.enviados, isEmpty);
@@ -105,7 +181,9 @@ void main() {
     expect(servico.enviados, isEmpty);
   });
 
-  testWidgets('botão de firmware fica clicável e explica quando está em dia', (WidgetTester tester) async {
+  testWidgets('botão de firmware fica clicável e explica quando está em dia', (
+    WidgetTester tester,
+  ) async {
     final _ServicoFalso servico = _ServicoFalso();
     final MotorControlController c = _duasPlacas(
       servico,
@@ -139,14 +217,21 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('os botões únicos mandam para as placas certas', (WidgetTester tester) async {
+  testWidgets('os botões únicos mandam para as placas certas', (
+    WidgetTester tester,
+  ) async {
     final _ServicoFalso servico = _ServicoFalso();
-    final MotorControlController c = _duasPlacas(servico, versaoQuadro: 'v16-desarme');
+    final MotorControlController c = _duasPlacas(
+      servico,
+      versaoQuadro: 'v16-desarme',
+    );
 
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SingleChildScrollView(child: DeviceMaintenanceSection(controller: c)),
+          body: SingleChildScrollView(
+            child: DeviceMaintenanceSection(controller: c),
+          ),
         ),
       ),
     );
@@ -154,7 +239,10 @@ void main() {
     // Atualizar firmware: um botão, só o quadro está desatualizado.
     await tester.tap(find.text('Atualizar firmware'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('Vai atualizar: Quadro de comando.'), findsOneWidget);
+    expect(
+      find.textContaining('Vai atualizar: Quadro de comando.'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Continuar'));
     await tester.pumpAndSettle();
     expect(servico.enviados, <(String, String?)>[('update', 'esp32-01')]);

@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {tripText,registroCsv,parseTelemetry,validateConfig,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
+const {tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -12,9 +12,17 @@ test('indicador de conexao combina telemetria recente e status online/offline',(
  assert.equal(deviceConnection({brokerOk:true,status:'offline',statusAt:now-1000,at:now-3000,now}).kind,'error');
  // Offline retido antigo nao esconde telemetria nova.
  assert.equal(deviceConnection({brokerOk:true,status:'offline',statusAt:now-9000,at:now-1000,now}).kind,'live');
- // A ausencia individual da placa e detectada em cerca de 6 s.
- assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-5000,now}).kind,'live');
- assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-7000,now}).kind,'error');
+ // A ausencia individual da placa e detectada em 10 s.
+ assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-9000,now}).kind,'live');
+ assert.equal(deviceConnection({brokerOk:true,status:'—',at:now-10000,now}).kind,'error');
+});
+
+test('estado ligado expira em 10 s e offline confirmado invalida imediatamente',()=>{
+ const now=100000;
+ assert.equal(telemetryFresh({brokerReady:true,status:'online',at:now-9999,now}),true);
+ assert.equal(telemetryFresh({brokerReady:true,status:'online',at:now-10000,now}),false);
+ assert.equal(telemetryFresh({brokerReady:true,status:'offline',statusAt:now-1000,at:now-2000,now}),false);
+ assert.equal(telemetryFresh({brokerReady:true,status:'offline',statusAt:now-3000,at:now-1000,now}),true);
 });
 
 test('OTA tem prioridade visual sobre o estado normal das duas placas',()=>{

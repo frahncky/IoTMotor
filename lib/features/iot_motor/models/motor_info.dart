@@ -4,7 +4,10 @@ import 'dart:math' as math;
 /// Versão do firmware publicada para OTA (release firmware-latest), a mesma que
 /// o painel usa (FIRMWARE_PUBLICADO em wifi-manager.js): [quadro, sensores].
 /// O CI confere que é a mesma do firmware_version de cada .ino.
-const List<String> firmwarePublicado = <String>['v19-ota-cloudflare', 's3-sensors-1.14-ota-cloudflare'];
+const List<String> firmwarePublicado = <String>[
+  'v20-ota-cloudflare',
+  's3-sensors-1.15-ota-cloudflare',
+];
 
 double? _numero(Object? valor) =>
     valor is num && valor.isFinite ? valor.toDouble() : null;
@@ -121,17 +124,21 @@ String duracao(double segundos) {
   return '${m ~/ 60} h ${(m % 60).toString().padLeft(2, '0')} min';
 }
 
-String _decimal(double v, int casas) => v.toStringAsFixed(casas).replaceAll('.', ',');
+String _decimal(double v, int casas) =>
+    v.toStringAsFixed(casas).replaceAll('.', ',');
 
 /// Linha de uso: sessão, horímetro e partidas (mesmo texto do painel).
 String usageLine(MotorUsage uso) {
   final List<String> partes = <String>[];
   if (uso.sessionS != null) partes.add('Ligado há ${duracao(uso.sessionS!)}');
-  if (uso.runSTotal != null) partes.add('Horímetro ${_decimal(uso.runSTotal! / 3600, 1)} h');
+  if (uso.runSTotal != null)
+    partes.add('Horímetro ${_decimal(uso.runSTotal! / 3600, 1)} h');
   final double? partidas = uso.startsToday ?? uso.startsTotal;
   if (partidas != null) {
     final int n = partidas.round();
-    partes.add('$n ${n == 1 ? 'partida' : 'partidas'} ${uso.startsToday != null ? 'hoje' : 'no total'}');
+    partes.add(
+      '$n ${n == 1 ? 'partida' : 'partidas'} ${uso.startsToday != null ? 'hoje' : 'no total'}',
+    );
   }
   return partes.join(' · ');
 }
@@ -173,7 +180,12 @@ class VibrationSeverity {
   final double mmS;
   final int zona;
 
-  static const List<String> _nomes = <String>['Boa', 'Aceitável', 'Alerta', 'Crítica'];
+  static const List<String> _nomes = <String>[
+    'Boa',
+    'Aceitável',
+    'Alerta',
+    'Crítica',
+  ];
   static const List<(double, List<double>)> _classes = <(double, List<double>)>[
     (15, <double>[0.71, 1.8, 4.5]),
     (75, <double>[1.12, 2.8, 7.1]),
@@ -186,19 +198,30 @@ class VibrationSeverity {
   static VibrationSeverity? zone(double? mmS, double? powerCv) {
     if (mmS == null || !mmS.isFinite || mmS < 0) return null;
     final double kw = powerCv != null && powerCv > 0 ? powerCv * 0.7355 : 0;
-    final List<double> zonas = _classes.firstWhere(((double, List<double>) c) => kw <= c.$1).$2;
+    final List<double> zonas =
+        _classes.firstWhere(((double, List<double>) c) => kw <= c.$1).$2;
     final int indice = zonas.indexWhere((double limite) => mmS < limite);
     return VibrationSeverity(mmS, indice < 0 ? 3 : indice);
   }
 }
 
 /// O que dizer sobre a versão do firmware de uma placa.
-({String texto, bool atualizar}) firmwareSituation(String? instalado, String publicado) {
+({String texto, bool atualizar}) firmwareSituation(
+  String? instalado,
+  String publicado,
+) {
   if (instalado == null || instalado.isEmpty) {
-    return (texto: 'a placa não informou a versão (firmware antigo?)', atualizar: true);
+    return (
+      texto: 'a placa não informou a versão (firmware antigo?)',
+      atualizar: true,
+    );
   }
-  if (instalado == publicado) return (texto: '$instalado · em dia', atualizar: false);
-  return (texto: '$instalado · nova versão publicada: $publicado', atualizar: true);
+  if (instalado == publicado)
+    return (texto: '$instalado · em dia', atualizar: false);
+  return (
+    texto: '$instalado · nova versão publicada: $publicado',
+    atualizar: true,
+  );
 }
 
 /// Uma hora do histórico guardado na placa de sensores (historico.h).
@@ -221,6 +244,7 @@ class BoardHistoryHour {
   final double? voltageAvg;
   final double? temperatureAvg;
   final double? temperatureMax;
+
   /// Vibração em mm/s RMS. Dias gravados pelo firmware antigo (em g) chegam
   /// sem vibração: não há como passar para mm/s sem a rotação.
   final double? vibrationAvg;
@@ -234,7 +258,8 @@ class BoardHistoryHour {
       if (dados is! Map<String, dynamic>) return const <BoardHistoryHour>[];
       final Object? dia = dados['day'];
       final Object? horas = dados['hours'];
-      if (dia is! int || dia <= 0 || horas is! List) return const <BoardHistoryHour>[];
+      if (dia is! int || dia <= 0 || horas is! List)
+        return const <BoardHistoryHour>[];
       final bool vibracaoMms = dados['vib'] == 'mm/s';
       final List<BoardHistoryHour> saida = <BoardHistoryHour>[];
       for (final Object? linha in horas) {
@@ -245,17 +270,24 @@ class BoardHistoryHour {
           final double? n = _numero(linha[i]);
           return n == null ? null : n / escala;
         }
-        saida.add(BoardHistoryHour(
-          time: DateTime.fromMillisecondsSinceEpoch((dia * 24 + h) * 3600000, isUtc: true).toLocal(),
-          currentAvg: v(1, 100),
-          currentMax: v(2, 100),
-          voltageAvg: v(3, 10),
-          temperatureAvg: v(4, 10),
-          temperatureMax: v(5, 10),
-          vibrationAvg: vibracaoMms ? v(6, 100) : null,
-          vibrationMax: vibracaoMms ? v(7, 100) : null,
-          minutesOn: (_numero(linha[8]) ?? 0).round(),
-        ));
+
+        saida.add(
+          BoardHistoryHour(
+            time:
+                DateTime.fromMillisecondsSinceEpoch(
+                  (dia * 24 + h) * 3600000,
+                  isUtc: true,
+                ).toLocal(),
+            currentAvg: v(1, 100),
+            currentMax: v(2, 100),
+            voltageAvg: v(3, 10),
+            temperatureAvg: v(4, 10),
+            temperatureMax: v(5, 10),
+            vibrationAvg: vibracaoMms ? v(6, 100) : null,
+            vibrationMax: vibracaoMms ? v(7, 100) : null,
+            minutesOn: (_numero(linha[8]) ?? 0).round(),
+          ),
+        );
       }
       return saida;
     } catch (_) {

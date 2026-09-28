@@ -12,7 +12,7 @@ const ROTULO_KDF = 'iotmotor-wifi-v1';
 // Versão do firmware que está publicada para OTA (release firmware-latest,
 // compilada da main junto com este painel): [quadro de comando, sensores].
 // O CI confere que é a mesma do firmware_version de cada .ino.
-const FIRMWARE_PUBLICADO = ['v19-ota-cloudflare', 's3-sensors-1.14-ota-cloudflare'];
+const FIRMWARE_PUBLICADO = ['v20-ota-cloudflare', 's3-sensors-1.15-ota-cloudflare'];
 
 // O que dizer sobre a versão que a placa informa. Exportada para os testes.
 function situacaoFirmware(instalado, publicado, quadro = false) {

@@ -276,7 +276,7 @@ class _InicioTabState extends State<InicioTab> {
                               selectedStartType: selectedStartType,
                             ),
                           ),
-                                const SizedBox(height: 8),
+                          const SizedBox(height: 8),
                           Expanded(
                             child: DelayedReveal(
                               delay: const Duration(milliseconds: 240),
@@ -302,7 +302,12 @@ class _InicioTabState extends State<InicioTab> {
     required MotorCommandType selectedStartType,
   }) {
     final bool connected = widget.controller.isConnected;
-    final bool canSend = connected && !widget.controller.isBusy;
+    final bool canSend =
+        connected &&
+        widget.controller.hasLiveMotorState &&
+        (widget.controller.isBenchMotorOn ||
+            widget.controller.hasValidBenchVoltage) &&
+        !widget.controller.isBusy;
     final bool motorOn = widget.controller.isBenchMotorOn;
     // Seletor e botão na mesma altura, com o rótulo "Partida" dentro do
     // seletor: o painel ocupava ~110 px e agora ~66, que sobram para os
@@ -317,68 +322,66 @@ class _InicioTabState extends State<InicioTab> {
         child: Align(
           alignment: Alignment.centerLeft,
           child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 340),
-                    child: SizedBox(
-                      height: controlHeight,
-                      child: _buildStartTypeSelector(
-                        context,
-                        startTypes: startTypes,
-                        selectedStartType: selectedStartType,
-                      ),
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 340),
+                  child: SizedBox(
+                    height: controlHeight,
+                    child: _buildStartTypeSelector(
+                      context,
+                      startTypes: startTypes,
+                      selectedStartType: selectedStartType,
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  width: 120,
-                  height: controlHeight,
-                  child: FilledButton.icon(
-                    onPressed:
-                        canSend
-                            ? () {
-                              if (motorOn) {
-                                widget.controller.sendCommand(
-                                  MotorCommandType.stop,
-                                );
-                              } else {
-                                widget.controller.sendCommand(
-                                  selectedStartType,
-                                );
-                              }
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 120,
+                height: controlHeight,
+                child: FilledButton.icon(
+                  onPressed:
+                      canSend
+                          ? () {
+                            if (motorOn) {
+                              widget.controller.sendCommand(
+                                MotorCommandType.stop,
+                              );
+                            } else {
+                              widget.controller.sendCommand(selectedStartType);
                             }
-                            : null,
-                    icon: Icon(
-                      motorOn
-                          ? Icons.power_off_rounded
-                          : Icons.power_settings_new_rounded,
+                          }
+                          : null,
+                  icon: Icon(
+                    motorOn
+                        ? Icons.power_off_rounded
+                        : Icons.power_settings_new_rounded,
+                  ),
+                  label: Text(motorOn ? 'Desligar' : 'Ligar'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        motorOn ? AppTheme.danger : AppTheme.online,
+                    foregroundColor: Colors.white,
+                    side: BorderSide(
+                      color: (motorOn ? AppTheme.danger : AppTheme.online)
+                          .withValues(alpha: 0.92),
                     ),
-                    label: Text(motorOn ? 'Desligar' : 'Ligar'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor:
-                          motorOn ? AppTheme.danger : AppTheme.online,
-                      foregroundColor: Colors.white,
-                      side: BorderSide(
-                        color: (motorOn ? AppTheme.danger : AppTheme.online)
-                            .withValues(alpha: 0.92),
-                      ),
-                      shadowColor: (motorOn ? AppTheme.danger : AppTheme.online)
-                          .withValues(alpha: 0.45),
-                      elevation: 2,
-                      minimumSize: Size(0, controlHeight),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                    shadowColor: (motorOn ? AppTheme.danger : AppTheme.online)
+                        .withValues(alpha: 0.45),
+                    elevation: 2,
+                    minimumSize: Size(0, controlHeight),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -426,141 +429,129 @@ class _InicioTabState extends State<InicioTab> {
     required MotorCommandType selectedStartType,
   }) {
     return PopupMenuButton<String>(
-            onSelected: (String action) {
-              setState(() {
-                _selectedStartTypeId = action;
-              });
-            },
-            itemBuilder: (BuildContext menuContext) {
-              final List<PopupMenuEntry<String>> items =
-                  <PopupMenuEntry<String>>[
-                    ...startTypes.map(
-                      (MotorCommandType type) => PopupMenuItem<String>(
-                        value: type.id,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onLongPress: () {
-                            Navigator.of(menuContext).pop();
-                            Future<void>.delayed(Duration.zero, () {
-                              if (!mounted) {
-                                return;
-                              }
-                              _openStartTypeActions(
-                                context: this.context,
-                                type: type,
-                              );
-                            });
-                          },
-                          child: Row(
-                            children: <Widget>[
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    Text(
-                                      type.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    // Contatores que esta partida aciona.
-                                    Text(
-                                      type.profileSummary,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (type.id == selectedStartType.id)
-                                Icon(
-                                  Icons.check_rounded,
-                                  size: 16,
-                                  color: AppTheme.brandBlue,
-                                ),
-                            ],
+      onSelected: (String action) {
+        setState(() {
+          _selectedStartTypeId = action;
+        });
+      },
+      itemBuilder: (BuildContext menuContext) {
+        final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
+          ...startTypes.map(
+            (MotorCommandType type) => PopupMenuItem<String>(
+              value: type.id,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPress: () {
+                  Navigator.of(menuContext).pop();
+                  Future<void>.delayed(Duration.zero, () {
+                    if (!mounted) {
+                      return;
+                    }
+                    _openStartTypeActions(context: this.context, type: type);
+                  });
+                },
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            type.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
+                          // Contatores que esta partida aciona.
+                          Text(
+                            type.profileSummary,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ),
                     ),
-                    const PopupMenuDivider(),
-                    PopupMenuItem<String>(
-                      enabled: false,
-                      value: _addStartTypeAction,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          Navigator.of(menuContext).pop();
-                          Future<void>.delayed(Duration.zero, () {
-                            if (!mounted) {
-                              return;
-                            }
-                            _openStartTypeEditor(context: this.context);
-                          });
-                        },
-                        child: const Row(
-                          children: <Widget>[
-                            Icon(Icons.add_circle_outline_rounded, size: 18),
-                            SizedBox(width: 8),
-                            Text('Adicionar partida'),
-                          ],
-                        ),
+                    if (type.id == selectedStartType.id)
+                      Icon(
+                        Icons.check_rounded,
+                        size: 16,
+                        color: AppTheme.brandBlue,
                       ),
-                    ),
-                  ];
-              return items;
-            },
-            child: Container(
-              height: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: AppTheme.surfaceSoft.withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppTheme.brandBlue.withValues(alpha: 0.34),
+                  ],
                 ),
               ),
-              child: Row(
+            ),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem<String>(
+            enabled: false,
+            value: _addStartTypeAction,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                Navigator.of(menuContext).pop();
+                Future<void>.delayed(Duration.zero, () {
+                  if (!mounted) {
+                    return;
+                  }
+                  _openStartTypeEditor(context: this.context);
+                });
+              },
+              child: const Row(
                 children: <Widget>[
-                  Icon(
-                    Icons.list_alt_rounded,
-                    size: 18,
-                    color: AppTheme.brandBlue,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          'Partida',
-                          maxLines: 1,
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: AppTheme.inkSoft,
-                            fontWeight: FontWeight.w700,
-                            height: 1.1,
-                          ),
-                        ),
-                        Text(
-                          selectedStartType.label,
-                          style: Theme.of(
-                            context,
-                          ).textTheme.labelLarge?.copyWith(color: AppTheme.ink, height: 1.2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                  Icon(Icons.add_circle_outline_rounded, size: 18),
+                  SizedBox(width: 8),
+                  Text('Adicionar partida'),
+                ],
+              ),
+            ),
+          ),
+        ];
+        return items;
+      },
+      child: Container(
+        height: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceSoft.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppTheme.brandBlue.withValues(alpha: 0.34)),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.list_alt_rounded, size: 18, color: AppTheme.brandBlue),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Partida',
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppTheme.inkSoft,
+                      fontWeight: FontWeight.w700,
+                      height: 1.1,
                     ),
                   ),
-                  Icon(
-                    Icons.arrow_drop_down_rounded,
-                    color: AppTheme.brandBlue,
+                  Text(
+                    selectedStartType.label,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: AppTheme.ink,
+                      height: 1.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
+            Icon(Icons.arrow_drop_down_rounded, color: AppTheme.brandBlue),
+          ],
+        ),
+      ),
     );
   }
 
@@ -649,7 +640,9 @@ class _InicioTabState extends State<InicioTab> {
     MotorCommandType? initial,
   }) async {
     String label = initial?.label ?? '';
-    final List<ContactorTiming> tempos = List<ContactorTiming>.generate(4, (int i) {
+    final List<ContactorTiming> tempos = List<ContactorTiming>.generate(4, (
+      int i,
+    ) {
       final List<ContactorTiming>? atuais = initial?.timings;
       if (atuais != null && i < atuais.length) return atuais[i];
       return ContactorTiming(use: i == 0, onMs: 500, offMs: 0);
@@ -657,7 +650,8 @@ class _InicioTabState extends State<InicioTab> {
 
     String? problema() {
       if (label.trim().isEmpty) return 'Informe o nome da partida.';
-      if (!tempos.any((ContactorTiming t) => t.use)) return 'Marque pelo menos um contator.';
+      if (!tempos.any((ContactorTiming t) => t.use))
+        return 'Marque pelo menos um contator.';
       for (int i = 0; i < tempos.length; i++) {
         final ContactorTiming t = tempos[i];
         if (!t.use) continue;
@@ -713,7 +707,8 @@ class _InicioTabState extends State<InicioTab> {
                                   'cada acento conta dois).'
                               : null;
                         },
-                        onChanged: (String value) => atualizar(() => label = value),
+                        onChanged:
+                            (String value) => atualizar(() => label = value),
                         decoration: const InputDecoration(
                           labelText: 'Nome da partida',
                           hintText: 'Ex.: Estrela-triângulo 8 s',
@@ -736,41 +731,53 @@ class _InicioTabState extends State<InicioTab> {
                                 child: CheckboxListTile(
                                   dense: true,
                                   contentPadding: EdgeInsets.zero,
-                                  controlAffinity: ListTileControlAffinity.leading,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
                                   title: Text('CNT ${i + 1}'),
                                   value: tempos[i].use,
-                                  onChanged: (bool? marcado) => atualizar(() {
-                                    tempos[i] = ContactorTiming(
-                                      use: marcado ?? false,
-                                      onMs: tempos[i].onMs,
-                                      offMs: tempos[i].offMs,
-                                    );
-                                  }),
+                                  onChanged:
+                                      (bool? marcado) => atualizar(() {
+                                        tempos[i] = ContactorTiming(
+                                          use: marcado ?? false,
+                                          onMs: tempos[i].onMs,
+                                          offMs: tempos[i].offMs,
+                                        );
+                                      }),
                                 ),
                               ),
                               const SizedBox(width: 6),
-                              campoDeTempo('Liga', tempos[i].onMs, (int ms) => atualizar(() {
-                                tempos[i] = ContactorTiming(
-                                  use: tempos[i].use,
-                                  onMs: ms,
-                                  offMs: tempos[i].offMs,
-                                );
-                              })),
+                              campoDeTempo(
+                                'Liga',
+                                tempos[i].onMs,
+                                (int ms) => atualizar(() {
+                                  tempos[i] = ContactorTiming(
+                                    use: tempos[i].use,
+                                    onMs: ms,
+                                    offMs: tempos[i].offMs,
+                                  );
+                                }),
+                              ),
                               const SizedBox(width: 10),
-                              campoDeTempo('Desliga', tempos[i].offMs, (int ms) => atualizar(() {
-                                tempos[i] = ContactorTiming(
-                                  use: tempos[i].use,
-                                  onMs: tempos[i].onMs,
-                                  offMs: ms,
-                                );
-                              })),
+                              campoDeTempo(
+                                'Desliga',
+                                tempos[i].offMs,
+                                (int ms) => atualizar(() {
+                                  tempos[i] = ContactorTiming(
+                                    use: tempos[i].use,
+                                    onMs: tempos[i].onMs,
+                                    offMs: ms,
+                                  );
+                                }),
+                              ),
                             ],
                           ),
                         ),
                       if (erro != null)
                         Text(
                           erro,
-                          style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                         ),
                     ],
                   ),
@@ -782,7 +789,10 @@ class _InicioTabState extends State<InicioTab> {
                   child: const Text('Cancelar'),
                 ),
                 FilledButton(
-                  onPressed: erro == null ? () => Navigator.of(dialogContext).pop(true) : null,
+                  onPressed:
+                      erro == null
+                          ? () => Navigator.of(dialogContext).pop(true)
+                          : null,
                   child: const Text('Salvar na placa'),
                 ),
               ],
@@ -1049,13 +1059,17 @@ class _InicioTabState extends State<InicioTab> {
     final bool recebeuDadoAtual = widget.controller.recebeuDadoAtual;
     final List<double> values = _seriesForPlot(plot);
     // Só mostra valores se já recebeu dado novo na sessão atual
-    final List<double> sessionValues = (connected && recebeuDadoAtual) ? values : <double>[];
+    final List<double> sessionValues =
+        (connected && recebeuDadoAtual) ? values : <double>[];
     return TelemetryChart(
       title: plot.title,
       color: plot.color,
       values: sessionValues,
       unit: plot.unit,
-      instantValue: (connected && recebeuDadoAtual && sample != null) ? plot.readValue(sample) : null,
+      instantValue:
+          (connected && recebeuDadoAtual && sample != null)
+              ? plot.readValue(sample)
+              : null,
       decimalDigits: plot.decimalDigits,
       chartHeight: plotHeight,
       titleWidget: _buildPlotTitleMenu(

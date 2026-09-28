@@ -30,7 +30,8 @@ extension MotorControlDevices on MotorControlController {
     if (latest == null) {
       return false;
     }
-    return DateTime.now().difference(latest) >= MotorControlController.telemetryStaleTimeout;
+    return DateTime.now().difference(latest) >=
+        MotorControlController.telemetryStaleTimeout;
   }
 
   String get telemetryStatusSummary {
@@ -99,7 +100,9 @@ extension MotorControlDevices on MotorControlController {
   }
 
   List<_CommandClientPresence> get _activeCommandClients {
-    final DateTime limite = DateTime.now().subtract(MotorControlController._commandClientTtl);
+    final DateTime limite = DateTime.now().subtract(
+      MotorControlController._commandClientTtl,
+    );
     return _commandClients.values
         .where((_CommandClientPresence info) => info.seenAt.isAfter(limite))
         .toList(growable: false);
@@ -107,12 +110,14 @@ extension MotorControlDevices on MotorControlController {
 
   String get commandClientsSummary {
     final List<_CommandClientPresence> ativos = _activeCommandClients;
-    final int apps = ativos
-        .where((_CommandClientPresence info) => info.source == 'app')
-        .length;
-    final int webs = ativos
-        .where((_CommandClientPresence info) => info.source == 'web')
-        .length;
+    final int apps =
+        ativos
+            .where((_CommandClientPresence info) => info.source == 'app')
+            .length;
+    final int webs =
+        ativos
+            .where((_CommandClientPresence info) => info.source == 'web')
+            .length;
     return '${ativos.length} · App $apps · Web $webs';
   }
 
@@ -137,7 +142,8 @@ extension MotorControlDevices on MotorControlController {
               ? 'web'
               : '';
       final String topicId = partes[partes.length - 2].trim();
-      final String clientId = (decoded['client_id']?.toString() ?? topicId).trim();
+      final String clientId =
+          (decoded['client_id']?.toString() ?? topicId).trim();
       if (source.isEmpty || clientId.isEmpty) return true;
 
       if (decoded['state'] == 'offline') {
@@ -156,7 +162,9 @@ extension MotorControlDevices on MotorControlController {
   }
 
   bool _pruneCommandClients() {
-    final DateTime limite = DateTime.now().subtract(MotorControlController._commandClientTtl);
+    final DateTime limite = DateTime.now().subtract(
+      MotorControlController._commandClientTtl,
+    );
     final int antes = _commandClients.length;
     _commandClients.removeWhere(
       (String _, _CommandClientPresence info) => !info.seenAt.isAfter(limite),
@@ -254,7 +262,8 @@ extension MotorControlDevices on MotorControlController {
     if (lastSeen == null) {
       return false;
     }
-    return DateTime.now().difference(lastSeen) <= MotorControlController._deviceOnlineTimeout;
+    return DateTime.now().difference(lastSeen) <
+        MotorControlController._deviceOnlineTimeout;
   }
 
   String? _latestConnectedDeviceId() {

@@ -43,7 +43,8 @@ class MotorControlController extends ChangeNotifier {
       text: (initialConfig?.port ?? 8080).toString(),
     );
     clientIdController = TextEditingController(
-      text: initialConfig?.clientId ??
+      text:
+          initialConfig?.clientId ??
           'motor_app_${DateTime.now().millisecondsSinceEpoch % 100000}',
     );
     deviceIdController = TextEditingController(
@@ -158,7 +159,10 @@ class MotorControlController extends ChangeNotifier {
   String? get _motorDeviceId {
     final String? bancada = _benchDeviceId;
     if (bancada != null) return bancada;
-    final Set<String> placas = <String>{..._motorInfoByDevice.keys, ..._motorUsageByDevice.keys};
+    final Set<String> placas = <String>{
+      ..._motorInfoByDevice.keys,
+      ..._motorUsageByDevice.keys,
+    };
     return placas.length == 1 ? placas.first : null;
   }
 
@@ -166,13 +170,16 @@ class MotorControlController extends ChangeNotifier {
   String? get motorDeviceId => _motorDeviceId;
 
   /// Dados de placa do motor do quadro de comando em uso.
-  MotorInfo? get motorInfo => _motorDeviceId == null ? null : _motorInfoByDevice[_motorDeviceId];
+  MotorInfo? get motorInfo =>
+      _motorDeviceId == null ? null : _motorInfoByDevice[_motorDeviceId];
 
   /// Horímetro e partidas da última telemetria do quadro de comando em uso.
-  MotorUsage? get motorUsage => _motorDeviceId == null ? null : _motorUsageByDevice[_motorDeviceId];
+  MotorUsage? get motorUsage =>
+      _motorDeviceId == null ? null : _motorUsageByDevice[_motorDeviceId];
 
   /// Última telemetria do quadro de comando com a corrente medida.
-  double? get benchCurrent => _benchDeviceId == null ? null : _latestByDevice[_benchDeviceId]?.current;
+  double? get benchCurrent =>
+      _benchDeviceId == null ? null : _latestByDevice[_benchDeviceId]?.current;
 
   /// Vibração RMS (mm/s, ISO 10816) da placa de sensores na última telemetria.
   double? get sensorVibration {
@@ -278,8 +285,12 @@ class MotorControlController extends ChangeNotifier {
       MotorAppSettings.dashboardTabElectrical;
   static const String dashboardTabMechanical =
       MotorAppSettings.dashboardTabMechanical;
-  static const Duration telemetryStaleTimeout = Duration(minutes: 5);
-  static const Duration _deviceOnlineTimeout = Duration(seconds: 4);
+  static const Duration telemetryStaleTimeout = Duration(seconds: 10);
+  static const Duration _deviceOnlineTimeout = telemetryStaleTimeout;
+
+  @visibleForTesting
+  static bool telemetryIsFreshAt(DateTime receivedAt, {DateTime? now}) =>
+      (now ?? DateTime.now()).difference(receivedAt) < telemetryStaleTimeout;
   static const Duration _settingsPersistDelay = Duration(milliseconds: 450);
   static const Duration _historyPersistDelay = Duration(milliseconds: 700);
   static const Duration _alertsPersistDelay = Duration(milliseconds: 350);
@@ -303,6 +314,7 @@ class MotorControlController extends ChangeNotifier {
   bool _startTypesLoaded = false;
   bool _settingsLoaded = false;
   bool _settingsRestored = false;
+
   /// Perfil MQTT que montou esta tela (vazio fora do app com perfis).
   String activeProfileId = '';
   bool _historyLoaded = false;
@@ -354,9 +366,12 @@ class MotorControlController extends ChangeNotifier {
   // lógico dos quatro contatores (CNT 1 a CNT 4).
   final Map<String, String> _bootByDevice = <String, String>{};
   final Map<String, List<bool>> _relaysByDevice = <String, List<bool>>{};
+  final Map<String, double> _voltageByDevice = <String, double>{};
+
   /// `motor_running` do quadro: girando pela regra do horímetro, que inclui o
   /// modo instrumentação (motor comandado por fora, sem contator da placa).
   final Map<String, bool> _runningByDevice = <String, bool>{};
+
   /// Grandeza do alarme que desligou o motor (desarme), até a próxima partida.
   final Map<String, String> _desarmeByDevice = <String, String>{};
   final Map<String, String> _modeByDevice = <String, String>{};
@@ -387,7 +402,8 @@ class MotorControlController extends ChangeNotifier {
     ..._defaultStartTypes,
   ];
 
-  TelemetrySample? get latestSample => _recebeuDadoAtual ? _buildCombinedLatestSample() : null;
+  TelemetrySample? get latestSample =>
+      _recebeuDadoAtual ? _buildCombinedLatestSample() : null;
 
   bool get recebeuDadoAtual => _recebeuDadoAtual;
 
@@ -505,6 +521,9 @@ class MotorControlController extends ChangeNotifier {
 
   bool get isSelectedDeviceMotorOn {
     final String deviceId = selectedDeviceId;
+    if (!_hasFreshTelemetryFrom(deviceId)) {
+      return false;
+    }
     final bool? knownState = _motorOnByDevice[deviceId];
     if (knownState != null) {
       return knownState;
@@ -514,6 +533,9 @@ class MotorControlController extends ChangeNotifier {
 
   String? get selectedDeviceMode {
     final String deviceId = selectedDeviceId;
+    if (!_hasFreshTelemetryFrom(deviceId)) {
+      return null;
+    }
     final String? mode =
         _modeByDevice[deviceId] ?? _latestByDevice[deviceId]?.mode;
     final String normalized = mode?.trim() ?? '';
@@ -525,6 +547,10 @@ class MotorControlController extends ChangeNotifier {
 
   /// Partida que a placa informa estar executando agora (telemetria `profile`).
   String? runningProfileId;
+
+  /// Segundos que o quadro mantem as saidas ligadas sem Wi-Fi/MQTT.
+  /// `-1` mantem ligado, respeitando o limite do ensaio e as protecoes.
+  int? linkGraceSeconds;
 
   MotorCommandType? get selectedDeviceConnectionType {
     // Enquanto há partida em andamento, o app segue a partida da placa, mesmo
@@ -599,7 +625,8 @@ class MotorControlController extends ChangeNotifier {
     _firmwareUpdatesByDevice.clear();
     _lastConnectedDevices = <String>{};
     _lastTelemetryStale = false;
-    _latestByDevice.clear(); // Limpa o último valor conhecido de cada dispositivo
+    _latestByDevice
+        .clear(); // Limpa o último valor conhecido de cada dispositivo
     // Uso, dados do motor, versões e histórico voltam (retidos) na próxima conexão.
     _motorUsageByDevice.clear();
     _motorInfoByDevice.clear();
@@ -635,14 +662,15 @@ class MotorControlController extends ChangeNotifier {
       enviado = _service.sendBenchCommand(deviceId: dev, action: 'stop');
     } else {
       final String? boot = _bootByDevice[dev];
-      final DateTime? ultima = _lastTelemetryReceivedByDevice[dev];
-      if (boot == null ||
-          ultima == null ||
-          // Mesma janela do painel: no broker publico, 8 a 20 s entre
-          // telemetrias sao comuns, e 10 s recusava a partida a toa.
-          DateTime.now().difference(ultima) > const Duration(seconds: 25)) {
+      if (boot == null || !_hasFreshTelemetryFrom(dev)) {
         _pendingMessage =
             'Sem telemetria recente de ${nomeDaPlaca(dev)}: a partida exige a sessão atual da placa.';
+        _notify();
+        return;
+      }
+      if (!hasValidBenchVoltage) {
+        _pendingMessage =
+            'Partida bloqueada: aguardando uma leitura valida de tensao.';
         _notify();
         return;
       }
@@ -663,9 +691,11 @@ class MotorControlController extends ChangeNotifier {
         if (enviado) {
           lastCommandType = type;
           lastCommandAt = DateTime.now();
-          statusMessage = 'Comando enviado a ${nomeDaPlaca(dev)}: ${type.label}.';
+          statusMessage =
+              'Comando enviado a ${nomeDaPlaca(dev)}: ${type.label}.';
         } else {
-          _pendingMessage = _service.seal.impedimento(dev) ??
+          _pendingMessage =
+              _service.seal.impedimento(dev) ??
               'Conecte-se ao broker antes de enviar comandos.';
         }
         _notify();
@@ -699,7 +729,8 @@ class MotorControlController extends ChangeNotifier {
     }
 
     if (!enviado) {
-      _pendingMessage = _service.seal.impedimento(dev) ??
+      _pendingMessage =
+          _service.seal.impedimento(dev) ??
           'Conecte-se ao broker antes de enviar comandos.';
       _notify();
       return;
@@ -1026,21 +1057,25 @@ class MotorControlController extends ChangeNotifier {
               _chartBucketsByDevice.clear();
             }
             acquisitionConfig = nova;
-            statusMessage = 'Configuração de aquisição sincronizada (revisão ${nova.revision}).';
+            statusMessage =
+                'Configuração de aquisição sincronizada (revisão ${nova.revision}).';
             _notify();
           }
         }
       } catch (_) {}
       return;
     }
-    final String deviceIdDoTopico = partes.length >= 2 ? partes[partes.length - 2] : '';
+    final String deviceIdDoTopico =
+        partes.length >= 2 ? partes[partes.length - 2] : '';
     // Histórico da placa: prefixo/dispositivo/history/<dia>.
     if (partes.length >= 3 && partes[partes.length - 2] == 'history') {
       final int? dia = int.tryParse(partes.last);
       if (dia != null && dia >= 0 && dia < 7) {
         final String placa = partes[partes.length - 3];
-        (_boardHistoryByDevice[placa] ??= <int, List<BoardHistoryHour>>{})[dia] =
-            BoardHistoryHour.parseDay(payload);
+        (_boardHistoryByDevice[placa] ??=
+            <int, List<BoardHistoryHour>>{})[dia] = BoardHistoryHour.parseDay(
+          payload,
+        );
         _notify();
       }
       return;
@@ -1384,22 +1419,44 @@ class MotorControlController extends ChangeNotifier {
       return;
     }
     if (dados is! Map<String, dynamic>) return;
+    final Object? tensao = dados['voltage'];
+    final double? tensaoValida =
+        tensao is num && tensao.toDouble().isFinite && tensao.toDouble() > 0
+            ? tensao.toDouble()
+            : null;
+    if (dados['pzem_ok'] == false || tensaoValida == null) {
+      _voltageByDevice.remove(deviceId);
+    } else {
+      _voltageByDevice[deviceId] = tensaoValida;
+    }
     final Object? boot = dados['boot'];
     if (boot is String && RegExp(r'^[0-9a-f]{16}$').hasMatch(boot)) {
       _bootByDevice[deviceId] = boot;
     }
     final Object? emExecucao = dados['profile'];
-    runningProfileId = emExecucao is String && emExecucao.isNotEmpty ? emExecucao : null;
+    runningProfileId =
+        emExecucao is String && emExecucao.isNotEmpty ? emExecucao : null;
+    final Object? toleranciaSemLink = dados['link_grace_s'];
+    if (toleranciaSemLink is num) {
+      final int segundos = toleranciaSemLink.toInt();
+      if (segundos == -1 || (segundos >= 0 && segundos <= 3600)) {
+        linkGraceSeconds = segundos;
+      }
+    }
     final MotorUsage? uso = MotorUsage.fromMap(dados);
     if (uso != null) {
       _motorUsageByDevice[deviceId] = uso;
       _conferirManutencao(deviceId);
     }
     final Object? relays = dados['relays'];
-    if (relays is List && relays.length == 4 && relays.every((v) => v is bool)) {
+    if (relays is List &&
+        relays.length == 4 &&
+        relays.every((v) => v is bool)) {
       final List<bool> estados = relays.cast<bool>();
       _relaysByDevice[deviceId] = estados;
       _motorOnByDevice[deviceId] = estados.any((ligado) => ligado);
+      _lastTelemetryReceivedByDevice[deviceId] = DateTime.now();
+      _markDeviceSeen(deviceId);
     }
     final Object? desarme = dados['trip_field'];
     if (desarme is String && desarme.isNotEmpty) {
@@ -1435,6 +1492,30 @@ class MotorControlController extends ChangeNotifier {
     return _relaysByDevice.keys.isEmpty ? null : _relaysByDevice.keys.first;
   }
 
+  bool _hasFreshTelemetryFrom(String deviceId) {
+    if (!isConnected) return false;
+    final String status = _statusByDevice[deviceId]?.trim().toLowerCase() ?? '';
+    if (status == 'offline') return false;
+    final DateTime? receivedAt = _lastTelemetryReceivedByDevice[deviceId];
+    return receivedAt != null && telemetryIsFreshAt(receivedAt);
+  }
+
+  /// O estado visual do motor só é confiável enquanto o quadro publica
+  /// telemetria. Depois de 10 s sem leitura, o estado passa a desconhecido.
+  bool get hasLiveMotorState {
+    final String? dev = _benchDeviceId;
+    return dev != null && _hasFreshTelemetryFrom(dev);
+  }
+
+  /// A partida exige uma tensao positiva e finita, confirmada recentemente.
+  /// A parada nao depende dessa leitura.
+  bool get hasValidBenchVoltage {
+    final String? dev = _benchDeviceId;
+    if (dev == null || !_hasFreshTelemetryFrom(dev)) return false;
+    final double? voltage = _voltageByDevice[dev];
+    return voltage != null && voltage.isFinite && voltage > 0;
+  }
+
   /// Ligado quando algum contator da placa de comandos está ligado. É o que
   /// decide Ligar/Desligar: a "placa selecionada" em modo automático alterna
   /// entre o ESP32-01 e o S3, que não tem contatores.
@@ -1452,13 +1533,16 @@ class MotorControlController extends ChangeNotifier {
   /// sem `motor_running`, seguem pelos contatores.
   bool get isMotorRunning {
     final String? dev = _benchDeviceId;
-    return (dev == null ? null : _runningByDevice[dev]) ?? isBenchMotorOn;
+    if (dev == null || !_hasFreshTelemetryFrom(dev)) return false;
+    return _runningByDevice[dev] ?? isBenchMotorOn;
   }
 
   /// Estado lógico de CNT 1 a CNT 4 informado pela placa de comandos.
   List<bool>? get benchRelays {
     final String? dev = _benchDeviceId;
-    return dev == null ? null : _relaysByDevice[dev];
+    return dev == null || !_hasFreshTelemetryFrom(dev)
+        ? null
+        : _relaysByDevice[dev];
   }
 
   void _scheduleSettingsPersist() {
