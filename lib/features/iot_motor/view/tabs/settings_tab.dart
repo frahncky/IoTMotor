@@ -49,16 +49,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
 
   MotorControlController get controller => widget.controller;
 
-  /// As telas de cada seção são empilhadas por cima do app e leem este estado
-  /// (campos e escolhas): mudou aqui, elas se redesenham também.
-  final ValueNotifier<int> _versao = ValueNotifier<int>(0);
-
-  @override
-  void setState(VoidCallback fn) {
-    super.setState(fn);
-    _versao.value++;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -90,7 +80,6 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     _acqPublishController.dispose();
     _acqChartController.dispose();
     _acqRecordController.dispose();
-    _versao.dispose();
     super.dispose();
   }
 
@@ -104,155 +93,83 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final ({String texto, bool atualizar})? firmwareQuadro = controller
-        .firmwareOf('esp32-01');
     final bool atualizacao = controller.boardsToUpdate.isNotEmpty;
-    return ListView(
-      key: const ValueKey<String>('tab_configuracoes'),
-      padding: appPagePadding,
-      children: <Widget>[
-        _grupo(context, 'Conexão', <Widget>[
-          _item(
-            icon: Icons.cloud_outlined,
-            titulo: 'Conexão',
-            subtitulo:
-                controller.isConnected
-                    ? 'Conectado · ${controller.connectionHost}'
-                    : 'Desconectado · ${controller.connectionHost}',
-            abrir: () => _abrir('Conexão', _buildConnectionPage),
-          ),
-          _item(
-            icon: Icons.memory_rounded,
-            titulo: 'Placas e atualizações',
-            subtitulo:
-                atualizacao
-                    ? 'Atualização de firmware disponível'
-                    : firmwareQuadro == null
-                    ? 'Firmware, Wi-Fi das placas e versão do app'
-                    : 'Firmware em dia',
-            destaque: atualizacao,
-            abrir:
-                () => _abrir(
-                  'Placas e atualizações',
-                  (BuildContext context) => <Widget>[
-                    DeviceMaintenanceSection(controller: controller),
-                  ],
-                ),
-          ),
-        ]),
-        appSectionGap,
-        _grupo(context, 'Motor e alarmes', <Widget>[
-          _item(
-            icon: Icons.electric_bolt_rounded,
-            titulo: 'Motor',
-            subtitulo: 'Dados de placa, manutenção e som',
-            abrir:
-                () => _abrir(
-                  'Motor',
-                  (BuildContext context) => <Widget>[
-                    MotorSettingsPanel(controller: controller),
-                  ],
-                ),
-          ),
-          _item(
-            icon: Icons.notifications_active_outlined,
-            titulo: 'Notificações',
-            subtitulo: 'Alertas no celular e limites do app',
-            abrir: () => _abrir('Notificações', _buildNotificationsPage),
-          ),
-        ]),
-        appSectionGap,
-        _grupo(context, 'Dados', <Widget>[
-          _item(
-            icon: Icons.speed_rounded,
-            titulo: 'Aquisição',
-            subtitulo: 'Intervalos de leitura, envio e registro',
-            abrir: () => _abrir('Aquisição', _buildAcquisitionPage),
-          ),
-          _item(
-            icon: Icons.storage_rounded,
-            titulo: 'Armazenamento',
-            subtitulo: controller.historyRetentionSummary,
-            abrir: () => _abrir('Armazenamento', _buildStoragePage),
-          ),
-        ]),
-      ],
-    );
-  }
-
-  Widget _grupo(BuildContext context, String titulo, List<Widget> itens) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
-          child: Text(
-            titulo.toUpperCase(),
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(letterSpacing: 0.8),
-          ),
-        ),
-        Material(
-          color: AppTheme.surfaceSoft,
-          borderRadius: BorderRadius.circular(16),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: <Widget>[
-              for (int i = 0; i < itens.length; i++) ...<Widget>[
-                if (i > 0)
-                  Divider(
-                    height: 1,
-                    indent: 56,
-                    color: AppTheme.inputBorder.withValues(alpha: 0.3),
+    final List<(String, Widget?, List<Widget> Function(BuildContext))> abas =
+        <(String, Widget?, List<Widget> Function(BuildContext))>[
+          ('Conexão', null, _buildConnectionPage),
+          (
+            'Placas',
+            // Ponto laranja: há firmware novo para instalar.
+            atualizacao
+                ? Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: AppTheme.brandOrange,
+                    shape: BoxShape.circle,
                   ),
-                itens[i],
-              ],
+                )
+                : null,
+            (BuildContext context) => <Widget>[
+              DeviceMaintenanceSection(controller: controller),
             ],
           ),
-        ),
-      ],
-    );
-  }
+          (
+            'Motor',
+            null,
+            (BuildContext context) => <Widget>[
+              MotorSettingsPanel(controller: controller),
+            ],
+          ),
+          ('Notificações', null, _buildNotificationsPage),
+          ('Aquisição', null, _buildAcquisitionPage),
+          ('Armazenamento', null, _buildStoragePage),
+        ];
 
-  Widget _item({
-    required IconData icon,
-    required String titulo,
-    required String subtitulo,
-    required VoidCallback abrir,
-    bool destaque = false,
-  }) {
-    return ListTile(
-      key: ValueKey<String>('config_$titulo'),
-      leading: Icon(icon, color: destaque ? AppTheme.brandOrange : null),
-      title: Text(titulo),
-      subtitle: Text(
-        subtitulo,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: destaque ? AppTheme.brandOrange : null),
-      ),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: abrir,
-    );
-  }
-
-  /// Abre a seção numa tela própria, com voltar, por cima da barra inferior.
-  void _abrir(String titulo, List<Widget> Function(BuildContext) corpo) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder:
-            (BuildContext context) => Scaffold(
-              appBar: AppBar(title: Text(titulo)),
-              body: ListenableBuilder(
-                listenable: Listenable.merge(<Listenable>[controller, _versao]),
-                builder:
-                    (BuildContext context, _) => ListView(
-                      padding: appPagePadding,
-                      children: corpo(context),
-                    ),
-              ),
+    return DefaultTabController(
+      key: const ValueKey<String>('tab_configuracoes'),
+      length: abas.length,
+      child: Column(
+        children: <Widget>[
+          TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            dividerColor: AppTheme.inputBorder.withValues(alpha: 0.3),
+            tabs: <Widget>[
+              for (final (String nome, Widget? marca, _) in abas)
+                Tab(
+                  key: ValueKey<String>('config_$nome'),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(nome),
+                      if (marca != null) ...<Widget>[
+                        const SizedBox(width: 6),
+                        marca,
+                      ],
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: <Widget>[
+                for (final (
+                      String nome,
+                      _,
+                      List<Widget> Function(BuildContext) corpo,
+                    )
+                    in abas)
+                  ListView(
+                    key: ValueKey<String>('config_pagina_$nome'),
+                    padding: appPagePadding,
+                    children: corpo(context),
+                  ),
+              ],
             ),
+          ),
+        ],
       ),
     );
   }

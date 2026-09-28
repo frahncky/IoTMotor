@@ -106,7 +106,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 900));
     for (final String item in <String>[
       'Conexão',
-      'Placas e atualizações',
+      'Placas',
       'Motor',
       'Notificações',
       'Aquisição',
@@ -123,18 +123,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
     }
 
-    Future<void> voltar() async {
-      await tester.pageBack();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
-    }
 
     await abrir('Conexão');
     expect(find.text('Perfil'), findsOneWidget);
     expect(find.text('Broker MQTT'), findsOneWidget);
     expect(find.text('Endereço do broker'), findsOneWidget);
     expect(find.text('Avançado'), findsOneWidget);
-    await voltar();
 
     await abrir('Motor');
     expect(find.text('Dados de placa'), findsOneWidget);
@@ -143,7 +137,6 @@ void main() {
     expect(find.text('Zerar horímetro e partidas'), findsOneWidget);
     expect(find.text('Som do motor'), findsOneWidget);
     expect(find.text('Testar som'), findsOneWidget);
-    await voltar();
 
     await abrir('Armazenamento');
     expect(find.text('Neste celular'), findsOneWidget);
@@ -154,12 +147,10 @@ void main() {
     expect(find.text('7 dias'), findsNothing);
     expect(find.text('Aplicar'), findsOneWidget);
     expect(find.text('Aplicar no ESP32'), findsOneWidget);
-    await voltar();
 
     await abrir('Notificações');
     expect(find.text('Alertas no celular'), findsOneWidget);
     expect(find.text('Limites do app'), findsOneWidget);
-    await voltar();
   });
 
   testWidgets('medições não estouram em tela estreita', (
