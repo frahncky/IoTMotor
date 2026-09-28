@@ -26,6 +26,7 @@ class TelemetrySample {
   final double? powerFactor;
   final double? frequency;
   final double? energy;
+
   /// Vibração pelo padrão de máquinas elétricas (ISO 10816-3): velocidade
   /// RMS em mm/s, medida pela placa de sensores (campo `vibration_mms`).
   /// A aceleração em g do firmware antigo (campo `vibration`) não é usada.
@@ -89,18 +90,28 @@ class TelemetrySample {
       'energia',
       'kwh',
     ]);
-    final double? vibration = _readDouble(source, const <String>['vibration_mms']);
+    final double? vibration = _readDouble(source, const <String>[
+      'vibration_mms',
+    ]);
     final double? temperature = _readDouble(source, const <String>[
       'temperature',
       'temperatura',
       'temp',
     ]);
-    final bool? motorOn = _readBool(source, const <String>[
-      'motor_on',
-      'motorOn',
-      'ligado',
-      'is_on',
-    ]);
+    // O quadro de comando não manda `motor_on`: conta como ligado com algum
+    // contator ligado (mesma regra da tela ao vivo) ou, sem `relays`, pelo
+    // `motor_running`.
+    final Object? relays = source['relays'];
+    final bool? motorOn =
+        _readBool(source, const <String>[
+          'motor_on',
+          'motorOn',
+          'ligado',
+          'is_on',
+        ]) ??
+        (relays is List && relays.isNotEmpty && relays.every((v) => v is bool)
+            ? relays.contains(true)
+            : _readBool(source, const <String>['motor_running']));
     final String? mode = _readString(source, const <String>[
       'mode',
       'modo',

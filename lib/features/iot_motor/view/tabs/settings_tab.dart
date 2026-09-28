@@ -94,36 +94,30 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
   @override
   Widget build(BuildContext context) {
     final bool atualizacao = controller.boardsToUpdate.isNotEmpty;
-    final List<(String, Widget?, List<Widget> Function(BuildContext))> abas =
-        <(String, Widget?, List<Widget> Function(BuildContext))>[
-          ('Conexão', null, _buildConnectionPage),
+    final List<(String, IconData, List<Widget> Function(BuildContext))> abas =
+        <(String, IconData, List<Widget> Function(BuildContext))>[
+          ('Conexão', Icons.cloud_outlined, _buildConnectionPage),
           (
             'Placas',
-            // Ponto laranja: há firmware novo para instalar.
-            atualizacao
-                ? Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: AppTheme.brandOrange,
-                    shape: BoxShape.circle,
-                  ),
-                )
-                : null,
+            Icons.memory_rounded,
             (BuildContext context) => <Widget>[
               DeviceMaintenanceSection(controller: controller),
             ],
           ),
           (
             'Motor',
-            null,
+            Icons.electric_bolt_rounded,
             (BuildContext context) => <Widget>[
               MotorSettingsPanel(controller: controller),
             ],
           ),
-          ('Notificações', null, _buildNotificationsPage),
-          ('Aquisição', null, _buildAcquisitionPage),
-          ('Armazenamento', null, _buildStoragePage),
+          (
+            'Notificações',
+            Icons.notifications_active_outlined,
+            _buildNotificationsPage,
+          ),
+          ('Aquisição', Icons.speed_rounded, _buildAcquisitionPage),
+          ('Armazenamento', Icons.storage_rounded, _buildStoragePage),
         ];
 
     return DefaultTabController(
@@ -136,18 +130,16 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
             tabAlignment: TabAlignment.start,
             dividerColor: AppTheme.inputBorder.withValues(alpha: 0.3),
             tabs: <Widget>[
-              for (final (String nome, Widget? marca, _) in abas)
+              for (final (String nome, IconData icone, _) in abas)
                 Tab(
                   key: ValueKey<String>('config_$nome'),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Text(nome),
-                      if (marca != null) ...<Widget>[
-                        const SizedBox(width: 6),
-                        marca,
-                      ],
-                    ],
+                  text: nome,
+                  // Ponto laranja em Placas: há firmware novo para instalar.
+                  icon: Badge(
+                    isLabelVisible: nome == 'Placas' && atualizacao,
+                    backgroundColor: AppTheme.brandOrange,
+                    smallSize: 8,
+                    child: Icon(icone),
                   ),
                 ),
             ],
