@@ -93,3 +93,32 @@ List<HistoryEvent> historyEventsFrom(
   }
   return eventos;
 }
+
+/// Leituras que vão para o armazenamento: uma a cada [recordMs] por placa e,
+/// fora desse ritmo, toda leitura em que o motor ligou, desligou ou trocou de
+/// modo. Sem isso, o evento some do histórico ao reabrir o app.
+List<TelemetryHistoryEntry> historyEntriesToPersist(
+  List<TelemetryHistoryEntry> origem, {
+  required int recordMs,
+}) {
+  final Map<String, DateTime> ultimaPorPlaca = <String, DateTime>{};
+  final Map<String, TelemetrySample> anteriorPorPlaca =
+      <String, TelemetrySample>{};
+  final List<TelemetryHistoryEntry> gravar = <TelemetryHistoryEntry>[];
+  for (final TelemetryHistoryEntry entry in origem) {
+    final DateTime? ultima = ultimaPorPlaca[entry.deviceId];
+    final TelemetrySample? anterior = anteriorPorPlaca[entry.deviceId];
+    anteriorPorPlaca[entry.deviceId] = entry.sample;
+    final bool mudou =
+        anterior != null &&
+        (anterior.motorOn != entry.sample.motorOn ||
+            anterior.mode != entry.sample.mode);
+    if (ultima == null ||
+        mudou ||
+        entry.sample.timestamp.difference(ultima).inMilliseconds >= recordMs) {
+      gravar.add(entry);
+      ultimaPorPlaca[entry.deviceId] = entry.sample.timestamp;
+    }
+  }
+  return gravar;
+}

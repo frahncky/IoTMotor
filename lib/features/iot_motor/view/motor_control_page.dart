@@ -330,10 +330,27 @@ class _NewsTickerState extends State<_NewsTicker>
   @override
   void initState() {
     super.initState();
+    // Só anda quando o texto não cabe (ver _rolar): parado, não pede quadros.
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 14),
-    )..repeat();
+    );
+  }
+
+  /// Liga ou desliga a animação depois do quadro atual, sem mexer nela
+  /// durante o build.
+  void _rolar(bool rolar) {
+    if (rolar == _controller.isAnimating) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || rolar == _controller.isAnimating) return;
+      if (rolar) {
+        _controller.repeat();
+      } else {
+        _controller
+          ..stop()
+          ..value = 0;
+      }
+    });
   }
 
   @override
@@ -358,6 +375,7 @@ class _NewsTickerState extends State<_NewsTicker>
         )..layout();
 
         if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
+          _rolar(false);
           return Text(
             widget.text,
             style: style,
@@ -369,6 +387,7 @@ class _NewsTickerState extends State<_NewsTicker>
 
         final double cycleWidth = painter.width + _gap;
         if (cycleWidth <= constraints.maxWidth) {
+          _rolar(false);
           return Text(
             widget.text,
             style: style,
@@ -378,6 +397,7 @@ class _NewsTickerState extends State<_NewsTicker>
           );
         }
 
+        _rolar(true);
         return ClipRect(
           child: SizedBox(
             width: constraints.maxWidth,

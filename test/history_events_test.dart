@@ -100,4 +100,60 @@ void main() {
     ]);
     expect(eventos.last.mode, 'estrela');
   });
+
+  test('o quadro de comando conta como ligado pelos contatores', () {
+    TelemetrySample? ler(String json) =>
+        TelemetrySample.tryParsePayload(json, timestamp: _t0);
+
+    // Firmware atual do quadro: sem motor_on, só relays e motor_running.
+    expect(
+      ler(
+        '{"voltage":220,"relays":[true,false,false,false],"motor_running":true}',
+      )?.motorOn,
+      isTrue,
+    );
+    expect(
+      ler(
+        '{"voltage":220,"relays":[false,false,false,false],"motor_running":false}',
+      )?.motorOn,
+      isFalse,
+    );
+    // Sem relays, vale o motor_running; motor_on, quando vem, manda.
+    expect(ler('{"voltage":220,"motor_running":true}')?.motorOn, isTrue);
+    expect(
+      ler('{"motor_on":false,"relays":[true,false,false,false]}')?.motorOn,
+      isFalse,
+    );
+  });
+
+  test('gravação guarda as mudanças mesmo entre dois registros', () {
+    // Registro a cada 30 s; o motor liga e desliga entre dois deles.
+    final List<TelemetryHistoryEntry> origem = <TelemetryHistoryEntry>[
+      for (int s = 0; s <= 60; s += 5)
+        TelemetryHistoryEntry(
+          deviceId: 'esp32-01',
+          sample: TelemetrySample(
+            timestamp: _t0.add(Duration(seconds: s)),
+            motorOn: s >= 10 && s < 20,
+          ),
+        ),
+    ];
+
+    final List<TelemetryHistoryEntry> gravadas = historyEntriesToPersist(
+      origem,
+      recordMs: 30000,
+    );
+
+    expect(
+      gravadas.map((TelemetryHistoryEntry e) => e.sample.timestamp.second),
+      <int>[0, 10, 20, 50],
+    );
+    expect(
+      historyEventsFrom(
+        gravadas,
+        placaDoMotor: 'esp32-01',
+      ).map((HistoryEvent e) => e.kind),
+      <HistoryEventKind>[HistoryEventKind.ligou, HistoryEventKind.desligou],
+    );
+  });
 }
