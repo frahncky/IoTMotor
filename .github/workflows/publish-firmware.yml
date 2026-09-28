@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: publish-firmware-main
+  cancel-in-progress: true
 jobs:
   publish:
     runs-on: ubuntu-latest
