@@ -233,7 +233,7 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
       return controller.isBusy ? 'Conectando…' : 'Desconectado';
     }
     if (controller.hasStaleTelemetry) return 'Conectado · sem dados recentes';
-    final int placas = controller.maintenanceBoards.length;
+    final int placas = controller.connectedDeviceCount;
     return switch (placas) {
       0 => 'Conectado · nenhuma placa no ar',
       1 => 'Conectado · 1 placa no ar',

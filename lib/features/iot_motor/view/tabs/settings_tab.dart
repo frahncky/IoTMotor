@@ -482,6 +482,9 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           key: ValueKey<String>(key),
+          // Recolhido, os campos continuam montados: o Form da conexão
+          // precisa validá-los mesmo com "Avançado" fechado.
+          maintainState: true,
           title: Text(titulo, style: Theme.of(context).textTheme.titleMedium),
           subtitle: Text(
             subtitulo,
@@ -879,7 +882,21 @@ class _ConfiguracoesTabState extends ConsumerState<ConfiguracoesTab> {
     }
 
     if (!(_connectionFormKey.currentState?.validate() ?? false)) {
-      _showSnackBar('Revise os dados da conexão MQTT.');
+      // Os campos de "Avançado" podem estar recolhidos: diz onde olhar.
+      final bool avancado =
+          MqttSettingsValidators.validateClientId(
+                controller.clientIdController.text,
+              ) !=
+              null ||
+          MqttSettingsValidators.validateTopicPrefix(
+                controller.topicPrefixController.text,
+              ) !=
+              null;
+      _showSnackBar(
+        avancado
+            ? 'Revise o Client ID ou o prefixo dos tópicos em "Avançado".'
+            : 'Revise os dados da conexão MQTT.',
+      );
       return;
     }
 
