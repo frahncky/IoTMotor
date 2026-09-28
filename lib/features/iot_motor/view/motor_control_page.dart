@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:iotmotor/app/theme/app_theme.dart';
 import 'package:iotmotor/features/iot_motor/controller/motor_control_controller.dart';
+import 'package:iotmotor/features/iot_motor/models/device_names.dart';
 import 'package:iotmotor/features/iot_motor/models/mqtt_connection_config.dart';
 import 'package:iotmotor/features/iot_motor/services/alertas_no_celular.dart';
 import 'package:iotmotor/features/iot_motor/view/tabs/settings_tab.dart';
@@ -207,12 +208,10 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      _statusText(controller),
+                  Expanded(
+                    child: _NewsTicker(
                       key: const ValueKey<String>('app_bar_status'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      text: _tickerText(controller),
                       style: texto.labelMedium?.copyWith(
                         color: AppTheme.inkSoft,
                       ),
@@ -240,6 +239,29 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
       _ => 'Conectado · $placas placas no ar',
     };
   }
+
+  /// Conexão, placas, leituras, alertas e quem mais está usando.
+  ///
+  /// Sem contagem de segundos: o texto mudaria o tempo todo enquanto corre.
+  String _tickerText(MotorControlController controller) {
+    final String status = _statusText(controller);
+    if (!controller.isConnected) return status;
+    final List<String> conectadas = controller.connectedDeviceIds;
+    final List<String> partes = <String>[
+      status,
+      for (final String placa in controller.knownDeviceIds)
+        '${nomeDaPlaca(placa)} ${conectadas.contains(placa) ? 'no ar' : 'fora do ar'}',
+      if (!controller.hasStaleTelemetry &&
+          controller.latestTelemetryReceivedAt != null)
+        'Leituras em dia',
+      _primeiraMaiuscula(controller.alertStatusSummary),
+      'Usando agora: ${controller.commandClientsSummary.split(' · ').skip(1).join(' · ')}',
+    ];
+    return '${partes.join('   •   ')}   •';
+  }
+
+  static String _primeiraMaiuscula(String texto) =>
+      texto.isEmpty ? texto : texto[0].toUpperCase() + texto.substring(1);
 
   Color _statusColor(MotorControlController controller) {
     if (controller.hasStaleTelemetry) {
@@ -284,6 +306,115 @@ class _MotorControlPageState extends ConsumerState<MotorControlPage>
           label: 'Configura\u00e7\u00f5es',
         ),
       ],
+    );
+  }
+}
+
+/// Linha de informações que corre da direita para a esquerda quando não cabe
+/// na largura; se couber, fica parada.
+class _NewsTicker extends StatefulWidget {
+  const _NewsTicker({super.key, required this.text, this.style});
+
+  final String text;
+  final TextStyle? style;
+
+  @override
+  State<_NewsTicker> createState() => _NewsTickerState();
+}
+
+class _NewsTickerState extends State<_NewsTicker>
+    with SingleTickerProviderStateMixin {
+  static const double _gap = 28;
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 14),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle style =
+        widget.style ??
+        Theme.of(context).textTheme.labelMedium ??
+        const TextStyle();
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final TextPainter painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: 1,
+          textDirection: TextDirection.ltr,
+        )..layout();
+
+        if (!constraints.maxWidth.isFinite || constraints.maxWidth <= 0) {
+          return Text(
+            widget.text,
+            style: style,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          );
+        }
+
+        final double cycleWidth = painter.width + _gap;
+        if (cycleWidth <= constraints.maxWidth) {
+          return Text(
+            widget.text,
+            style: style,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+          );
+        }
+
+        return ClipRect(
+          child: SizedBox(
+            width: constraints.maxWidth,
+            height: painter.height,
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (BuildContext context, Widget? child) {
+                final double offset = -_controller.value * cycleWidth;
+                return Stack(
+                  children: <Widget>[
+                    Positioned(
+                      left: offset,
+                      top: 0,
+                      child: Text(
+                        widget.text,
+                        style: style,
+                        maxLines: 1,
+                        softWrap: false,
+                      ),
+                    ),
+                    Positioned(
+                      left: offset + cycleWidth,
+                      top: 0,
+                      child: Text(
+                        widget.text,
+                        style: style,
+                        maxLines: 1,
+                        softWrap: false,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }

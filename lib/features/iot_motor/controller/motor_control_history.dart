@@ -4,7 +4,7 @@ part of 'motor_control_controller.dart';
 extension MotorControlHistory on MotorControlController {
   UnmodifiableListView<TelemetrySample> get history =>
       UnmodifiableListView<TelemetrySample>(
-        _recebeuDadoAtual ? _buildCombinedHistory() : <TelemetrySample>[]
+        _recebeuDadoAtual ? _buildCombinedHistory() : <TelemetrySample>[],
       );
 
   UnmodifiableListView<TelemetryHistoryEntry> get historyEntries =>
@@ -16,6 +16,12 @@ extension MotorControlHistory on MotorControlController {
       UnmodifiableListView<TelemetryHistoryEntry>(
         _buildFilteredHistoryEntries(),
       );
+
+  /// Mudanças do motor (ligou, desligou, modo) nas leituras filtradas.
+  List<HistoryEvent> get historyEvents => historyEventsFrom(
+    _buildFilteredHistoryEntries(),
+    placaDoMotor: _motorDeviceId ?? 'esp32-01',
+  );
 
   bool get hasActiveHistoryFilters =>
       _historyDeviceFilter != MotorControlController.historyFilterAll ||
@@ -243,8 +249,10 @@ extension MotorControlHistory on MotorControlController {
     if (atual != null && inicio.isBefore(atual.start)) return;
 
     if (atual == null || inicio != atual.start) {
-      final _ChartBucketAccumulator novo =
-          _ChartBucketAccumulator(inicio, sample);
+      final _ChartBucketAccumulator novo = _ChartBucketAccumulator(
+        inicio,
+        sample,
+      );
       _chartBucketsByDevice[deviceId] = novo;
       _addSampleToHistory(deviceId: deviceId, sample: novo.build());
       return;
@@ -386,9 +394,12 @@ extension MotorControlHistory on MotorControlController {
       return;
     }
     _historyPersistTimer?.cancel();
-    _historyPersistTimer = Timer(MotorControlController._historyPersistDelay, () {
-      unawaited(_persistHistory());
-    });
+    _historyPersistTimer = Timer(
+      MotorControlController._historyPersistDelay,
+      () {
+        unawaited(_persistHistory());
+      },
+    );
   }
 
   Future<void> _persistHistory() async {
@@ -421,13 +432,18 @@ extension MotorControlHistory on MotorControlController {
             ? _boardHistoryByDevice.keys.first
             : null;
     if (placa == null) return const <BoardHistoryHour>[];
-    final DateTime inicio = DateTime.now().subtract(const Duration(days: 7, hours: 1));
+    final DateTime inicio = DateTime.now().subtract(
+      const Duration(days: 7, hours: 1),
+    );
     final List<BoardHistoryHour> horas = <BoardHistoryHour>[
-      for (final List<BoardHistoryHour> dia in _boardHistoryByDevice[placa]!.values)
+      for (final List<BoardHistoryHour> dia
+          in _boardHistoryByDevice[placa]!.values)
         for (final BoardHistoryHour hora in dia)
           if (hora.time.isAfter(inicio)) hora,
     ];
-    horas.sort((BoardHistoryHour a, BoardHistoryHour b) => a.time.compareTo(b.time));
+    horas.sort(
+      (BoardHistoryHour a, BoardHistoryHour b) => a.time.compareTo(b.time),
+    );
     return horas;
   }
 }
@@ -472,17 +488,17 @@ class _ChartBucketAccumulator {
   }
 
   TelemetrySample build() => TelemetrySample(
-        timestamp: start,
-        measuredByBoard: measuredByBoard,
-        voltage: _average('voltage'),
-        current: _average('current'),
-        power: _average('power'),
-        powerFactor: _average('powerFactor'),
-        frequency: _average('frequency'),
-        energy: energy,
-        vibration: _average('vibration'),
-        temperature: _average('temperature'),
-        motorOn: motorOn,
-        mode: mode,
-      );
+    timestamp: start,
+    measuredByBoard: measuredByBoard,
+    voltage: _average('voltage'),
+    current: _average('current'),
+    power: _average('power'),
+    powerFactor: _average('powerFactor'),
+    frequency: _average('frequency'),
+    energy: energy,
+    vibration: _average('vibration'),
+    temperature: _average('temperature'),
+    motorOn: motorOn,
+    mode: mode,
+  );
 }
