@@ -39,6 +39,7 @@ inline uint8_t total = 0;
 inline uint8_t chavePrivada[32];
 inline uint8_t chavePublica[65];  // Ponto P-256 nao comprimido (0x04 || X || Y).
 inline bool chavesProntas = false;
+inline char ultimaRede[MAX_SSID + 1] = "";
 
 inline int aleatorio(void*, unsigned char* saida, size_t tamanho) {
   esp_fill_random(saida, tamanho);
@@ -59,6 +60,15 @@ inline void salvar() {
     else memoria.remove(chave);
   }
   memoria.end();
+}
+
+inline void salvarUltimaRede(const char* ssid) {
+  if (!ssid || !*ssid || !strcmp(ultimaRede, ssid)) return;
+  strncpy(ultimaRede, ssid, MAX_SSID); ultimaRede[MAX_SSID] = '\0';
+  Preferences memoria;
+  if (memoria.begin("iot-redes", false)) {
+    memoria.putString("last", ultimaRede); memoria.end();
+  }
 }
 
 inline int indiceDe(const char* ssid) {
@@ -120,6 +130,18 @@ inline void carregar(const char* const* ssidsIniciais, const char* const* senhas
   Preferences memoria;
   memoria.begin("iot-redes", false);
   const bool semeada = memoria.getBool("ok", false);
+  const String ultima = memoria.getString("last", "");
+  strncpy(ultimaRede, ultima.c_str(), MAX_SSID);
+  ultimaRede[MAX_SSID] = '\0';
+  // Migracao: no primeiro boot desta versao, aproveita a ultima configuracao
+  // lembrada pelo driver. Depois disso, somente uma conexao confirmada a troca.
+  if (!ultimaRede[0]) {
+    wifi_config_t lembrada = {};
+    if (esp_wifi_get_config(WIFI_IF_STA, &lembrada) == ESP_OK && lembrada.sta.ssid[0])
+      memcpy(ultimaRede, lembrada.sta.ssid, MAX_SSID);
+    ultimaRede[MAX_SSID] = '\0';
+    memset(&lembrada, 0, sizeof(lembrada));
+  }
   total = 0;
   if (semeada) {
     const uint8_t salvas = memoria.getUChar("n", 0);
@@ -262,62 +284,85 @@ inline bool decifrarSenha(const char* ssid, const char* epkB64, const char* ivB6
   return true;
 }
 
-// Busca as redes visiveis e tenta as cadastradas na ordem da lista.
-inline bool tentarRede(const Rede& rede, uint32_t esperaMs) {
+// Tenta uma rede por uma janela curta e registra somente conexoes confirmadas.
+inline bool tentarRede(const Rede& rede, uint32_t esperaMs, int32_t canal = 0,
+                       const uint8_t* bssid = nullptr) {
   Serial.printf("[WiFi] tentando %s\n", rede.ssid);
   WiFi.disconnect(false, false);
-  if (*rede.senha) WiFi.begin(rede.ssid, rede.senha);
-  else WiFi.begin(rede.ssid);
+  if (*rede.senha) WiFi.begin(rede.ssid, rede.senha, canal, bssid, true);
+  else WiFi.begin(rede.ssid, nullptr, canal, bssid, true);
   const unsigned long inicio = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - inicio < esperaMs) {
-    watchdog::alimentar();
-    delay(100);
+    watchdog::alimentar(); delay(100);
   }
-  return WiFi.status() == WL_CONNECTED;
+  const bool conectou = WiFi.status() == WL_CONNECTED;
+  if (conectou) salvarUltimaRede(rede.ssid);
+  return conectou;
 }
 
-// Conecta na ordem da lista.
-//
-// A varredura serve so para escolher a ordem, nunca para descartar uma rede: no
-// boot ela costuma vir incompleta, e uma rede cadastrada que nao apareceu na
-// lista era pulada. Era isso que fazia a placa abrir a rede propria com a rede
-// certa ja gravada. Em ultimo caso tenta as credenciais que o proprio ESP32
-// guardou (foi o portal que gravou) e, se funcionarem, coloca a rede na lista.
-inline bool conectarEmOrdem(uint32_t esperaPorRedeMs) {
+// Ultima rede valida primeiro; depois scan e redes visiveis por prioridade/RSSI;
+// por fim, redes nao vistas. A lista do usuario nunca e reordenada.
+inline bool conectarEmOrdem(uint32_t esperaPorRedeMs = 3500) {
   if (!total) return false;
   WiFi.mode(WIFI_STA);
-  delay(100);  // Radio recem ligado: a varredura sai mais completa.
+  const uint32_t esperaRede = esperaPorRedeMs < 3000 ? 3000 :
+                              (esperaPorRedeMs > 4000 ? 4000 : esperaPorRedeMs);
+  const uint32_t esperaUltima = esperaRede > 2500 ? 2500 : esperaRede;
+  const int indiceUltima = indiceDe(ultimaRede);
+  if (indiceUltima >= 0 && tentarRede(redes[indiceUltima], esperaUltima)) return true;
+
+  delay(100);
   const int encontradas = WiFi.scanNetworks(false, true);
+  struct Candidata { uint8_t indice; int32_t rssi; int32_t canal; uint8_t bssid[6]; };
+  Candidata visiveis[MAX_REDES];
+  uint8_t nVisiveis = 0;
   bool vista[MAX_REDES] = {false};
-  for (uint8_t i = 0; i < total; ++i)
-    for (int j = 0; j < encontradas && !vista[i]; ++j)
-      vista[i] = WiFi.SSID(j) == redes[i].ssid;
+  for (uint8_t i = 0; i < total; ++i) {
+    int melhor = -1;
+    for (int j = 0; j < encontradas; ++j)
+      if (WiFi.SSID(j) == redes[i].ssid && (melhor < 0 || WiFi.RSSI(j) > WiFi.RSSI(melhor))) melhor = j;
+    if (melhor < 0) continue;
+    vista[i] = true;
+    if (i == indiceUltima) continue;
+    Candidata& c = visiveis[nVisiveis++];
+    c.indice = i; c.rssi = WiFi.RSSI(melhor); c.canal = WiFi.channel(melhor);
+    memcpy(c.bssid, WiFi.BSSID(melhor), sizeof(c.bssid));
+  }
   WiFi.scanDelete();
 
-  for (uint8_t i = 0; i < total; ++i)  // Primeiro as que a varredura viu.
-    if (vista[i] && tentarRede(redes[i], esperaPorRedeMs)) return true;
+  // Cada posicao de prioridade vale 8 dB; o RSSI decide quando a diferenca
+  // de sinal torna uma rede posterior claramente mais acessivel.
+  for (uint8_t i = 0; i < nVisiveis; ++i)
+    for (uint8_t j = i + 1; j < nVisiveis; ++j) {
+      const int32_t scoreI = visiveis[i].rssi - (int32_t)visiveis[i].indice * 8;
+      const int32_t scoreJ = visiveis[j].rssi - (int32_t)visiveis[j].indice * 8;
+      if (scoreJ > scoreI) {
+        const Candidata troca = visiveis[i]; visiveis[i] = visiveis[j]; visiveis[j] = troca;
+      }
+    }
+  for (uint8_t i = 0; i < nVisiveis; ++i) {
+    const Candidata& c = visiveis[i];
+    if (tentarRede(redes[c.indice], esperaRede, c.canal, c.bssid)) return true;
+  }
 
-  const uint32_t curta = esperaPorRedeMs > 5000 ? 5000 : esperaPorRedeMs;
-  for (uint8_t i = 0; i < total; ++i)  // Depois as demais, com espera menor.
-    if (!vista[i] && tentarRede(redes[i], curta)) return true;
+  const uint32_t curta = esperaRede > 3000 ? 3000 : esperaRede;
+  for (uint8_t i = 0; i < total; ++i)
+    if (!vista[i] && i != indiceUltima && tentarRede(redes[i], curta)) return true;
 
   Serial.println("[WiFi] tentando as credenciais guardadas pelo proprio ESP32");
-  WiFi.disconnect(false, false);
-  WiFi.begin();
+  WiFi.disconnect(false, false); WiFi.begin();
   const unsigned long inicio = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - inicio < curta) {
-    watchdog::alimentar();
-    delay(100);
+    watchdog::alimentar(); delay(100);
   }
   if (WiFi.status() != WL_CONNECTED) return false;
   const String ssid = WiFi.SSID(), senha = WiFi.psk();
+  salvarUltimaRede(ssid.c_str());
   const int ja = indiceDe(ssid.c_str());
-  // Sem sobrescrever uma senha boa por uma vazia que o portal nao devolveu.
   if (ja < 0 || (senha.length() && strcmp(redes[ja].senha, senha.c_str())))
     adicionar(ssid.c_str(), senha.c_str(), 0);
   return true;
 }
-
 // ---- Rede propria da placa (ponto de acesso usado pelo portal) ----
 // Nome e senha definidos pela aba "Wi-Fi" do painel; sem senha = rede aberta.
 inline char apNome[MAX_SSID + 1] = "";

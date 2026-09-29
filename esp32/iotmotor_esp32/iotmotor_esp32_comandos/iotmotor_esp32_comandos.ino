@@ -1,5 +1,5 @@
 /*
-  IoTMotor — ESP32-01 (DevKit V1)
+  IoTMotor â€” ESP32-01 (DevKit V1)
   Hardware do sketch de bancada funcional:
     PZEM-004T TX -> GPIO16 (RX2), RX -> GPIO17 (TX2)
     LCD I2C 20x4 SDA -> GPIO21, SCL -> GPIO22, endereco 0x27
@@ -426,10 +426,10 @@ void manterWifi(unsigned long agora) {
   // A varredura e as tentativas bloqueiam (ate 8 s por rede): com as saidas
   // ligadas, so se nenhuma protecao vencer no meio. Enquanto isso o proprio
   // ESP32 segue tentando voltar a ultima rede sozinho, sem bloquear.
-  const uint32_t bloqueioWifi = 5000UL + wifistore::total * 8000UL + 5000UL;
+  const uint32_t bloqueioWifi = 5000UL + wifistore::total * 3500UL + 3000UL;
   if (!podeBloquear(agora, bloqueioWifi)) return;
   ultimaTentativaWifi = agora;
-  wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
+  wifistore::conectarEmOrdem(3500);  // Ultima valida; visiveis; depois nao vistas.
 }
 
 void lerPzem() {
@@ -465,7 +465,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v22-mqtt-cloudflare";
+  doc["firmware_version"] = "v23-mqtt-cloudflare";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -680,7 +680,7 @@ void setup() {
   Serial.printf("[WiFi] %u rede(s) na lista da placa\n", wifistore::total);
   ultimaTentativaWifi = millis();
   // Nenhuma rede da lista respondeu: so o portal permite cadastrar sem cabo.
-  if (!wifistore::conectarEmOrdem(10000)) {
+  if (!wifistore::conectarEmOrdem(3500)) {
     imprimirLinhaCompleta(1, wifistore::apNome);  // Rede da placa aberta.
     abrirPortalDeRede(PORTAL_SEGUNDOS);
   }

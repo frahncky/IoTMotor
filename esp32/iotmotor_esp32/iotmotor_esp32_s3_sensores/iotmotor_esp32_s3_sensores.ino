@@ -1,4 +1,4 @@
-/* IoTMotor — ESP32-S3 (esp32-02): sensores e alarme local, SEM reles.
+/* IoTMotor â€” ESP32-S3 (esp32-02): sensores e alarme local, SEM reles.
  * Este sketch pressupoe MPU6050 (SDA GPIO5, SCL GPIO9) e DS18B20
  * (DQ GPIO4, resistor pull-up 4k7 a 3V3), como no projeto de dois modulos.
  * Confirme os pinos da SUA placa S3 antes de gravar. Sensores reais por padrao:
@@ -567,7 +567,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.16-mqtt-cloudflare";
+  doc["firmware_version"]="s3-sensors-1.17-mqtt-cloudflare";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -876,10 +876,6 @@ void recuperarWifiS3() {
 }
 
 bool conectarWifiS3(uint32_t esperaPadraoMs) {
-  // Neste modulo, IFMA_IOT e a rede de bancada mais comum. Tenta primeiro
-  // por poucos segundos para evitar percorrer toda a lista antes de alcança-la.
-  const int ifma=wifistore::indiceDe("IFMA_IOT");
-  if(ifma>=0 && wifistore::tentarRede(wifistore::redes[ifma],3000UL)) return true;
   return wifistore::conectarEmOrdem(esperaPadraoMs);
 }
 
@@ -931,7 +927,7 @@ void setup() {
   // demorar alguns segundos para ficar disponivel depois de uma queda geral.
   // Se a primeira tentativa falhar, o loop continua tentando as redes salvas.
   // O portal permanece disponivel somente quando solicitado pelo painel.
-  if(!conectarWifiS3(5000))
+  if(!conectarWifiS3(3500))
     Serial.println("[S3/Wi-Fi] nenhuma rede entrou no boot; continuara tentando");
   Serial.printf("[S3/boot] %s broker=%s:%u\n",DEVICE_ID,MQTT_HOST,MQTT_PORT);
   watchdog::iniciar();  // Depois das esperas longas do boot (Wi-Fi).
@@ -966,7 +962,7 @@ void loop() {
     if(lastWifiAttempt==0 || (uint32_t)(now-lastWifiAttempt)>=WIFI_RETRY_MS) {
       lastWifiAttempt=now;
       Serial.printf("[S3/Wi-Fi] reconectando, status=%d\n",WiFi.status());
-      conectarWifiS3(5000);  // IFMA_IOT primeiro; depois as demais redes cadastradas.
+      conectarWifiS3(3500);  // Ultima valida; visiveis; depois nao vistas.
     }
     delay(2);return;
   }
