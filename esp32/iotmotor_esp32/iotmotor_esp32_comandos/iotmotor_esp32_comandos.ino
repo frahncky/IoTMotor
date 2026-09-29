@@ -386,9 +386,9 @@ void protegerQuedaDeRede(unsigned long agora) {
   }
 }
 
-// Pior caso de uma tentativa de MQTT: 6 s de TCP, 6 s de WebSocket e ate
+// Pior caso de uma tentativa de MQTT: ate 15 s de TLS/TCP, 6 s de WebSocket e ate
 // 15 s esperando o CONNACK.
-constexpr uint32_t BLOQUEIO_MQTT_MS = 30000UL;
+constexpr uint32_t BLOQUEIO_MQTT_MS = 40000UL;
 
 // Da para travar o loop por ate "bloqueioMs" sem atrasar nenhuma protecao?
 // Com as saidas ligadas, nao se houver troca de contator pendente, nem se o
