@@ -89,8 +89,8 @@ bool pzemOk = false;
 unsigned long ultimaLeituraPzem = 0;
 unsigned long intervaloPzemMs = 1000UL;
 
-static const char* MQTT_HOST = "test.mosquitto.org";
-static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket (ws://)
+static const char* MQTT_HOST = "iotmotor.pages.dev";
+static const uint16_t MQTT_PORT = 443;  // MQTT sobre WebSocket (ws://)
 static const char* DEVICE_ID = "esp32-01";
 MqttWebSocketClient mqttTransport;
 PubSubClient mqttClient(mqttTransport);
@@ -465,7 +465,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v21-ota-cloudflare";
+  doc["firmware_version"] = "v22-mqtt-cloudflare";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
