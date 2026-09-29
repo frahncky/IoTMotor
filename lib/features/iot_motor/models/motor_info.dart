@@ -5,8 +5,8 @@ import 'dart:math' as math;
 /// o painel usa (FIRMWARE_PUBLICADO em wifi-manager.js): [quadro, sensores].
 /// O CI confere que é a mesma do firmware_version de cada .ino.
 const List<String> firmwarePublicado = <String>[
-  'v21-ota-cloudflare',
-  's3-sensors-1.15-ota-cloudflare',
+  'v22-mqtt-cloudflare',
+  's3-sensors-1.16-mqtt-cloudflare',
 ];
 
 double? _numero(Object? valor) =>
