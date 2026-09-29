@@ -67,8 +67,8 @@ const char* const SENHAS_INICIAIS[]={
   WIFI_PASSWORD_4,
 #endif
 };
-static const char* MQTT_HOST = "test.mosquitto.org";
-static const uint16_t MQTT_PORT = 8080;  // MQTT sobre WebSocket: a IFMA_IOT bloqueia 1883/8883
+static const char* MQTT_HOST = "iotmotor.pages.dev";
+static const uint16_t MQTT_PORT = 443;  // MQTT sobre WebSocket: a IFMA_IOT bloqueia 1883/8883
 static const char* TOPIC_PREFIX = "iotmotor";
 static const char* DEVICE_ID = "esp32-02";
 
@@ -567,7 +567,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.15-ota-cloudflare";
+  doc["firmware_version"]="s3-sensors-1.16-mqtt-cloudflare";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
