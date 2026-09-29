@@ -5,9 +5,12 @@
 // Mantenha este arquivo identico nas pastas dos dois firmwares.
 #include <Arduino.h>
 #include <Client.h>
-#include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <base64.h>
 #include <esp_random.h>
+
+extern const uint8_t mqttCertificadosRaiz[] asm("_binary_x509_crt_bundle_start");
+extern const uint8_t mqttCertificadosRaizFim[] asm("_binary_x509_crt_bundle_end");
 
 class MqttWebSocketClient : public Client {
  public:
@@ -19,7 +22,9 @@ class MqttWebSocketClient : public Client {
 
   int connect(const char* host, uint16_t porta) override {
     stop();
-    if (!_tcp.connect(host, porta, 6000)) return 0;
+    _tcp.setCACertBundle(mqttCertificadosRaiz, mqttCertificadosRaizFim - mqttCertificadosRaiz);
+    _tcp.setTimeout(15000);
+    if (!_tcp.connect(host, porta, 15000)) return 0;
     uint8_t chave[16];
     esp_fill_random(chave, sizeof(chave));
     _tcp.printf("GET %s HTTP/1.1\r\nHost: %s:%u\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
@@ -206,7 +211,7 @@ class MqttWebSocketClient : public Client {
     }
   }
 
-  WiFiClient _tcp;
+  WiFiClientSecure _tcp;
   const char* _caminho;
   bool _aberto = false, _mascarado = false, _controle = false;
   uint8_t _cab[14];
