@@ -367,6 +367,44 @@ bool salvarAcionamento(bool ligado) {
   return true;
 }
 
+bool saidasLigadas() {
+  return partidaAtiva || estadoReles[0] || estadoReles[1] || estadoReles[2] || estadoReles[3];
+}
+
+// Perda de MQTT/Wi-Fi desliga as saidas, mas so apos a tolerancia configurada,
+// para nao desarmar o ensaio em quedas curtas do broker publico. Roda antes
+// das reconexoes, que travam o loop: o tempo travado conta na tolerancia.
+void protegerQuedaDeRede(unsigned long agora) {
+  const bool comLink = mqttClient.connected() && WiFi.status() == WL_CONNECTED;
+  if (comLink) inicioSemLink = 0;
+  else if (!inicioSemLink) inicioSemLink = agora | 1UL;  // 0 = conexao ok.
+  if (!comLink && saidasLigadas() && toleranciaSemLinkMs != SEM_LIMITE_SEM_LINK &&
+      decorrido(agora, inicioSemLink) > (int32_t)toleranciaSemLinkMs) {
+    pararBancada();
+    Serial.printf("[BANCADA] saidas desligadas: %lu s sem MQTT/Wi-Fi\n",
+                  toleranciaSemLinkMs / 1000UL);
+  }
+}
+
+// Pior caso de uma tentativa de MQTT: 6 s de TCP, 6 s de WebSocket e ate
+// 15 s esperando o CONNACK.
+constexpr uint32_t BLOQUEIO_MQTT_MS = 30000UL;
+
+// Da para travar o loop por ate "bloqueioMs" sem atrasar nenhuma protecao?
+// Com as saidas ligadas, nao se houver troca de contator pendente, nem se o
+// limite do ensaio ou a tolerancia sem rede vencerem durante a espera.
+bool podeBloquear(unsigned long agora, uint32_t bloqueioMs) {
+  if (!saidasLigadas()) return true;
+  if (trocaPendente(agora)) return false;
+  if (limiteDoEnsaioMs != SEM_LIMITE_ENSAIO &&
+      (int64_t)decorrido(agora, momentoPartida) + bloqueioMs > (int64_t)limiteDoEnsaioMs)
+    return false;
+  if (inicioSemLink && toleranciaSemLinkMs != SEM_LIMITE_SEM_LINK &&
+      (int64_t)decorrido(agora, inicioSemLink) + bloqueioMs > (int64_t)toleranciaSemLinkMs)
+    return false;
+  return true;
+}
+
 void manterWifi(unsigned long agora) {
   static bool estavaConectado = false;
   if (WiFi.status() == WL_CONNECTED) {
@@ -385,10 +423,11 @@ void manterWifi(unsigned long agora) {
     lcdPrecisaAtualizar = true;
   }
   if (agora - ultimaTentativaWifi < WIFI_RETRY_MS) return;
-  // A varredura e as tentativas bloqueiam por ate ~30 s: com troca de contator
-  // pela frente, espera a partida chegar ao regime (o proprio ESP32 segue
-  // tentando voltar a ultima rede sozinho, sem bloquear).
-  if (trocaPendente(agora)) return;
+  // A varredura e as tentativas bloqueiam (ate 8 s por rede): com as saidas
+  // ligadas, so se nenhuma protecao vencer no meio. Enquanto isso o proprio
+  // ESP32 segue tentando voltar a ultima rede sozinho, sem bloquear.
+  const uint32_t bloqueioWifi = 5000UL + wifistore::total * 8000UL + 5000UL;
+  if (!podeBloquear(agora, bloqueioWifi)) return;
   ultimaTentativaWifi = agora;
   wifistore::conectarEmOrdem(8000);  // Redes visiveis, na ordem da lista.
 }
@@ -426,7 +465,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v20-ota-cloudflare";
+  doc["firmware_version"] = "v21-ota-cloudflare";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -586,8 +625,9 @@ void manterMqtt(unsigned long agora) {
   if (WiFi.status() != WL_CONNECTED) return;
   if (mqttClient.connected()) {mqttClient.loop();return;}
   if (ultimaTentativaMqtt && agora - ultimaTentativaMqtt < MQTT_RETRY_MS) return;
-  // Conectar ao broker bloqueia ate 12 s (TCP e WebSocket): nao durante uma troca.
-  if (trocaPendente(agora)) return;
+  // Conectar ao broker bloqueia ate ~27 s: com as saidas ligadas, so se
+  // nenhuma protecao vencer no meio (troca de contator, limites de tempo).
+  if (!podeBloquear(agora, BLOQUEIO_MQTT_MS)) return;
   ultimaTentativaMqtt = agora;
   const String clientId = String("iotmotor_v9_") + String((uint32_t)ESP.getEfuseMac(), HEX);
   if (mqttClient.connect(clientId.c_str(), topicoStatus, 0, true, "offline")) {
@@ -679,21 +719,10 @@ void setup() {
 
 void loop() {
   const unsigned long agora = millis();
+  protegerQuedaDeRede(agora);
   manterWifi(agora);
   manterMqtt(agora);
-  // Perda de MQTT/Wi-Fi desliga as saidas, mas so apos TOLERANCIA_SEM_LINK_MS,
-  // para nao desarmar o ensaio em quedas curtas do broker publico.
-  const bool comLink = mqttClient.connected() && WiFi.status() == WL_CONNECTED;
-  if (comLink) inicioSemLink = 0;
-  else if (!inicioSemLink) inicioSemLink = agora;
-  const bool saidasAtivas = partidaAtiva || estadoReles[0] || estadoReles[1] ||
-                            estadoReles[2] || estadoReles[3];
-  if (!comLink && saidasAtivas && toleranciaSemLinkMs != SEM_LIMITE_SEM_LINK &&
-      decorrido(agora, inicioSemLink) > (int32_t)toleranciaSemLinkMs) {
-    pararBancada();
-    Serial.printf("[BANCADA] saidas desligadas: %lu s sem MQTT/Wi-Fi\n",
-                  toleranciaSemLinkMs / 1000UL);
-  }
+  const bool saidasAtivas = saidasLigadas();
   manterPartidaBancada(agora);
   // Motor girando: algum contator fechado ou, em modo instrumentacao (motor
   // comandado por fora), corrente medida acima de 0,3 A.
@@ -703,7 +732,9 @@ void loop() {
   motorinfo::manter(agora, motorGirando, relogio::agoraUtc());
   // Reinicio pedido pelo painel: desiste se alguma saida ligou nesse meio tempo.
   if (reinicioPedidoEm && saidasAtivas) reinicioPedidoEm = 0;
-  if (reinicioPedidoEm && agora - reinicioPedidoEm >= 300UL) {
+  // Com sinal: o pedido chega pelo MQTT depois de "agora" ser lido, e sem
+  // sinal a diferenca virava um numero enorme e reiniciava antes da resposta sair.
+  if (reinicioPedidoEm && decorrido(agora, reinicioPedidoEm) >= 300) {
     Serial.println("[QUADRO] reiniciando a pedido do painel");
     ESP.restart();
   }
