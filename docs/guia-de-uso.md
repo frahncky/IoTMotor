@@ -270,6 +270,21 @@ intervalo de **Registro de dados** configurado. No cartão **Gráficos em tempo 
 planilha, e **Limpar** para apagá-los. Para períodos maiores, use o histórico da
 placa acima (7 dias, por hora).
 
+O CSV é pensado para treinar modelos de detecção e classificação de falhas:
+
+- **Uma linha por instante** com as duas placas: grandezas elétricas do quadro e
+  vibração/temperatura dos sensores. A leitura de uma placa só entra na linha
+  se tiver chegado há até 3 s; sem ela, as colunas dessa placa ficam vazias.
+- **Contexto:** motor girando (`motor_running`), modo e partida, segundos desde
+  a partida (`session_s`, para separar o transitório da partida do regime),
+  cada contator (`relay_1` a `relay_4`), saúde dos sensores (`pzem_ok`,
+  `mpu_ok`, `temperature_ok`), amostras da janela de vibração e o eixo de maior
+  vibração.
+- **Condição:** antes de cada ensaio, escreva no campo **Condição** o que está
+  sendo testado (normal, desbalanceamento, falta de fase…). O texto vai na
+  coluna `condition` das linhas gravadas dali em diante, e é o rótulo para a
+  classificação. Troque ou apague o campo ao mudar de ensaio.
+
 A placa de sensores continua gravando o histórico mesmo sem rede (temperatura
 e vibração medidas por ela; corrente e tempo ligado dependem do quadro), e
 publica os dias guardados quando volta a se conectar.

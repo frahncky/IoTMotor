@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {numeroBr,idadeLeitura,tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
+const {numeroBr,idadeLeitura,tripText,registroCsv,linhasCsv,celulaCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -59,14 +59,40 @@ test('o historico guardado no navegador descarta o velho e o invalido',()=>{
  assert.equal(registrosValidos(muitos).length,7200);
 });
 
-test('a linha guardada tem so as colunas do CSV',()=>{
- const x=parseTelemetry({device_id:'esp32-01',ts:1790000000,voltage:220,current:5,relays:[true,false,false,false],lcd:['a','b'],wifi_ip:'10.0.0.1'});
- const linha=registroCsv(x,'esp32-01',0);
+test('a linha guardada junta as duas placas e só tem as colunas do CSV',()=>{
+ const cmd=parseTelemetry({device_id:'esp32-01',ts:1790000000,voltage:220,current:5,relays:[true,false,false,false],
+  motor_running:true,mode:'direct',profile:'direta',session_s:42,pzem_ok:true,lcd:['a','b'],wifi_ip:'10.0.0.1'});
+ const sen=parseTelemetry({device_id:'esp32-02',ts:1790000001,vibration_mms:2.5,vibration_axis:'y',temperature:41.5,
+  mpu_ok:true,temperature_ok:true,sample_count:998});
+ const linha=registroCsv({command:cmd,sensor:sen,at:0,condicao:' desbalanceamento '});
  assert.equal(linha.at,new Date(1790000000*1000).toISOString());
  assert.equal(linha.clockSource,'placa');
+ assert.equal(linha.condicao,'desbalanceamento');
  assert.equal(linha.voltage,220);
+ assert.equal(linha.vibration_mms,2.5);
+ assert.equal(linha.temperature,41.5);
  assert.equal(linha.motorOn,true);
- assert.equal('lcd' in linha||'relays' in linha||'temperature' in linha,false);
+ assert.deepEqual(linha.relays,[true,false,false,false]);
+ assert.equal(linha.sessionS,42);
+ assert.equal(linha.vibrationAxis,'y');
+ assert.equal(linha.sampleCount,998);
+ assert.equal('lcd' in linha||'wifiIp' in linha,false);
+ // Só os sensores (quadro fora do ar): as colunas elétricas ficam vazias.
+ const soSensor=registroCsv({sensor:sen,at:0});
+ assert.equal(soSensor.at,new Date(1790000001*1000).toISOString());
+ assert.equal('voltage' in soSensor||'motorOn' in soSensor,false);
+});
+
+test('CSV de treino: cabeçalho fixo, contatores em colunas e texto escapado',()=>{
+ const cmd=parseTelemetry({device_id:'esp32-01',voltage:220,relays:[false,true,false,false],motor_running:true});
+ const [cab,linha]=linhasCsv([registroCsv({command:cmd,at:Date.UTC(2026,8,30),condicao:'folga, base "solta"'})]);
+ const colunas=cab.split(',');
+ assert.deepEqual(colunas.slice(0,9),['measured_at','clock_source','demo','condition','motor_running','bench_armed','mode','profile','session_s']);
+ assert.ok(colunas.includes('relay_4')&&colunas.includes('vibration_axis')&&colunas.at(-1)==='temperature');
+ assert.match(linha,/^2026-09-30T00:00:00\.000Z,navegador,false,"folga, base ""solta""",true,/);
+ assert.match(linha,/,false,true,false,false,/);
+ assert.equal(celulaCsv(null),'');
+ assert.equal(celulaCsv('a\nb'),'"a\nb"');
 });
 
 test('modo instrumentacao: motor_running vale como motor ligado sem rele',()=>{

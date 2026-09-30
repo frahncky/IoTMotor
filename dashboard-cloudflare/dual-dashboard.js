@@ -7,8 +7,13 @@ const STORE='iotmotor_dashboard_dual_v1';
 // as duas placas a 1 Hz dao 7200 linhas (~1,9 MB). Antes eram 3000 linhas
 // completas (~25 min), e o CSV oferecia 1 h e 24 h que nunca existiam. O
 // historico longo fica na placa de sensores (7 dias, por hora).
-const REGISTROS='iotmotor_registros_v2';
+// v3: uma linha por instante com as duas placas (antes, uma linha por placa).
+const REGISTROS='iotmotor_registros_v3',REGISTROS_ANTIGOS='iotmotor_registros_v2';
 const MAX_REGISTROS=7200,MAX_IDADE_MS=60*60*1000;
+// Condição do ensaio (rótulo das linhas do CSV, para treinar a classificação).
+const CONDICAO='iotmotor_condicao_v1',MAX_CONDICAO=40;
+// Leitura da outra placa entra na linha se tiver chegado há até 3 s.
+const JUNTAR_MS=3000;
 const GRAVAR_REGISTROS_MS=15000;
 let gravarRegistrosTimer=null;
 // Endereço padrão: a ponte servida pela própria Cloudflare (functions/mqtt.js),
@@ -41,7 +46,7 @@ const ACQ_DEFAULT={revision:0,pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,re
 const ACQ_PRESETS={realtime:{pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,record_ms:1000},monitoring:{pzem_read_ms:1000,publish_ms:2000,chart_ms:2000,record_ms:5000},economic:{pzem_read_ms:5000,publish_ms:5000,chart_ms:5000,record_ms:30000}};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
- acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
+ acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null,condicao:''};
 let commandWasFresh=false;
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
 // Números na tela sempre com vírgula decimal (pt-BR); o CSV continua com ponto.
@@ -72,7 +77,13 @@ function parseTelemetry(json){
   startsToday:numeric(source.starts_today),sessionS:numeric(source.session_s),startsHour:numeric(source.starts_hour),
   alarmsFiring:Array.isArray(source.alarms_firing)?source.alarms_firing.filter(id=>typeof id==='string'&&id):[],
   // Desarme: o quadro parou o motor por um alarme (vale até a próxima partida).
-  tripField:typeof source.trip_field==='string'&&source.trip_field?source.trip_field:''};
+  tripField:typeof source.trip_field==='string'&&source.trip_field?source.trip_field:'',
+  // Saúde dos sensores e eixo da vibração: contexto das linhas do CSV.
+  pzemOk:typeof source.pzem_ok==='boolean'?source.pzem_ok:null,
+  mpuOk:typeof source.mpu_ok==='boolean'?source.mpu_ok:null,
+  temperatureOk:typeof source.temperature_ok==='boolean'?source.temperature_ok:null,
+  sampleCount:numeric(source.sample_count),
+  vibrationAxis:/^[xyz]$/.test(source.vibration_axis)?source.vibration_axis:''};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
  result.reactive=result.apparent===null?null:result.power!==null?
@@ -439,7 +450,7 @@ function ingest(which,raw,packet){
  for(const m of METRICS.filter(m=>m.source===which)){
   if(sample[m.key]!==null)upsertChartPoint(state.series[m.key],tempoDoGrafico,sample[m.key],state.acquisition.chart_ms);
  }
- if(state[which].at-(state.lastRecord[which]||0)>=state.acquisition.record_ms){state.lastRecord[which]=state[which].at;state.records.push(registroCsv(sample,expected,state[which].at));if(state.records.length>MAX_REGISTROS)state.records.shift();guardarRegistros();}
+ registrar(which);
  if(which==='command'&&state.pending&&state.command.at>=state.pending.at&&sample.motorOn===state.pending.target)state.pending=null;
  diag(`Recebendo ${which==='command'?'medições do quadro de comando':'vibração e temperatura dos sensores'}.`);render();return true;
 }
@@ -465,8 +476,7 @@ function connect(automatico){
  });
  client.on('message',(destination,payload,packet)=>{
   if(!active())return;
-  if(destination===config.prefix+'/system/acquisition'){aplicarConfiguracaoAquisicao(payload.toString('utf8'));return;}
-  const which=destination.startsWith(`${config.prefix}/${config.commandDevice}/`)?'command':destination.startsWith(`${config.prefix}/${config.sensorDevice}/`)?'sensor':null;
+  if(destination===config.prefix+'/system/acquisition'){aplicarConfiguracaoAquisicao(payload.toString('utf8'));return;}  const which=destination.startsWith(`${config.prefix}/${config.commandDevice}/`)?'command':destination.startsWith(`${config.prefix}/${config.sensorDevice}/`)?'sensor':null;
   if(!which)return;
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'status')){
    state[which].status=payload.toString('utf8').slice(0,80);state[which].statusAt=Date.now();render();return;
@@ -491,12 +501,55 @@ function connect(automatico){
  client.on('close',caiu);
  client.on('connect',voltou);
 }
-// Linha guardada para o CSV: so as colunas exportadas.
-function registroCsv(sample,deviceId,chegouEm){
- const linha={at:new Date(sample.measuredAt??chegouEm).toISOString(),clockSource:sample.measuredAt?'placa':'navegador',
-  deviceId,demo:sample.demo,motorOn:sample.motorOn,benchArmed:sample.benchArmed};
- for(const m of METRICS)if(sample[m.key]!==null&&sample[m.key]!==undefined)linha[m.key]=sample[m.key];
+// Linha guardada para o CSV: as duas placas no mesmo instante, com o contexto
+// (partida, contatores, saúde dos sensores) e a condição do ensaio.
+function registroCsv({command=null,sensor=null,at,condicao=''}){
+ const base=command||sensor;
+ const linha={at:new Date(base?.measuredAt??at).toISOString(),clockSource:base?.measuredAt?'placa':'navegador',
+  demo:Boolean(command?.demo||sensor?.demo),condicao:String(condicao||'').trim().slice(0,MAX_CONDICAO)};
+ if(command){
+  Object.assign(linha,{motorOn:command.motorOn,benchArmed:command.benchArmed,
+   mode:command.mode==='—'?'':command.mode,profile:command.profile,sessionS:command.sessionS,pzemOk:command.pzemOk});
+  if(command.relays)linha.relays=command.relays.slice();
+ }
+ if(sensor)Object.assign(linha,{mpuOk:sensor.mpuOk,temperatureOk:sensor.temperatureOk,
+  sampleCount:sensor.sampleCount,vibrationAxis:sensor.vibrationAxis});
+ for(const m of METRICS){
+  const v=(m.source==='command'?command:sensor)?.[m.key];
+  if(v!==null&&v!==undefined)linha[m.key]=v;
+ }
  return linha;
+}
+// Uma linha por intervalo de registro. O quadro dita o ritmo; sem ele, os
+// sensores. Folga de 10 %: a publicação a cada 1 s chega com atraso variável
+// e, sem ela, metade das linhas de 1 s se perdia.
+function registrar(which){
+ const agora=state[which].at,recente=x=>state[x].sample&&agora-state[x].at<=JUNTAR_MS;
+ if(which==='sensor'&&recente('command'))return;
+ if(agora-(state.lastRecord.at||0)<state.acquisition.record_ms*0.9)return;
+ state.lastRecord.at=agora;
+ state.records.push(registroCsv({command:recente('command')?state.command.sample:null,
+  sensor:recente('sensor')?state.sensor.sample:null,at:agora,condicao:state.condicao}));
+ if(state.records.length>MAX_REGISTROS)state.records.shift();
+ guardarRegistros();
+}
+// Célula do CSV: texto com vírgula, aspas ou quebra de linha vai entre aspas.
+function celulaCsv(v){
+ if(v===null||v===undefined)return '';
+ const s=String(v);
+ return /[",\r\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;
+}
+const CSV_COLUNAS=[
+ ['measured_at',r=>r.at],['clock_source',r=>r.clockSource],['demo',r=>r.demo],['condition',r=>r.condicao],
+ ['motor_running',r=>r.motorOn],['bench_armed',r=>r.benchArmed],['mode',r=>r.mode],['profile',r=>r.profile],
+ ['session_s',r=>r.sessionS],
+ ...[0,1,2,3].map(i=>[`relay_${i+1}`,r=>r.relays?.[i]]),
+ ['pzem_ok',r=>r.pzemOk],['mpu_ok',r=>r.mpuOk],['temperature_ok',r=>r.temperatureOk],
+ ['vibration_samples',r=>r.sampleCount],['vibration_axis',r=>r.vibrationAxis],
+ ...METRICS.map(m=>[m.key,r=>r[m.key]])
+];
+function linhasCsv(registros){
+ return [CSV_COLUNAS.map(c=>c[0]).join(','),...registros.map(r=>CSV_COLUNAS.map(c=>celulaCsv(c[1](r))).join(','))];
 }
 function registrosValidos(linhas){
  if(!Array.isArray(linhas))return [];
@@ -505,6 +558,8 @@ function registrosValidos(linhas){
   .slice(-MAX_REGISTROS);
 }
 function lerRegistros(){
+ // Linhas do formato antigo (uma por placa) não cabem nas colunas novas.
+ try{localStorage.removeItem(REGISTROS_ANTIGOS);}catch{}
  try{return registrosValidos(JSON.parse(localStorage.getItem(REGISTROS)||'[]'));}
  catch{return [];}
 }
@@ -531,9 +586,7 @@ function exportCsv(){
  const desde=periodo?Date.now()-periodo*60000:0;
  const linhas=state.records.filter(row=>!desde||Date.parse(row.at)>=desde);
  if(!linhas.length){diag('Nenhuma leitura no período escolhido.');return;}
- const keys=METRICS.map(m=>m.key);
- const lines=[['measured_at','clock_source','device_id','demo','motor_on','bench_armed',...keys].join(',')];
- for(const row of linhas)lines.push([row.at,row.clockSource,row.deviceId,row.demo,row.motorOn??'',row.benchArmed,...keys.map(k=>row[k]??'')].join(','));
+ const lines=linhasCsv(linhas);
  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`iotmotor-2-modulos-${new Date().toISOString().slice(0,10)}.csv`;a.click();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -585,6 +638,15 @@ function init(){
  }catch{}
  // O que ja foi medido continua aqui depois de fechar e abrir o navegador.
  state.records=lerRegistros();
+ // Condição do ensaio: vale para as linhas gravadas daqui em diante.
+ try{state.condicao=String(localStorage.getItem(CONDICAO)||'').slice(0,MAX_CONDICAO);}catch{}
+ if($('ensaioCondicao')){
+  $('ensaioCondicao').value=state.condicao;
+  $('ensaioCondicao').addEventListener('input',()=>{
+   state.condicao=$('ensaioCondicao').value.trim().slice(0,MAX_CONDICAO);
+   try{localStorage.setItem(CONDICAO,state.condicao);}catch{}
+  });
+ }
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
  $('commandDevice').value=state.config.commandDevice;$('sensorDevice').value=state.config.sensorDevice;
  // O campo da senha de comando so aparece se alguma placa exigir selo.
@@ -624,4 +686,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={numeroBr,idadeLeitura,tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={numeroBr,idadeLeitura,tripText,registroCsv,linhasCsv,celulaCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};
