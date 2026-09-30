@@ -6,12 +6,44 @@
   const $ = id => document.getElementById(id);
   if (!$('motorInfoForm')) return;
 
+  // Campos complementares ficam agrupados depois dos dados elétricos básicos.
+  // A inserção por script mantém compatibilidade com versões antigas do HTML
+  // hospedadas em cache enquanto o JavaScript novo já estiver disponível.
+  const salvar = $('motorInfoSalvar');
+  if (salvar?.insertAdjacentHTML) salvar.insertAdjacentHTML('beforebegin', `
+    <div class="field"><label for="motorInfoHz">Frequência nominal (Hz)</label><input id="motorInfoHz" inputmode="decimal" autocomplete="off"></div>
+    <div class="field"><label for="motorInfoFp">Fator de potência nominal</label><input id="motorInfoFp" inputmode="decimal" autocomplete="off" placeholder="Ex.: 0,82"></div>
+    <div class="field"><label for="motorInfoRend">Rendimento nominal (%)</label><input id="motorInfoRend" inputmode="decimal" autocomplete="off"></div>
+    <div class="field"><label for="motorInfoIe">Classe de rendimento</label><select id="motorInfoIe"><option value="">Não informada</option><option>IE1</option><option>IE2</option><option>IE3</option><option>IE4</option><option>IE5</option></select></div>
+    <div class="field"><label for="motorInfoRegime">Regime de serviço</label><select id="motorInfoRegime"><option value="">Não informado</option>${Array.from({length: 10}, (_, i) => `<option>S${i + 1}</option>`).join('')}</select></div>
+    <div class="field"><label for="motorInfoIsol">Classe de isolação</label><select id="motorInfoIsol"><option value="">Não informada</option>${['A','E','B','F','H','N','R'].map(v => `<option>${v}</option>`).join('')}</select></div>
+    <div class="field"><label for="motorInfoAmb">Temperatura ambiente máxima (°C)</label><input id="motorInfoAmb" inputmode="decimal" autocomplete="off"></div>
+    <div class="field"><label for="motorInfoElev">Elevação de temperatura (K)</label><input id="motorInfoElev" inputmode="decimal" autocomplete="off"></div>
+    <div class="field"><label for="motorInfoIp">Grau de proteção</label><input id="motorInfoIp" maxlength="7" autocomplete="off" placeholder="Ex.: IP55"></div>
+    <div class="field"><label for="motorInfoFabricante">Fabricante</label><input id="motorInfoFabricante" maxlength="40" autocomplete="organization"></div>
+    <div class="field"><label for="motorInfoModelo">Modelo</label><input id="motorInfoModelo" maxlength="40" autocomplete="off"></div>
+    <div class="field"><label for="motorInfoSerie">Número de série</label><input id="motorInfoSerie" maxlength="32" autocomplete="off"></div>`);
+
   // Campo do formulário -> campo no MQTT, com a faixa aceita pela placa.
   const CAMPOS = [
     {id: 'motorInfoCv', chave: 'power_cv', max: 3000},
     {id: 'motorInfoRpm', chave: 'rpm', max: 10000},
     {id: 'motorInfoFs', chave: 'service_factor', min: 1, max: 3},
+    {id: 'motorInfoHz', chave: 'frequency_hz', min: 1, max: 1000},
+    {id: 'motorInfoFp', chave: 'power_factor', min: 0.01, max: 1},
+    {id: 'motorInfoRend', chave: 'efficiency_pct', min: 1, max: 100},
+    {id: 'motorInfoAmb', chave: 'ambient_temp_c', min: 1, max: 100},
+    {id: 'motorInfoElev', chave: 'temperature_rise_k', min: 1, max: 250},
     {id: 'motorInfoManutH', chave: 'maint_interval_h', max: 100000}
+  ];
+  const TEXTOS = [
+    {id: 'motorInfoIe', chave: 'efficiency_class', max: 3, padrao: /^(IE[1-5])$/},
+    {id: 'motorInfoRegime', chave: 'duty', max: 3, padrao: /^S(?:[1-9]|10)$/},
+    {id: 'motorInfoIsol', chave: 'insulation_class', max: 1, padrao: /^[AEBFHNR]$/},
+    {id: 'motorInfoIp', chave: 'ip_rating', max: 7, padrao: /^IP\d{2}[A-Z0-9]{0,3}$/},
+    {id: 'motorInfoFabricante', chave: 'manufacturer', max: 40},
+    {id: 'motorInfoModelo', chave: 'model', max: 40},
+    {id: 'motorInfoSerie', chave: 'serial_number', max: 32}
   ];
   // Tensão e corrente aceitam um valor ou dois, como na placa do trifásico de
   // dupla tensão (220/380 V - 12,6/7,3 A): o primeiro é o do triângulo (menor
@@ -65,6 +97,7 @@
       const valores = [info?.[par.chave], info?.[par.chaveY]].filter(Number.isFinite);
       $(par.id).value = valores.map(v => decimal(v, par.chave)).join('/');
     }
+    for (const campo of TEXTOS) $(campo.id).value = info?.[campo.chave] || '';
     $('motorInfoFases').value = info?.phases === 1 || info?.phases === 3 ? String(info.phases) : '';
     $('motorInfoLigacao').value = info?.connection === 'star' ? 'star' : 'delta';
     mostrarLigacao();
@@ -179,6 +212,8 @@
           info[campo.chave] = normalizarDecimal(campo.chave, dados[campo.chave]);
         for (const par of PARES) for (const chave of [par.chave, par.chaveY])
           if (Number.isFinite(dados[chave])) info[chave] = normalizarDecimal(chave, dados[chave]);
+        for (const campo of TEXTOS) if (typeof dados[campo.chave] === 'string' && dados[campo.chave])
+          info[campo.chave] = dados[campo.chave];
         if (dados.phases === 1 || dados.phases === 3) info.phases = dados.phases;
         if (dados.connection === 'delta' || dados.connection === 'star') info.connection = dados.connection;
         // Última manutenção (horímetro e data), registrada pelo botão "Manutenção feita".
@@ -202,6 +237,7 @@
   }
 
   for (const campo of CAMPOS) $(campo.id).addEventListener('input', () => { editando = true; });
+  for (const campo of TEXTOS) $(campo.id).addEventListener('input', () => { editando = true; });
   for (const par of PARES) $(par.id).addEventListener('input', () => { editando = true; mostrarLigacao(); });
   for (const id of ['motorInfoFases', 'motorInfoLigacao']) $(id).addEventListener('change', () => { editando = true; });
   $('motorInfoForm').addEventListener('submit', evento => {
@@ -211,6 +247,16 @@
       const lido = lerCampo(campo);
       if (lido.erro) { aviso(lido.erro); return; }
       if (lido.valor !== null) motor[campo.chave] = lido.valor;
+    }
+    for (const campo of TEXTOS) {
+      const valor = String($(campo.id).value || '').trim();
+      if (!valor) continue;
+      const normalizado = ['efficiency_class', 'duty', 'insulation_class', 'ip_rating'].includes(campo.chave)
+        ? valor.toUpperCase() : valor;
+      if (normalizado.length > campo.max || (campo.padrao && !campo.padrao.test(normalizado))) {
+        aviso(`${$(campo.id).labels?.[0]?.textContent || campo.chave}: valor inválido.`); return;
+      }
+      motor[campo.chave] = normalizado;
     }
     const fases = Number($('motorInfoFases').value);
     if (fases === 1 || fases === 3) motor.phases = fases;  // Monofásico ou trifásico.

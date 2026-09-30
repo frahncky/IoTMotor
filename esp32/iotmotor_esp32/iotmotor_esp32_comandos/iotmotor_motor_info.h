@@ -15,6 +15,11 @@ struct Dados {
   float tensaoV = 0;
   float correnteA = 0;
   float fatorServico = 0;
+  float frequenciaHz = 0;
+  float fatorPotencia = 0;
+  float rendimentoPct = 0;
+  float ambienteC = 0;
+  float elevacaoK = 0;
   uint16_t rpm = 0;
   uint8_t fases = 0;  // 1 = monofasico, 3 = trifasico, 0 = nao informado.
   // Trifasico de dupla tensao (ex.: 220/380 V - 12,6/7,3 A): tensaoV e
@@ -23,6 +28,13 @@ struct Dados {
   float tensaoEstrelaV = 0;
   float correnteEstrelaA = 0;
   bool emEstrela = false;  // Ligacao em que o motor trabalha (padrao: triangulo).
+  char classeRendimento[4] = "";  // IE1 a IE5.
+  char regime[4] = "";            // S1 a S10.
+  char classeIsolacao[3] = "";    // A, E, B, F, H, N ou R.
+  char grauIp[8] = "";
+  char fabricante[41] = "";
+  char modelo[41] = "";
+  char numeroSerie[33] = "";
   uint32_t manutencaoH = 0;  // Manutencao a cada tantas horas de uso (0 = sem lembrete).
 };
 
@@ -61,11 +73,23 @@ inline void carregar() {
   dados.tensaoV = memoria.getFloat("v", 0);
   dados.correnteA = memoria.getFloat("a", 0);
   dados.fatorServico = memoria.getFloat("fs", 0);
+  dados.frequenciaHz = memoria.getFloat("freq", 0);
+  dados.fatorPotencia = memoria.getFloat("fp", 0);
+  dados.rendimentoPct = memoria.getFloat("rend", 0);
+  dados.ambienteC = memoria.getFloat("amb_c", 0);
+  dados.elevacaoK = memoria.getFloat("elev_k", 0);
   dados.rpm = memoria.getUShort("rpm", 0);
   dados.fases = memoria.getUChar("fases", 0);
   dados.tensaoEstrelaV = memoria.getFloat("vy", 0);
   dados.correnteEstrelaA = memoria.getFloat("ay", 0);
   dados.emEstrela = memoria.getBool("estrela", false);
+  memoria.getString("ie", dados.classeRendimento, sizeof(dados.classeRendimento));
+  memoria.getString("regime", dados.regime, sizeof(dados.regime));
+  memoria.getString("isol", dados.classeIsolacao, sizeof(dados.classeIsolacao));
+  memoria.getString("ip", dados.grauIp, sizeof(dados.grauIp));
+  memoria.getString("fabric", dados.fabricante, sizeof(dados.fabricante));
+  memoria.getString("modelo", dados.modelo, sizeof(dados.modelo));
+  memoria.getString("serie", dados.numeroSerie, sizeof(dados.numeroSerie));
   dados.manutencaoH = memoria.getUInt("manut_h", 0);
   manutencaoEmS = memoria.getUInt("manut_s", 0);
   manutencaoUtc = memoria.getUInt("manut_utc", 0);
@@ -159,6 +183,18 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
     saida = n;
     return true;
   };
+  auto lerTexto = [&](const char* campo, char* saida, size_t capacidade) {
+    JsonVariantConst v = doc[campo];
+    if (v.isNull()) { saida[0] = '\0'; return true; }
+    if (!v.is<const char*>()) return false;
+    const char* texto = v.as<const char*>();
+    const size_t tamanho = strlen(texto);
+    if (!tamanho || tamanho >= capacidade) return false;
+    for (size_t i = 0; i < tamanho; ++i)
+      if (static_cast<uint8_t>(texto[i]) < 32) return false;
+    strlcpy(saida, texto, capacidade);
+    return true;
+  };
   Dados novo;
   float rpm = 0;
   if (!ler("power_cv", 3000, novo.potenciaCv)) { motivo = "potencia: use de 0 a 3000 cv"; return false; }
@@ -170,6 +206,40 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
     motivo = "fator de servico: use de 1 a 3 (ou vazio)";
     return false;
   }
+  if (!ler("frequency_hz", 1000, novo.frequenciaHz)) { motivo = "frequencia: use de 0 a 1000 Hz"; return false; }
+  if (!ler("power_factor", 1, novo.fatorPotencia)) { motivo = "fator de potencia: use de 0 a 1"; return false; }
+  if (!ler("efficiency_pct", 100, novo.rendimentoPct)) { motivo = "rendimento: use de 0 a 100%"; return false; }
+  if (!ler("ambient_temp_c", 100, novo.ambienteC)) { motivo = "temperatura ambiente: use de 0 a 100 C"; return false; }
+  if (!ler("temperature_rise_k", 250, novo.elevacaoK)) { motivo = "elevacao termica: use de 0 a 250 K"; return false; }
+  if (!lerTexto("efficiency_class", novo.classeRendimento, sizeof(novo.classeRendimento)) && !doc["efficiency_class"].isNull()) {
+    motivo = "classe de rendimento invalida"; return false;
+  }
+  if (novo.classeRendimento[0] && (strncmp(novo.classeRendimento, "IE", 2) || novo.classeRendimento[2] < '1' || novo.classeRendimento[2] > '5')) {
+    motivo = "classe de rendimento: use IE1 a IE5"; return false;
+  }
+  if (!lerTexto("duty", novo.regime, sizeof(novo.regime)) && !doc["duty"].isNull()) { motivo = "regime invalido"; return false; }
+  if (novo.regime[0] &&
+      (novo.regime[0] != 'S' || atoi(novo.regime + 1) < 1 || atoi(novo.regime + 1) > 10 ||
+       (atoi(novo.regime + 1) < 10 && novo.regime[2]))) {
+    motivo = "regime: use S1 a S10"; return false;
+  }
+  if (!lerTexto("insulation_class", novo.classeIsolacao, sizeof(novo.classeIsolacao)) && !doc["insulation_class"].isNull()) {
+    motivo = "classe de isolacao invalida"; return false;
+  }
+  if (novo.classeIsolacao[0] &&
+      (novo.classeIsolacao[1] || !strchr("AEBFHNR", novo.classeIsolacao[0]))) {
+    motivo = "classe de isolacao: use A, E, B, F, H, N ou R"; return false;
+  }
+  if (!lerTexto("ip_rating", novo.grauIp, sizeof(novo.grauIp)) && !doc["ip_rating"].isNull()) { motivo = "grau IP invalido"; return false; }
+  if (novo.grauIp[0] &&
+      (strncmp(novo.grauIp, "IP", 2) || strlen(novo.grauIp) < 4 ||
+       novo.grauIp[2] < '0' || novo.grauIp[2] > '9' ||
+       novo.grauIp[3] < '0' || novo.grauIp[3] > '9')) {
+    motivo = "grau de protecao: use formato IP55"; return false;
+  }
+  if (!lerTexto("manufacturer", novo.fabricante, sizeof(novo.fabricante)) && !doc["manufacturer"].isNull()) { motivo = "fabricante: use ate 40 caracteres"; return false; }
+  if (!lerTexto("model", novo.modelo, sizeof(novo.modelo)) && !doc["model"].isNull()) { motivo = "modelo: use ate 40 caracteres"; return false; }
+  if (!lerTexto("serial_number", novo.numeroSerie, sizeof(novo.numeroSerie)) && !doc["serial_number"].isNull()) { motivo = "numero de serie: use ate 32 caracteres"; return false; }
   float fases = 0;
   if (!ler("phases", 3, fases) || (fases != 0 && fases != 1 && fases != 3)) {
     motivo = "fases: use 1 (monofasico) ou 3 (trifasico)";
@@ -208,11 +278,23 @@ inline bool salvar(JsonVariantConst doc, const char*& motivo) {
   memoria.putFloat("v", novo.tensaoV);
   memoria.putFloat("a", novo.correnteA);
   memoria.putFloat("fs", novo.fatorServico);
+  memoria.putFloat("freq", novo.frequenciaHz);
+  memoria.putFloat("fp", novo.fatorPotencia);
+  memoria.putFloat("rend", novo.rendimentoPct);
+  memoria.putFloat("amb_c", novo.ambienteC);
+  memoria.putFloat("elev_k", novo.elevacaoK);
   memoria.putUShort("rpm", novo.rpm);
   memoria.putUChar("fases", novo.fases);
   memoria.putFloat("vy", novo.tensaoEstrelaV);
   memoria.putFloat("ay", novo.correnteEstrelaA);
   memoria.putBool("estrela", novo.emEstrela);
+  memoria.putString("ie", novo.classeRendimento);
+  memoria.putString("regime", novo.regime);
+  memoria.putString("isol", novo.classeIsolacao);
+  memoria.putString("ip", novo.grauIp);
+  memoria.putString("fabric", novo.fabricante);
+  memoria.putString("modelo", novo.modelo);
+  memoria.putString("serie", novo.numeroSerie);
   memoria.putUInt("manut_h", novo.manutencaoH);
   memoria.end();
   dados = novo;
@@ -265,6 +347,18 @@ inline void descrever(JsonDocument& doc) {
   if (dados.correnteA > 0) doc["current_a"] = decimalPublicado(dados.correnteA, 3);
   if (dados.rpm > 0) doc["rpm"] = dados.rpm;
   if (dados.fatorServico > 0) doc["service_factor"] = decimalPublicado(dados.fatorServico, 2);
+  if (dados.frequenciaHz > 0) doc["frequency_hz"] = decimalPublicado(dados.frequenciaHz, 3);
+  if (dados.fatorPotencia > 0) doc["power_factor"] = decimalPublicado(dados.fatorPotencia, 3);
+  if (dados.rendimentoPct > 0) doc["efficiency_pct"] = decimalPublicado(dados.rendimentoPct, 3);
+  if (dados.ambienteC > 0) doc["ambient_temp_c"] = decimalPublicado(dados.ambienteC, 2);
+  if (dados.elevacaoK > 0) doc["temperature_rise_k"] = decimalPublicado(dados.elevacaoK, 2);
+  if (dados.classeRendimento[0]) doc["efficiency_class"] = dados.classeRendimento;
+  if (dados.regime[0]) doc["duty"] = dados.regime;
+  if (dados.classeIsolacao[0]) doc["insulation_class"] = dados.classeIsolacao;
+  if (dados.grauIp[0]) doc["ip_rating"] = dados.grauIp;
+  if (dados.fabricante[0]) doc["manufacturer"] = dados.fabricante;
+  if (dados.modelo[0]) doc["model"] = dados.modelo;
+  if (dados.numeroSerie[0]) doc["serial_number"] = dados.numeroSerie;
   if (dados.fases) doc["phases"] = dados.fases;
   if (dados.tensaoEstrelaV > 0) doc["voltage_y_v"] = decimalPublicado(dados.tensaoEstrelaV, 3);
   if (dados.correnteEstrelaA > 0) doc["current_y_a"] = decimalPublicado(dados.correnteEstrelaA, 3);

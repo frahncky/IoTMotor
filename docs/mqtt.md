@@ -160,12 +160,19 @@ dado não cadastrado.
 
 ```json
 {"device_id":"esp32-01","power_cv":5,"voltage_v":220,"voltage_y_v":380,"current_a":12.6,"current_y_a":7.3,
- "phases":3,"connection":"delta","rpm":1730,"service_factor":1.15,
+ "phases":3,"connection":"delta","rpm":1730,"service_factor":1.15,"frequency_hz":60,
+ "power_factor":0.82,"efficiency_pct":91.7,"efficiency_class":"IE3","duty":"S1",
+ "insulation_class":"F","ambient_temp_c":40,"temperature_rise_k":80,"ip_rating":"IP55",
+ "manufacturer":"WEG","model":"W22","serial_number":"ABC123",
  "maint_interval_h":2000,"maint_done_run_s":1485000,"maint_done_utc":1790000000}
 ```
 
 - `voltage_v`/`current_a` são os da ligação **triângulo** (menor tensão). `voltage_y_v`/`current_y_a` são os da **estrela**. Só existem em motor trifásico de dupla tensão.
 - `connection`: ligação em que o motor trabalha, `delta` ou `star`.
+- `frequency_hz`, `power_factor` e `efficiency_pct`: valores nominais da placa, não as leituras instantâneas do PZEM.
+- `efficiency_class`: `IE1` a `IE5`; `duty`: `S1` a `S10`; `insulation_class`: `A`, `E`, `B`, `F`, `H`, `N` ou `R`.
+- `ambient_temp_c` e `temperature_rise_k`: ambiente máximo e elevação de temperatura informados pelo fabricante.
+- `ip_rating`, `manufacturer`, `model` e `serial_number`: proteção e identificação/rastreabilidade do motor.
 - `maint_done_run_s`: horímetro (s) quando a última manutenção foi registrada; `maint_done_utc`: a data dela.
 
 **`profiles`**: partidas gravadas no quadro (até 6).
@@ -297,6 +304,10 @@ Os campos fixos de vibração e histórico não são alterados por esse comando.
 - tensão de 0 a 1000 V e corrente de 0 a 2000 A;
 - rotação de 0 a 10000 rpm;
 - fator de serviço vazio ou de 1 a 3;
+- frequência de 0 a 1000 Hz, fator de potência de 0 a 1 e rendimento de 0 a 100%;
+- classe de rendimento `IE1`–`IE5`, regime `S1`–`S10` e classe de isolação `A`, `E`, `B`, `F`, `H`, `N` ou `R`;
+- temperatura ambiente de 0 a 100 °C e elevação térmica de 0 a 250 K;
+- grau de proteção no formato `IP55`, fabricante/modelo com até 40 bytes e número de série com até 32 bytes;
 - `phases` 1 ou 3;
 - manutenção de 0 a 100000 h.
 

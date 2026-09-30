@@ -13,6 +13,27 @@ void main() {
     expect(motorLoad(3.65, info.currentInUse), 50);
   });
 
+  test('lê os dados complementares da placa do motor', () {
+    final MotorInfo info = MotorInfo.tryParse(
+      '{"frequency_hz":60,"power_factor":0.82,"efficiency_pct":91.7,'
+      '"efficiency_class":"IE3","duty":"S1","insulation_class":"F",'
+      '"ambient_temp_c":40,"temperature_rise_k":80,"ip_rating":"IP55",'
+      '"manufacturer":"WEG","model":"W22","serial_number":"ABC123"}',
+    )!;
+    expect(info.frequencyHz, 60);
+    expect(info.powerFactor, 0.82);
+    expect(info.efficiencyPct, 91.7);
+    expect(info.efficiencyClass, 'IE3');
+    expect(info.duty, 'S1');
+    expect(info.insulationClass, 'F');
+    expect(info.ambientTempC, 40);
+    expect(info.temperatureRiseK, 80);
+    expect(info.ipRating, 'IP55');
+    expect(info.manufacturer, 'WEG');
+    expect(info.model, 'W22');
+    expect(info.serialNumber, 'ABC123');
+  });
+
   test('uso e manutenção, com os mesmos textos do painel', () {
     final MotorUsage uso = MotorUsage.fromMap(<String, dynamic>{
       'run_s_total': 3600 * 1950,

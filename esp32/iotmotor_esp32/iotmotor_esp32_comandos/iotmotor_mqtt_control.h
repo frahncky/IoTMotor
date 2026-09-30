@@ -110,10 +110,10 @@ void publicarPerfis() {
 // Dados de placa do motor, retidos: o painel e o app abrem ja preenchidos.
 void publicarMotorInfo() {
   if (!mqttClient.connected()) return;
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<1024> doc;
   doc["device_id"] = DEVICE_ID;
   motorinfo::descrever(doc);
-  char payload[384];
+  char payload[1024];
   const size_t len = serializeJson(doc, payload, sizeof(payload));
   if (len) mqttClient.publish(topicoMotorInfo, reinterpret_cast<const uint8_t*>(payload),
                               static_cast<unsigned int>(len), true);
@@ -148,7 +148,7 @@ bool perfilDeComandoAntigo(JsonVariantConst doc, PerfilDePartida& perfil) {
 
 void receberComandoMqtt(char* topico, uint8_t* payload, unsigned int tamanho) {
   if (!topico || strcmp(topico, topicoComandos) || !tamanho || tamanho > 1400) return;
-  StaticJsonDocument<768> doc;
+  StaticJsonDocument<1536> doc;
   if (deserializeJson(doc, payload, tamanho) || doc["v"].as<int>() != 1 ||
       strcmp(doc["device_id"] | "", DEVICE_ID)) return;
 

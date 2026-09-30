@@ -54,6 +54,26 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
         linha('Rotação', '${_motorNumber(info.rpm, casas: 0)} rpm');
       if (info.serviceFactor != null)
         linha('Fator de serviço', _motorNumber(info.serviceFactor));
+      if (info.frequencyHz != null)
+        linha('Frequência', '${_motorNumber(info.frequencyHz)} Hz');
+      if (info.powerFactor != null)
+        linha('Fator de potência', _motorNumber(info.powerFactor));
+      if (info.efficiencyPct != null)
+        linha('Rendimento', '${_motorNumber(info.efficiencyPct)}%');
+      if (info.efficiencyClass != null)
+        linha('Classe de rendimento', info.efficiencyClass!);
+      if (info.duty != null) linha('Regime de serviço', info.duty!);
+      if (info.insulationClass != null)
+        linha('Classe de isolação', info.insulationClass!);
+      if (info.ambientTempC != null)
+        linha('Ambiente máximo', '${_motorNumber(info.ambientTempC)} °C');
+      if (info.temperatureRiseK != null)
+        linha('Elevação térmica', '${_motorNumber(info.temperatureRiseK)} K');
+      if (info.ipRating != null) linha('Proteção', info.ipRating!);
+      if (info.manufacturer != null) linha('Fabricante', info.manufacturer!);
+      if (info.model != null) linha('Modelo', info.model!);
+      if (info.serialNumber != null)
+        linha('Número de série', info.serialNumber!);
       if (info.phases != null)
         linha('Tipo', info.phases == 3 ? 'Trifásico' : 'Monofásico');
       if (info.connectionLabel != null) linha('Ligação', info.connectionLabel!);
@@ -471,6 +491,19 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
               ? ''
               : _motorNumber(atual!.serviceFactor),
     );
+    TextEditingController numero(double? valor) =>
+        TextEditingController(text: valor == null ? '' : _motorNumber(valor));
+    TextEditingController texto(String? valor) =>
+        TextEditingController(text: valor ?? '');
+    final TextEditingController frequencia = numero(atual?.frequencyHz);
+    final TextEditingController fatorPotencia = numero(atual?.powerFactor);
+    final TextEditingController rendimento = numero(atual?.efficiencyPct);
+    final TextEditingController ambiente = numero(atual?.ambientTempC);
+    final TextEditingController elevacao = numero(atual?.temperatureRiseK);
+    final TextEditingController ip = texto(atual?.ipRating);
+    final TextEditingController fabricante = texto(atual?.manufacturer);
+    final TextEditingController modelo = texto(atual?.model);
+    final TextEditingController serie = texto(atual?.serialNumber);
     final TextEditingController manutencao = TextEditingController(
       text:
           atual?.maintIntervalH == null
@@ -479,6 +512,9 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
     );
     int fases = atual?.phases ?? 0;
     String ligacao = atual?.star == true ? 'star' : 'delta';
+    String classeRendimento = atual?.efficiencyClass ?? '';
+    String regime = atual?.duty ?? '';
+    String classeIsolacao = atual?.insulationClass ?? '';
     String erro = '';
 
     final Map<String, dynamic>? dados = await showDialog<Map<String, dynamic>>(
@@ -540,6 +576,67 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
                   'Manutenção',
                   max: 100000,
                 );
+                final double? hz = _parseMotorOptional(
+                  frequencia.text,
+                  'Frequência',
+                  min: 1,
+                  max: 1000,
+                );
+                final double? fp = _parseMotorOptional(
+                  fatorPotencia.text,
+                  'Fator de potência',
+                  min: 0.01,
+                  max: 1,
+                );
+                final double? rend = _parseMotorOptional(
+                  rendimento.text,
+                  'Rendimento',
+                  min: 1,
+                  max: 100,
+                );
+                final double? amb = _parseMotorOptional(
+                  ambiente.text,
+                  'Temperatura ambiente',
+                  min: 1,
+                  max: 100,
+                );
+                final double? elev = _parseMotorOptional(
+                  elevacao.text,
+                  'Elevação térmica',
+                  min: 1,
+                  max: 250,
+                );
+                String opcional(
+                  TextEditingController campo,
+                  String nome,
+                  int maximo,
+                ) {
+                  final String valor = campo.text.trim();
+                  if (valor.length > maximo) {
+                    throw FormatException('$nome: use até $maximo caracteres.');
+                  }
+                  return valor;
+                }
+
+                final String grauIp =
+                    opcional(ip, 'Grau de proteção', 7).toUpperCase();
+                if (grauIp.isNotEmpty &&
+                    !RegExp(r'^IP\d{2}[A-Z0-9]{0,3}$').hasMatch(grauIp)) {
+                  throw const FormatException(
+                    'Grau de proteção: use o formato IP55.',
+                  );
+                }
+                final String nomeFabricante = opcional(
+                  fabricante,
+                  'Fabricante',
+                  40,
+                );
+                final String nomeModelo = opcional(modelo, 'Modelo', 40);
+                final String numeroSerie = opcional(
+                  serie,
+                  'Número de série',
+                  32,
+                );
 
                 Navigator.of(dialogContext).pop(<String, dynamic>{
                   if (correntes.isNotEmpty) 'current_a': correntes[0],
@@ -549,6 +646,20 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
                   if (pot != null) 'power_cv': pot,
                   if (rot != null) 'rpm': rot,
                   if (fator != null) 'service_factor': fator,
+                  if (hz != null) 'frequency_hz': hz,
+                  if (fp != null) 'power_factor': fp,
+                  if (rend != null) 'efficiency_pct': rend,
+                  if (classeRendimento.isNotEmpty)
+                    'efficiency_class': classeRendimento,
+                  if (regime.isNotEmpty) 'duty': regime,
+                  if (classeIsolacao.isNotEmpty)
+                    'insulation_class': classeIsolacao,
+                  if (amb != null) 'ambient_temp_c': amb,
+                  if (elev != null) 'temperature_rise_k': elev,
+                  if (grauIp.isNotEmpty) 'ip_rating': grauIp,
+                  if (nomeFabricante.isNotEmpty) 'manufacturer': nomeFabricante,
+                  if (nomeModelo.isNotEmpty) 'model': nomeModelo,
+                  if (numeroSerie.isNotEmpty) 'serial_number': numeroSerie,
                   if (fases != 0) 'phases': fases,
                   if (dupla) 'connection': ligacao,
                   if (intervalo != null) 'maint_interval_h': intervalo,
@@ -557,6 +668,22 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
                 setDialogState(() => erro = e.message.toString());
               }
             }
+
+            Widget campo(
+              TextEditingController controller,
+              String label, {
+              bool decimal = false,
+            }) => Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: TextField(
+                controller: controller,
+                keyboardType:
+                    decimal
+                        ? const TextInputType.numberWithOptions(decimal: true)
+                        : TextInputType.text,
+                decoration: InputDecoration(labelText: label),
+              ),
+            );
 
             return AlertDialog(
               title: const Text('Dados do motor'),
@@ -655,6 +782,121 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
                           labelText: 'Fator de serviço',
                         ),
                       ),
+                      campo(
+                        frequencia,
+                        'Frequência nominal (Hz)',
+                        decimal: true,
+                      ),
+                      campo(
+                        fatorPotencia,
+                        'Fator de potência nominal',
+                        decimal: true,
+                      ),
+                      campo(
+                        rendimento,
+                        'Rendimento nominal (%)',
+                        decimal: true,
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: classeRendimento,
+                        decoration: const InputDecoration(
+                          labelText: 'Classe de rendimento',
+                        ),
+                        items:
+                            const <String>[
+                                  '',
+                                  'IE1',
+                                  'IE2',
+                                  'IE3',
+                                  'IE4',
+                                  'IE5',
+                                ]
+                                .map(
+                                  (String v) => DropdownMenuItem<String>(
+                                    value: v,
+                                    child: Text(
+                                      v.isEmpty ? 'Não informada' : v,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged:
+                            (String? v) => setDialogState(
+                              () => classeRendimento = v ?? '',
+                            ),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: regime,
+                        decoration: const InputDecoration(
+                          labelText: 'Regime de serviço',
+                        ),
+                        items:
+                            <String>[
+                                  '',
+                                  ...List<String>.generate(
+                                    10,
+                                    (int i) => 'S${i + 1}',
+                                  ),
+                                ]
+                                .map(
+                                  (String v) => DropdownMenuItem<String>(
+                                    value: v,
+                                    child: Text(
+                                      v.isEmpty ? 'Não informado' : v,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged:
+                            (String? v) =>
+                                setDialogState(() => regime = v ?? ''),
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        initialValue: classeIsolacao,
+                        decoration: const InputDecoration(
+                          labelText: 'Classe de isolação',
+                        ),
+                        items:
+                            const <String>[
+                                  '',
+                                  'A',
+                                  'E',
+                                  'B',
+                                  'F',
+                                  'H',
+                                  'N',
+                                  'R',
+                                ]
+                                .map(
+                                  (String v) => DropdownMenuItem<String>(
+                                    value: v,
+                                    child: Text(
+                                      v.isEmpty ? 'Não informada' : v,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                        onChanged:
+                            (String? v) =>
+                                setDialogState(() => classeIsolacao = v ?? ''),
+                      ),
+                      campo(
+                        ambiente,
+                        'Temperatura ambiente máxima (°C)',
+                        decimal: true,
+                      ),
+                      campo(
+                        elevacao,
+                        'Elevação de temperatura (K)',
+                        decimal: true,
+                      ),
+                      campo(ip, 'Grau de proteção (ex.: IP55)'),
+                      campo(fabricante, 'Fabricante'),
+                      campo(modelo, 'Modelo'),
+                      campo(serie, 'Número de série'),
                       const SizedBox(height: 10),
                       TextField(
                         controller: manutencao,
@@ -693,6 +935,15 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
       potencia,
       rpm,
       fs,
+      frequencia,
+      fatorPotencia,
+      rendimento,
+      ambiente,
+      elevacao,
+      ip,
+      fabricante,
+      modelo,
+      serie,
       manutencao,
     ]) {
       campo.dispose();

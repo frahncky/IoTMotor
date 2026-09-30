@@ -155,3 +155,41 @@ test('manutenção: intervalo vai no cadastro e "Manutenção feita" pede o coma
   assert.equal(h.api.dados().maint_done_run_s, 7200);
   assert.equal(h.api.dados().maint_done_utc, 1790000000);
 });
+
+test('dados complementares são lidos, validados e enviados ao quadro', () => {
+  const h = secao();
+  h.receber('motor_info', {
+    frequency_hz: 60, power_factor: 0.82, efficiency_pct: 91.7,
+    efficiency_class: 'IE3', duty: 'S1', insulation_class: 'F',
+    ambient_temp_c: 40, temperature_rise_k: 80, ip_rating: 'IP55',
+    manufacturer: 'WEG', model: 'W22', serial_number: 'ABC123'
+  });
+  assert.equal(h.no('motorInfoHz').value, '60');
+  assert.equal(h.no('motorInfoIe').value, 'IE3');
+  assert.equal(h.no('motorInfoFabricante').value, 'WEG');
+
+  h.no('motorInfoHz').value = '50';
+  h.no('motorInfoFp').value = '0,86';
+  h.no('motorInfoRend').value = '92,4';
+  h.no('motorInfoIe').value = 'IE4';
+  h.no('motorInfoRegime').value = 'S1';
+  h.no('motorInfoIsol').value = 'F';
+  h.no('motorInfoAmb').value = '40';
+  h.no('motorInfoElev').value = '80';
+  h.no('motorInfoIp').value = 'ip55';
+  h.no('motorInfoFabricante').value = 'Fabricante';
+  h.no('motorInfoModelo').value = 'Modelo X';
+  h.no('motorInfoSerie').value = 'SER-1';
+  h.no('motorInfoForm').fire('submit');
+  const motor = h.cliente.publicados.at(-1).dados.motor;
+  assert.equal(motor.frequency_hz, 50);
+  assert.equal(motor.power_factor, 0.86);
+  assert.equal(motor.efficiency_pct, 92.4);
+  assert.equal(motor.efficiency_class, 'IE4');
+  assert.equal(motor.duty, 'S1');
+  assert.equal(motor.insulation_class, 'F');
+  assert.equal(motor.ip_rating, 'IP55');
+  assert.equal(motor.manufacturer, 'Fabricante');
+  assert.equal(motor.model, 'Modelo X');
+  assert.equal(motor.serial_number, 'SER-1');
+});

@@ -170,6 +170,12 @@ caminho.
 ![Dados do motor](images/dados-do-motor.png)
 
 Em **Configurações › Dados do motor**, copie a placa de identificação do motor.
+
+Além de corrente, tensão, potência, rotação e fator de serviço, podem ser
+cadastrados frequência nominal, fator de potência, rendimento/classe IE,
+regime de serviço, classe de isolação, temperatura ambiente máxima, elevação
+térmica, grau IP, fabricante, modelo e número de série. Todos são opcionais e
+ficam gravados no ESP32-01; o painel web e o app mostram o mesmo cadastro.
 Os campos ficam gravados no quadro de comando e valem para o painel e o app.
 Todos são opcionais e aceitam vírgula ou ponto.
 

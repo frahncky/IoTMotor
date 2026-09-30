@@ -27,6 +27,12 @@ List<String>? lerFirmwarePublicado(Object? dados) {
 double? _numero(Object? valor) =>
     valor is num && valor.isFinite ? valor.toDouble() : null;
 
+String? _texto(Object? valor) {
+  if (valor is! String) return null;
+  final String texto = valor.trim();
+  return texto.isEmpty ? null : texto;
+}
+
 /// Dados de placa do motor, gravados no quadro de comando (tópico retido
 /// `motor_info`) pelo painel. Tudo opcional.
 class MotorInfo {
@@ -40,6 +46,18 @@ class MotorInfo {
     this.serviceFactor,
     this.rpm,
     this.phases,
+    this.frequencyHz,
+    this.powerFactor,
+    this.efficiencyPct,
+    this.efficiencyClass,
+    this.duty,
+    this.insulationClass,
+    this.ambientTempC,
+    this.temperatureRiseK,
+    this.ipRating,
+    this.manufacturer,
+    this.model,
+    this.serialNumber,
     this.maintIntervalH,
     this.maintDoneRunS,
     this.maintDoneUtc,
@@ -58,6 +76,18 @@ class MotorInfo {
   final double? serviceFactor;
   final double? rpm;
   final int? phases;
+  final double? frequencyHz;
+  final double? powerFactor;
+  final double? efficiencyPct;
+  final String? efficiencyClass;
+  final String? duty;
+  final String? insulationClass;
+  final double? ambientTempC;
+  final double? temperatureRiseK;
+  final String? ipRating;
+  final String? manufacturer;
+  final String? model;
+  final String? serialNumber;
   final double? maintIntervalH;
   final double? maintDoneRunS;
   final double? maintDoneUtc;
@@ -77,6 +107,18 @@ class MotorInfo {
         serviceFactor: _numero(dados['service_factor']),
         rpm: _numero(dados['rpm']),
         phases: fases == 1 || fases == 3 ? fases as int : null,
+        frequencyHz: _numero(dados['frequency_hz']),
+        powerFactor: _numero(dados['power_factor']),
+        efficiencyPct: _numero(dados['efficiency_pct']),
+        efficiencyClass: _texto(dados['efficiency_class']),
+        duty: _texto(dados['duty']),
+        insulationClass: _texto(dados['insulation_class']),
+        ambientTempC: _numero(dados['ambient_temp_c']),
+        temperatureRiseK: _numero(dados['temperature_rise_k']),
+        ipRating: _texto(dados['ip_rating']),
+        manufacturer: _texto(dados['manufacturer']),
+        model: _texto(dados['model']),
+        serialNumber: _texto(dados['serial_number']),
         maintIntervalH: _numero(dados['maint_interval_h']),
         maintDoneRunS: _numero(dados['maint_done_run_s']),
         maintDoneUtc: _numero(dados['maint_done_utc']),
