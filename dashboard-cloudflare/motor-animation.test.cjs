@@ -52,3 +52,17 @@ test('parada por inércia é suave, chega a zero e dura mais em regime', () => {
   assert.ok(meio > 0 && meio < 0.5);
   assert.equal(coastSpeed(1, total, total), 0);
 });
+
+test('efeitos do desenho: tudo ligado por padrão e JSON estranho não quebra', () => {
+  const {lerPreferenciasAnimacao, ANIMACAO_PADRAO} = require('./motor-animation.js');
+  assert.deepEqual(lerPreferenciasAnimacao(null), {...ANIMACAO_PADRAO});
+  assert.deepEqual(lerPreferenciasAnimacao('{quebrado'), {...ANIMACAO_PADRAO});
+  assert.deepEqual(lerPreferenciasAnimacao('{"tremor":false,"giro":"sim","extra":1}'),
+    {giro: true, tremor: false, calor: true, alarme: true});
+});
+
+test('efeitos desligados viram data-anim-*="off"; ligados não marcam nada', () => {
+  const {atributosAnimacao} = require('./motor-animation.js');
+  assert.deepEqual(atributosAnimacao({giro: false, tremor: true, calor: false, alarme: true}),
+    {animGiro: 'off', animTremor: null, animCalor: 'off', animAlarme: null});
+});

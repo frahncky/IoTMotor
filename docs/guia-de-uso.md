@@ -52,7 +52,10 @@ na rede da escola.
   parada por inércia), esquenta de cor perto do limite de temperatura e **treme**
   quando a vibração está em *Alerta* (de leve) ou *Crítica* (mais forte). A
   bolinha do título fica verde com o motor ligado e cinza com ele desligado.
-  Com "reduzir movimento" ligado no sistema, nada gira nem treme.
+  Com "reduzir movimento" ligado no sistema, nada gira nem treme. Cada efeito
+  (girar, tremer, cor da temperatura, piscar no alarme) e o som podem ser
+  desligados em **Configurações › Animação e som do motor**; a escolha vale só
+  para aquele navegador ou celular.
 - **Alarmes ativos:** o que está disparado agora, sensores sem leitura, grandezas perto do limite e manutenção vencida ou próxima.
 - **Grandezas elétricas e mecânicas** e **Gráficos em tempo real:** todas as medições, na cadência definida em **Aquisição e registro de dados**.
 - **Histórico da placa:** os últimos 7 dias, hora a hora (veja [Histórico](#histórico)).
