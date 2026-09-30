@@ -9,8 +9,10 @@
   // Campos complementares ficam agrupados depois dos dados elétricos básicos.
   // A inserção por script mantém compatibilidade com versões antigas do HTML
   // hospedadas em cache enquanto o JavaScript novo já estiver disponível.
+  // Entram antes da linha de botões; no HTML antigo, antes do "Gravar".
   const salvar = $('motorInfoSalvar');
-  if (salvar?.insertAdjacentHTML) salvar.insertAdjacentHTML('beforebegin', `
+  const antes = salvar?.closest?.('.motor-info-reset') || salvar;
+  if (antes?.insertAdjacentHTML) antes.insertAdjacentHTML('beforebegin', `
     <div class="field"><label for="motorInfoHz">Frequência nominal (Hz)</label><input id="motorInfoHz" inputmode="decimal" autocomplete="off"></div>
     <div class="field"><label for="motorInfoFp">Fator de potência nominal</label><input id="motorInfoFp" inputmode="decimal" autocomplete="off" placeholder="Ex.: 0,82"></div>
     <div class="field"><label for="motorInfoRend">Rendimento nominal (%)</label><input id="motorInfoRend" inputmode="decimal" autocomplete="off"></div>
