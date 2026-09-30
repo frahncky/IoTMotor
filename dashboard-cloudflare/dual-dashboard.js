@@ -322,7 +322,8 @@ function renderMotorVisual(){
  if(vib)dados.push(vib.texto);
  if(vib?.iso)root.dataset.vibZone=String(vib.iso.zona);else delete root.dataset.vibZone;
  if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${numeroBr(sensor.temperature,1)} °C`);
- text('motorVisualMetrics',dados.length?dados.join(' · '):
+ // Uma grandeza por linha (white-space:pre-line), ao lado do desenho.
+ text('motorVisualMetrics',dados.length?dados.join('\n'):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
  const manutencao=maintenanceStatus(info,cmd?.runSTotal);
  const uso=[tripText(cmd?.tripField,cmd?.motorOn),cmd?usageLine(cmd):'',manutencao?.vencida?'Manutenção vencida':manutencao?.perto?`Manutenção em ${horas(manutencao.restanteH)}`:'']
