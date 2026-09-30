@@ -280,6 +280,11 @@ O CSV é pensado para treinar modelos de detecção e classificação de falhas:
   cada contator (`relay_1` a `relay_4`), saúde dos sensores (`pzem_ok`,
   `mpu_ok`, `temperature_ok`), amostras da janela de vibração e o eixo de maior
   vibração.
+- **Diagnóstico da vibração** (firmware dos sensores `s3-sensors-1.23` em
+  diante): para cada eixo, velocidade RMS, aceleração RMS e de pico, fator de
+  crista, curtose, pico dominante do espectro e a velocidade em 17 faixas de
+  10 Hz (`vib_x_mms` … `vib_z_b180`). Veja a
+  [metodologia](vibracao.md#17-diagnóstico-por-eixo-e-espectro).
 - **Condição:** antes de cada ensaio, escreva no campo **Condição** o que está
   sendo testado (normal, desbalanceamento, falta de fase…). O texto vai na
   coluna `condition` das linhas gravadas dali em diante, e é o rótulo para a

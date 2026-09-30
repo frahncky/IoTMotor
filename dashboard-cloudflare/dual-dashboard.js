@@ -57,6 +57,21 @@ function idadeLeitura(at,now=Date.now()){
  const s=Math.max(0,Math.round((now-at)/1000));
  return s<60?`há ${s} s`:s<3600?`há ${Math.floor(s/60)} min`:`há ${Math.floor(s/3600)} h`;
 }
+// Diagnóstico da vibração por eixo (s3-sensors-1.23 em diante): estatísticas
+// da aceleração e espectro da velocidade em 17 faixas de 10 Hz (20 a 180 Hz).
+const VIB_EIXOS=['x','y','z'],VIB_FAIXAS_HZ=Array.from({length:17},(_,i)=>20+10*i);
+const VIB_CAMPOS=[['mms','mms','mms'],['acc_rms','aRms','a_rms'],['acc_peak','aPeak','a_peak'],['crest','crest','crest'],
+ ['kurtosis','kurt','kurt'],['peak_hz','pkHz','pk_hz'],['peak_mms','pkMms','pk_mms']];  // [coluna, chave, JSON]
+function lerVib(v){
+ if(!v||typeof v!=='object'||Array.isArray(v))return null;
+ const out={};
+ for(const e of VIB_EIXOS){
+  const x=v[e];if(!x||typeof x!=='object'||Array.isArray(x))continue;
+  out[e]=Object.fromEntries(VIB_CAMPOS.map(([,k,json])=>[k,numeric(x[json])]));
+  out[e].bands=Array.isArray(x.bands)&&x.bands.length===VIB_FAIXAS_HZ.length?x.bands.map(numeric):null;
+ }
+ return Object.keys(out).length?out:null;
+}
 function field(source,keys){for(const key of keys){const n=numeric(source[key]);if(n!==null)return n;}return null;}
 function parseTelemetry(json){
  if(!json||typeof json!=='object'||Array.isArray(json))return null;
@@ -83,7 +98,8 @@ function parseTelemetry(json){
   mpuOk:typeof source.mpu_ok==='boolean'?source.mpu_ok:null,
   temperatureOk:typeof source.temperature_ok==='boolean'?source.temperature_ok:null,
   sampleCount:numeric(source.sample_count),
-  vibrationAxis:/^[xyz]$/.test(source.vibration_axis)?source.vibration_axis:''};
+  vibrationAxis:/^[xyz]$/.test(source.vibration_axis)?source.vibration_axis:'',
+  vib:lerVib(source.vib)};
  for(const [name,keys]of Object.entries(alias))result[name]=field(source,keys);
  result.apparent=result.voltage!==null&&result.current!==null?result.voltage*result.current:null;
  result.reactive=result.apparent===null?null:result.power!==null?
@@ -517,6 +533,7 @@ function registroCsv({command=null,sensor=null,at,condicao=''}){
  }
  if(sensor)Object.assign(linha,{mpuOk:sensor.mpuOk,temperatureOk:sensor.temperatureOk,
   sampleCount:sensor.sampleCount,vibrationAxis:sensor.vibrationAxis});
+ if(sensor?.vib)linha.vib=sensor.vib;
  for(const m of METRICS){
   const v=(m.source==='command'?command:sensor)?.[m.key];
   if(v!==null&&v!==undefined)linha[m.key]=v;
@@ -575,7 +592,12 @@ const CSV_COLUNAS=[
  ...[0,1,2,3].map(i=>[`relay_${i+1}`,r=>r.relays?.[i]]),
  ['pzem_ok',r=>r.pzemOk],['mpu_ok',r=>r.mpuOk],['temperature_ok',r=>r.temperatureOk],
  ['vibration_samples',r=>r.sampleCount],['vibration_axis',r=>r.vibrationAxis],
- ...METRICS.map(m=>[m.key,r=>r[m.key]])
+ ...METRICS.map(m=>[m.key,r=>r[m.key]]),
+ // vib_x_mms ... vib_z_b180: por eixo, as estatísticas e depois as faixas.
+ ...VIB_EIXOS.flatMap(e=>[
+  ...VIB_CAMPOS.map(([nome,k])=>[`vib_${e}_${nome}`,r=>r.vib?.[e]?.[k]]),
+  ...VIB_FAIXAS_HZ.map((hz,i)=>[`vib_${e}_b${String(hz).padStart(3,'0')}`,r=>r.vib?.[e]?.bands?.[i]])
+ ])
 ];
 function linhasCsv(registros){
  return [CSV_COLUNAS.map(c=>c[0]).join(','),...registros.map(r=>CSV_COLUNAS.map(c=>celulaCsv(c[1](r))).join(','))];

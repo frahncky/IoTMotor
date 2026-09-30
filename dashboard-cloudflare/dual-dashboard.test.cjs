@@ -91,12 +91,35 @@ test('condição do ensaio no tópico retido: texto aparado, inválido é ignora
  assert.equal(lerCondicao('não é json'),null);
 });
 
+test('diagnóstico da vibração por eixo vai para colunas vib_<eixo>_*',()=>{
+ const faixas=Array.from({length:17},(_,i)=>i/100);
+ const sen=parseTelemetry({device_id:'esp32-02',vibration_mms:2.5,
+  vib:{x:{mms:0.4,a_rms:0.3,a_peak:0.9,crest:3,kurt:3.2,pk_hz:29.4,pk_mms:0.35,bands:faixas},
+   y:{mms:2.5,a_rms:1,a_peak:1.5,crest:1.5,kurt:1.5},z:'lixo'}});
+ assert.equal(sen.vib.x.pkHz,29.4);
+ assert.equal(sen.vib.y.bands,null);  // Sem espectro (anel ainda enchendo).
+ assert.equal(sen.vib.z,undefined);
+ assert.equal(parseTelemetry({device_id:'esp32-02',vib:[1]}).vib,null);
+ const [cab,linha]=linhasCsv([registroCsv({sensor:sen,at:0})]);
+ const colunas=cab.split(','),celulas=linha.split(',');
+ const valor=nome=>celulas[colunas.indexOf(nome)];
+ assert.equal(valor('vib_x_kurtosis'),'3.2');
+ assert.equal(valor('vib_x_b020'),'0');
+ assert.equal(valor('vib_x_b060'),'0.04');
+ assert.equal(valor('vib_x_b180'),'0.16');
+ assert.equal(valor('vib_y_crest'),'1.5');
+ assert.equal(valor('vib_y_b020'),'');
+ assert.equal(valor('vib_z_mms'),'');
+ assert.equal(colunas.filter(c=>c.startsWith('vib_')).length,3*(7+17));
+});
+
 test('CSV de treino: cabeçalho fixo, contatores em colunas e texto escapado',()=>{
  const cmd=parseTelemetry({device_id:'esp32-01',voltage:220,relays:[false,true,false,false],motor_running:true});
  const [cab,linha]=linhasCsv([registroCsv({command:cmd,at:Date.UTC(2026,8,30),condicao:'folga, base "solta"'})]);
  const colunas=cab.split(',');
  assert.deepEqual(colunas.slice(0,9),['measured_at','clock_source','demo','condition','motor_running','bench_armed','mode','profile','session_s']);
- assert.ok(colunas.includes('relay_4')&&colunas.includes('vibration_axis')&&colunas.at(-1)==='temperature');
+ assert.ok(colunas.includes('relay_4')&&colunas.includes('vibration_axis')&&colunas.includes('temperature'));
+ assert.equal(colunas.at(-1),'vib_z_b180');
  assert.match(linha,/^2026-09-30T00:00:00\.000Z,navegador,false,"folga, base ""solta""",true,/);
  assert.match(linha,/,false,true,false,false,/);
  assert.equal(celulaCsv(null),'');

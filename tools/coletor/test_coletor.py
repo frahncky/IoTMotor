@@ -21,7 +21,12 @@ QUADRO = {"device_id": "esp32-01", "ts": 1790000000, "voltage": 220.4, "current"
           "pf": 0.79, "frequency": 60, "energy": 1.2, "relays": [True, False, False, False],
           "motor_running": True, "mode": "direct", "profile": "direta", "session_s": 12, "pzem_ok": True}
 SENSORES = {"device_id": "esp32-02", "ts": 1790000001, "vibration_mms": 2.4, "vibration_axis": "z",
-            "temperature": 39.8, "mpu_ok": True, "temperature_ok": True, "sample_count": 1000}
+            "temperature": 39.8, "mpu_ok": True, "temperature_ok": True, "sample_count": 1000,
+            "vib": {"x": {"mms": 0.4, "a_rms": 0.3, "a_peak": 0.912, "crest": 3.04, "kurt": 3.2,
+                          "pk_hz": 29.412, "pk_mms": 0.35, "bands": [i / 1000 for i in range(17)]},
+                    "y": {"mms": 1.1, "a_rms": 1, "a_peak": 1.5, "crest": 1.5, "kurt": 1.5},
+                    "z": {"mms": 2.4, "a_rms": 0.00001, "a_peak": "7,5", "crest": None, "kurt": 1e21,
+                          "pk_hz": 120, "pk_mms": 2.3, "bands": [0.1] * 16}}}
 
 # (quadro, sensores, chegada em ms, condição): casos que o painel e o coletor
 # precisam gravar igual, inclusive números e textos difíceis.
@@ -49,6 +54,18 @@ class TestLeitura(unittest.TestCase):
         self.assertIsNone(c.numero("abc"))
         self.assertIsNone(c.numero(float("nan")))
         self.assertIsNone(c.ler_telemetria([1, 2]))
+
+    def test_vibracao_por_eixo(self):
+        v = c.ler_telemetria(SENSORES)["vib"]
+        self.assertEqual(v["x"]["pkHz"], 29.412)
+        self.assertEqual(len(v["x"]["bands"]), 17)
+        self.assertIsNone(v["y"]["bands"])      # Sem espectro (anel enchendo).
+        self.assertIsNone(v["z"]["bands"])      # 16 faixas: formato inválido.
+        self.assertEqual(v["z"]["aPeak"], 7.5)
+        self.assertIsNone(c.ler_vib([1]))
+        colunas = c.CABECALHO.split(",")
+        self.assertEqual(colunas[-1], "vib_z_b180")
+        self.assertEqual(sum(col.startswith("vib_") for col in colunas), 3 * (7 + 17))
 
     def test_condicao(self):
         self.assertEqual(c.ler_condicao('{"v":1,"condition":"  falta de fase "}'), "falta de fase")

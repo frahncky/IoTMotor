@@ -55,6 +55,26 @@ METRICAS = [
     ("temperature", "sensor", ["temperature", "temperatura", "temp"]),
 ]
 
+# Diagnóstico da vibração por eixo (s3-sensors-1.23 em diante): estatísticas
+# da aceleração e espectro da velocidade em 17 faixas de 10 Hz (20 a 180 Hz).
+VIB_EIXOS = ("x", "y", "z")
+VIB_FAIXAS_HZ = [20 + 10 * i for i in range(17)]
+VIB_CAMPOS = [  # (coluna, chave, JSON)
+    ("mms", "mms", "mms"), ("acc_rms", "aRms", "a_rms"), ("acc_peak", "aPeak", "a_peak"),
+    ("crest", "crest", "crest"), ("kurtosis", "kurt", "kurt"),
+    ("peak_hz", "pkHz", "pk_hz"), ("peak_mms", "pkMms", "pk_mms"),
+]
+
+
+def _vib(r, eixo, chave, faixa=None):
+    e = (r.get("vib") or {}).get(eixo)
+    if not e:
+        return None
+    if faixa is None:
+        return e.get(chave)
+    return e["bands"][faixa] if e.get("bands") else None
+
+
 COLUNAS = [
     ("measured_at", lambda r: r["at"]),
     ("clock_source", lambda r: r["clockSource"]),
@@ -72,6 +92,12 @@ COLUNAS = [
     ("vibration_samples", lambda r: r.get("sampleCount")),
     ("vibration_axis", lambda r: r.get("vibrationAxis")),
     *[(chave, (lambda k: lambda r: r.get(k))(chave)) for chave, _, _ in METRICAS],
+    # vib_x_mms ... vib_z_b180: por eixo, as estatísticas e depois as faixas.
+    *[col for e in VIB_EIXOS for col in (
+        *[(f"vib_{e}_{nome}", (lambda e, k: lambda r: _vib(r, e, k))(e, k)) for nome, k, _ in VIB_CAMPOS],
+        *[(f"vib_{e}_b{hz:03d}", (lambda e, i: lambda r: _vib(r, e, None, i))(e, i))
+          for i, hz in enumerate(VIB_FAIXAS_HZ)],
+    )],
 ]
 CABECALHO = ",".join(nome for nome, _ in COLUNAS)
 
@@ -100,6 +126,22 @@ def numero(v):
 
 def _bool(v):
     return v if isinstance(v, bool) else None
+
+
+def ler_vib(v):
+    """Como o lerVib() do painel."""
+    if not isinstance(v, dict):
+        return None
+    out = {}
+    for e in VIB_EIXOS:
+        x = v.get(e)
+        if not isinstance(x, dict):
+            continue
+        out[e] = {k: numero(x.get(json_)) for _, k, json_ in VIB_CAMPOS}
+        faixas = x.get("bands")
+        out[e]["bands"] = [numero(f) for f in faixas] \
+            if isinstance(faixas, list) and len(faixas) == len(VIB_FAIXAS_HZ) else None
+    return out or None
 
 
 def ler_telemetria(obj):
@@ -135,6 +177,7 @@ def ler_telemetria(obj):
         "temperatureOk": _bool(fonte.get("temperature_ok")),
         "sampleCount": numero(fonte.get("sample_count")),
         "vibrationAxis": eixo if eixo in ("x", "y", "z") else "",
+        "vib": ler_vib(fonte.get("vib")),
     }
     for chave, _, nomes in METRICAS:
         if nomes:
@@ -194,6 +237,8 @@ def registro_csv(command=None, sensor=None, at=0, condicao=""):
     if sensor:
         linha.update(mpuOk=sensor["mpuOk"], temperatureOk=sensor["temperatureOk"],
                      sampleCount=sensor["sampleCount"], vibrationAxis=sensor["vibrationAxis"])
+        if sensor.get("vib"):
+            linha["vib"] = sensor["vib"]
     for chave, origem, _ in METRICAS:
         amostra = command if origem == "command" else sensor
         if amostra and amostra.get(chave) is not None:
