@@ -11,6 +11,11 @@
 // Faixa: 10 Hz ate ~180 Hz (filtro interno do MPU a 1 kHz). A norma vai ate
 // 1 kHz, mas num motor de 2 ou 4 polos o que pesa na severidade (1x e 2x a
 // rotacao: desbalanceamento, desalinhamento, folga) esta abaixo de 180 Hz.
+//
+// Para diagnostico (deteccao e classificacao de falhas), cada janela tambem
+// da, por eixo: RMS, pico, fator de crista e curtose da aceleracao, e o
+// espectro da velocidade (FFT de 1024 pontos, janela de Hann) resumido em
+// faixas de 10 Hz e no pico dominante.
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
@@ -76,8 +81,21 @@ struct Eixo {
 inline Eixo eixos[3];
 inline uint16_t assentando = AMOSTRAS_ASSENTAR;
 
+// Espectro: as ultimas N velocidades de cada eixo, num anel.
+constexpr uint16_t N_FFT = 1024;  // ~1 s a 1 kHz; resolucao de ~0,98 Hz.
+// Faixas de 10 Hz centradas em 20, 30, ... 180 Hz. Bordas em 15, 25...:
+// 60 e 120 Hz (rede e 2x rede) e 1x/2x a rotacao ficam no meio de uma faixa.
+constexpr uint8_t NUM_FAIXAS = 17;
+constexpr float PRIMEIRA_FAIXA_HZ = 20.0f, LARGURA_FAIXA_HZ = 10.0f;
+// Pico dominante procurado entre 10 e 185 Hz.
+constexpr float PICO_MIN_HZ = 10.0f, PICO_MAX_HZ = 185.0f;
+inline float anel[3][N_FFT];
+inline uint16_t posAnel = 0, cheioAnel = 0;
+
 // Janela em andamento.
 inline double somaV2[3] = {0, 0, 0};
+inline double somaA2[3] = {0, 0, 0}, somaA4[3] = {0, 0, 0};
+inline float picoA[3] = {0, 0, 0};
 inline uint32_t nVelocidade = 0;
 
 // Resultado da ultima janela fechada.
@@ -86,6 +104,18 @@ inline char eixo = 'x';
 inline uint32_t amostras = 0;
 inline bool velocidadeValida = false;
 inline uint32_t perdas = 0;  // FIFO cheia (amostras perdidas), para o serial.
+// Por eixo (0 = x, 1 = y, 2 = z), validos junto com velocidadeValida.
+inline float mmSEixo[3] = {0, 0, 0};
+inline float aRms[3] = {0, 0, 0};    // Aceleracao RMS, m/s^2 (sem a gravidade).
+inline float aPico[3] = {0, 0, 0};   // Maior |aceleracao| da janela, m/s^2.
+inline float crista[3] = {0, 0, 0};  // Pico / RMS: impactos sobem este numero.
+// Curtose: 1,5 numa senoide pura, 3 num ruido aleatorio; impactos passam disso.
+inline float curtose[3] = {0, 0, 0};
+// Espectro da velocidade, valido quando o anel ja tem N_FFT amostras.
+inline bool espectroValido = false;
+inline float faixas[3][NUM_FAIXAS];  // RMS da velocidade em cada faixa, mm/s.
+inline float picoHz[3] = {0, 0, 0};  // Frequencia do pico dominante.
+inline float picoMmS[3] = {0, 0, 0}; // RMS do pico dominante, mm/s.
 
 inline bool escrever(uint8_t reg, uint8_t valor) {
   Wire.beginTransmission(ENDERECO);
@@ -104,6 +134,7 @@ inline bool lerRegistros(uint8_t reg, uint8_t* destino, uint8_t n) {
 inline void recomecarFiltros() {
   for (Eixo& e : eixos) e.zerar();
   assentando = AMOSTRAS_ASSENTAR;
+  cheioAnel = 0;  // Velocidade de antes da perda nao se emenda com a de depois.
 }
 
 inline bool reiniciarFifo() {
@@ -122,7 +153,7 @@ inline bool iniciar(uint8_t id) {
   if (ok && id != 0x68) ok = escrever(0x1D, 0x01);  // MPU6500: filtro de 218 Hz.
   ok = ok && escrever(0x23, 0x08);        // Na FIFO, so a aceleracao.
   ok = ok && reiniciarFifo();
-  somaV2[0] = somaV2[1] = somaV2[2] = 0;
+  for (uint8_t i = 0; i < 3; ++i) somaV2[i] = somaA2[i] = somaA4[i] = picoA[i] = 0;
   nVelocidade = 0;
   return ok;
 }
@@ -142,8 +173,100 @@ inline void amostra(const uint8_t* d) {
   // Leitura absurda (ruido no I2C) nao entra na janela.
   const double dinamica = sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]) / G;
   if (!isfinite(dinamica) || dinamica >= 8.0) return;
-  for (uint8_t i = 0; i < 3; ++i) somaV2[i] += v[i] * v[i];
+  for (uint8_t i = 0; i < 3; ++i) {
+    somaV2[i] += v[i] * v[i];
+    const double a2 = a[i] * a[i];
+    somaA2[i] += a2;
+    somaA4[i] += a2 * a2;
+    if (fabs(a[i]) > picoA[i]) picoA[i] = fabs(a[i]);
+    anel[i][posAnel] = static_cast<float>(v[i]);
+  }
+  posAnel = (posAnel + 1) % N_FFT;
+  if (cheioAnel < N_FFT) ++cheioAnel;
   ++nVelocidade;
+}
+
+// FFT complexa radix-2 no lugar (float: o S3 so tem FPU de precisao simples).
+inline float fftRe[N_FFT], fftIm[N_FFT];
+inline float hann[N_FFT], cosTab[N_FFT / 2], senTab[N_FFT / 2];
+inline float somaHann2 = 0;
+
+inline void prepararFft() {
+  if (somaHann2 > 0) return;
+  for (uint16_t n = 0; n < N_FFT; ++n) {
+    hann[n] = 0.5f - 0.5f * cosf(2.0f * static_cast<float>(M_PI) * n / N_FFT);
+    somaHann2 += hann[n] * hann[n];
+  }
+  for (uint16_t k = 0; k < N_FFT / 2; ++k) {
+    cosTab[k] = cosf(2.0f * static_cast<float>(M_PI) * k / N_FFT);
+    senTab[k] = -sinf(2.0f * static_cast<float>(M_PI) * k / N_FFT);
+  }
+}
+
+inline void fft() {
+  for (uint16_t i = 1, j = 0; i < N_FFT; ++i) {  // Ordem de bits invertida.
+    uint16_t bit = N_FFT >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      float t = fftRe[i]; fftRe[i] = fftRe[j]; fftRe[j] = t;
+      t = fftIm[i]; fftIm[i] = fftIm[j]; fftIm[j] = t;
+    }
+  }
+  for (uint16_t tam = 2; tam <= N_FFT; tam <<= 1) {
+    const uint16_t metade = tam / 2, passo = N_FFT / tam;
+    for (uint16_t ini = 0; ini < N_FFT; ini += tam) {
+      for (uint16_t k = 0; k < metade; ++k) {
+        const float c = cosTab[k * passo], s = senTab[k * passo];
+        const uint16_t p = ini + k, q = p + metade;
+        const float re = fftRe[q] * c - fftIm[q] * s, im = fftRe[q] * s + fftIm[q] * c;
+        fftRe[q] = fftRe[p] - re; fftIm[q] = fftIm[p] - im;
+        fftRe[p] += re; fftIm[p] += im;
+      }
+    }
+  }
+}
+
+// Linha espectral k -> Hz, e Hz -> primeira linha a partir dela.
+inline float hzDaLinha(float k) { return k * static_cast<float>(TAXA_HZ) / N_FFT; }
+inline uint16_t linhaDoHz(float hz) {
+  return static_cast<uint16_t>(ceilf(hz * N_FFT / static_cast<float>(TAXA_HZ)));
+}
+
+// Espectro da velocidade de um eixo: faixas e pico dominante, em mm/s RMS.
+// Potencia de uma faixa (Parseval com a janela): 2 / (N * soma(w^2)) * soma(|X|^2).
+inline void espectroDoEixo(uint8_t e) {
+  float media = 0;
+  for (uint16_t n = 0; n < N_FFT; ++n) media += anel[e][n];
+  media /= N_FFT;
+  for (uint16_t n = 0; n < N_FFT; ++n) {  // Da mais antiga para a mais nova.
+    fftRe[n] = (anel[e][(posAnel + n) % N_FFT] - media) * hann[n];
+    fftIm[n] = 0;
+  }
+  fft();
+  float* potencia = fftRe;  // Reaproveita: so a metade de baixo interessa.
+  for (uint16_t k = 0; k < N_FFT / 2; ++k)
+    potencia[k] = fftRe[k] * fftRe[k] + fftIm[k] * fftIm[k];
+  const float escala = 2.0f / (N_FFT * somaHann2);
+  auto rmsMmS = [&](uint16_t de, uint16_t ate) {  // [de, ate)
+    float soma = 0;
+    for (uint16_t k = de; k < ate && k < N_FFT / 2; ++k) soma += potencia[k];
+    return sqrtf(escala * soma) * 1000.0f;
+  };
+  for (uint8_t f = 0; f < NUM_FAIXAS; ++f) {
+    const float centro = PRIMEIRA_FAIXA_HZ + f * LARGURA_FAIXA_HZ;
+    faixas[e][f] = rmsMmS(linhaDoHz(centro - LARGURA_FAIXA_HZ / 2),
+                          linhaDoHz(centro + LARGURA_FAIXA_HZ / 2));
+  }
+  uint16_t k = linhaDoHz(PICO_MIN_HZ);
+  const uint16_t ultima = linhaDoHz(PICO_MAX_HZ);
+  for (uint16_t i = k + 1; i < ultima; ++i) if (potencia[i] > potencia[k]) k = i;
+  // Interpolacao parabolica nas amplitudes: o pico fica entre duas linhas.
+  const float a = sqrtf(potencia[k - 1]), b = sqrtf(potencia[k]), c = sqrtf(potencia[k + 1]);
+  const float den = a - 2 * b + c;
+  const float desvio = den != 0 ? 0.5f * (a - c) / den : 0;
+  picoHz[e] = hzDaLinha(k + (desvio > 0.5f ? 0.5f : desvio < -0.5f ? -0.5f : desvio));
+  picoMmS[e] = rmsMmS(k - 1, k + 2);  // A janela de Hann espalha o pico em 3 linhas.
 }
 
 // Le tudo o que esta na FIFO. false = o sensor nao respondeu.
@@ -167,7 +290,8 @@ inline bool ler() {
   return true;
 }
 
-// Fecha a janela: RMS da velocidade de cada eixo; vale o maior.
+// Fecha a janela: RMS da velocidade de cada eixo (vale o maior), as
+// estatisticas da aceleracao e o espectro.
 inline void fecharJanela(bool sensorOk) {
   amostras = sensorOk ? nVelocidade : 0;
   velocidadeValida = sensorOk && nVelocidade >= MINIMO_JANELA;
@@ -175,10 +299,21 @@ inline void fecharJanela(bool sensorOk) {
   if (velocidadeValida) {
     for (uint8_t i = 0; i < 3; ++i) {
       const float rms = sqrt(somaV2[i] / nVelocidade) * 1000.0;
+      mmSEixo[i] = rms;
       if (rms > mmS || i == 0) { mmS = rms; eixo = 'x' + i; }
+      aRms[i] = sqrt(somaA2[i] / nVelocidade);
+      aPico[i] = picoA[i];
+      crista[i] = aRms[i] > 0 ? aPico[i] / aRms[i] : 0;
+      // Curtose = N * soma(a^4) / soma(a^2)^2 (a aceleracao ja tem media ~0).
+      curtose[i] = somaA2[i] > 0 ? nVelocidade * somaA4[i] / (somaA2[i] * somaA2[i]) : 0;
     }
   }
-  somaV2[0] = somaV2[1] = somaV2[2] = 0;
+  espectroValido = velocidadeValida && cheioAnel >= N_FFT;
+  if (espectroValido) {
+    prepararFft();
+    for (uint8_t i = 0; i < 3; ++i) espectroDoEixo(i);
+  }
+  for (uint8_t i = 0; i < 3; ++i) somaV2[i] = somaA2[i] = somaA4[i] = picoA[i] = 0;
   nVelocidade = 0;
 }
 

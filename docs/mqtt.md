@@ -108,6 +108,7 @@ com janela RMS de 1 s.
 | `device_id`, `seq`, `ts`, `secure` | | Como no quadro |
 | `vibration_mms` | número | Velocidade de vibração RMS em mm/s, faixa útil aproximada de 10 a 180 Hz, maior valor entre X/Y/Z (`s3-sensors-1.10` em diante); veja [metodologia](vibracao.md) |
 | `vibration_axis` | texto | Eixo do MPU6050 com a maior velocidade: `x`, `y` ou `z` |
+| `vib` | objeto | Diagnóstico por eixo da última janela de 1 s, para detecção e classificação de falhas (`s3-sensors-1.23` em diante). Só vem com a janela válida; veja abaixo |
 | `temperature` | número | °C do DS18B20 |
 | `mpu_ok`, `temperature_ok` | booleano | Cada sensor respondendo |
 | `sample_count` | número | Amostras úteis usadas na janela RMS mais recente; janelas com menos de 500 não são aceitas como válidas |
@@ -117,6 +118,27 @@ com janela RMS de 1 s.
 | `event_sounds`, `buzzer_hz` | | Bipes de evento ligados e tom do buzzer |
 | `motor_on` | booleano | Motor ligado, pelo que o quadro publicou |
 | `command_telemetry_fresh` | booleano | A telemetria do quadro chegou há menos de 6 s |
+
+**`vib`**: um objeto por eixo (`x`, `y`, `z`), valores com 3 casas:
+
+```json
+"vib": {"x": {"mms": 0.412, "a_rms": 0.318, "a_peak": 0.97, "crest": 3.05, "kurt": 3.4,
+              "pk_hz": 29.41, "pk_mms": 0.35, "bands": [0.01, 0.35, 0.02, "... 17 valores"]},
+        "y": {"...": "..."}, "z": {"...": "..."}}
+```
+
+| Campo | Unidade | Significado |
+| --- | --- | --- |
+| `mms` | mm/s | Velocidade RMS do eixo (o maior dos três é o `vibration_mms`) |
+| `a_rms`, `a_peak` | m/s² | Aceleração RMS e maior valor absoluto da janela, sem a gravidade |
+| `crest` | — | Fator de crista (`a_peak / a_rms`): ~1,4 numa senoide; impactos sobem |
+| `kurt` | — | Curtose da aceleração: 1,5 numa senoide, 3 em ruído; impactos passam disso |
+| `pk_hz`, `pk_mms` | Hz, mm/s | Pico dominante do espectro da velocidade (10 a 185 Hz) |
+| `bands` | mm/s | Velocidade RMS em 17 faixas de 10 Hz centradas em 20, 30, … 180 Hz |
+
+`pk_hz`, `pk_mms` e `bands` só aparecem depois que a placa junta 1024 amostras
+seguidas (~1 s após ligar ou após uma perda na FIFO). Metodologia em
+[vibracao.md](vibracao.md#17-diagnóstico-por-eixo-e-espectro).
 
 ## Mensagens retidas
 

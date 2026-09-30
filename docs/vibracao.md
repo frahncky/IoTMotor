@@ -433,11 +433,12 @@ identifica sozinho a causa da vibração.
 | O motor mudou de condição? | Pode indicar |
 | É desbalanceamento ou desalinhamento? | Não de forma conclusiva |
 | Há defeito específico de rolamento? | Não |
-| Qual frequência está dominante? | Não; exigiria análise espectral/FFT |
+| Qual frequência está dominante? | Não; o espectro (`vib.*.pk_hz`, seção 17) responde |
 | O instrumento atende formalmente uma norma? | Não sem validação metrológica e procedimento adequado |
 
-Uma evolução futura natural do projeto é adicionar **FFT/espectro**, mantendo o
-RMS global como indicador complementar.
+Desde a `s3-sensors-1.23`, cada janela também traz o diagnóstico por eixo e o
+espectro da velocidade (seção 17), mantendo o RMS global como indicador de
+severidade.
 
 ## 15. Dados enviados por MQTT
 
@@ -477,7 +478,73 @@ Os gráficos não devem fabricar pontos intermediários. Quando várias amostras
 reais pertencem à mesma janela de gráfico, a interface as consolida na janela
 temporal correspondente.
 
-## 17. Referências técnicas
+## 17. Diagnóstico por eixo e espectro
+
+Para **detecção e classificação de falhas**, um número só não basta: cada
+falha deixa uma assinatura diferente. Desde a `s3-sensors-1.23`, a cada janela
+de 1 s a placa publica, por eixo, o objeto `vib` (formato na
+[Referência MQTT](mqtt.md#telemetria-dos-sensores-do-motor)).
+
+### Estatísticas da aceleração
+
+Calculadas sobre a aceleração **depois do primeiro passa-altas** (sem a
+gravidade), nas mesmas amostras válidas da janela RMS:
+
+| Grandeza | Conta | Senoide pura | Para que serve |
+| --- | --- | ---: | --- |
+| `a_rms` | $\sqrt{\sum a^2 / N}$ | — | Energia total em aceleração |
+| `a_peak` | $\max \lvert a \rvert$ | — | Maior valor da janela |
+| `crest` | $a_{peak} / a_{rms}$ | 1,41 | Impactos (folga, batida) sobem |
+| `kurt` | $N \sum a^4 / (\sum a^2)^2$ | 1,5 | 3 em ruído aleatório; impactos passam disso |
+
+### Espectro da velocidade
+
+A placa guarda as últimas **1024 velocidades** de cada eixo e, ao fechar a
+janela, faz uma **FFT de 1024 pontos com janela de Hann** (resolução de
+~0,98 Hz). Do espectro saem:
+
+- **17 faixas de 10 Hz** (`bands`), centradas em 20, 30, … 180 Hz, com bordas
+  em 15, 25, … 185 Hz. As bordas ficam longe de 60 e 120 Hz (rede e 2× rede)
+  e de 1× e 2× a rotação de motores de 2 e 4 polos, que caem no meio de uma
+  faixa. Cada faixa é a velocidade RMS ali, em mm/s, pela relação de Parseval
+  com a janela:
+
+  $$
+  V_{faixa}=1000\sqrt{\frac{2}{N\sum w^2}\sum_{k\in faixa}\lvert X_k\rvert^2}
+  $$
+
+- o **pico dominante** entre 10 e 185 Hz: frequência (`pk_hz`, com
+  interpolação parabólica entre linhas) e velocidade RMS (`pk_mms`, somando as
+  3 linhas em que a janela de Hann espalha um tom).
+
+Para um sinal estacionário, a soma quadrática das faixas se aproxima do `mms`
+do eixo. Os testes nativos (`teste_vibracao.cpp`) conferem com senoides
+conhecidas: 60 Hz cai na faixa de 60 Hz, um tom de 29,5 Hz (entre duas linhas)
+dá o pico em 29,5 Hz, e dois tons caem em faixas separadas.
+
+### O que cada assinatura costuma indicar
+
+| Assinatura | Causa provável |
+| --- | --- |
+| Faixa de 1× a rotação alta, radial | Desbalanceamento |
+| 2× a rotação alta, em especial axial | Desalinhamento |
+| Várias harmônicas da rotação, crista e curtose altas | Folga mecânica |
+| 120 Hz (2× a rede) alto | Origem elétrica (entreferro, desequilíbrio de fase) |
+
+A tabela é orientativa. O modelo de classificação aprende as assinaturas reais
+da sua bancada com os ensaios rotulados.
+
+### Limites
+
+- A faixa continua sendo **10 a ~180 Hz** (filtro do MPU6050). Defeitos de
+  rolamento em estágio inicial aparecem em kHz e **não** são vistos.
+- O espectro só sai depois de 1024 amostras seguidas (~1 s após ligar ou após
+  uma perda na FIFO).
+- A FFT roda na tarefa dos sensores, a cada 1 s, em precisão simples: 3 FFTs
+  levam poucos milissegundos no ESP32-S3, bem menos que os ~170 ms que a FIFO
+  do MPU aguenta.
+
+## 18. Referências técnicas
 
 - [ISO 20816-3 — Mechanical vibration — Measurement and evaluation of machine vibration — Part 3](https://www.iso.org/standard/78311.html). Consulte a edição vigente antes de qualquer avaliação normativa formal.
 - [Analog Devices — MEMS Vibration Monitoring: From Acceleration to Velocity](https://www.analog.com/en/resources/analog-dialogue/articles/mems-vibration-monitoring-acceleration-to-velocity.html). Referência conceitual sobre conversão de aceleração para velocidade e limitações de banda/ruído.

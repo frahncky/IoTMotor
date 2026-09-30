@@ -31,6 +31,7 @@ constexpr uint16_t PORTAL_SEGUNDOS = 180;
 #include "relogio.h"
 #include "historico.h"
 #include "vibracao.h"
+#include "vibracao_json.h"
 
 // Rede local: crie wifi_local.h na pasta do sketch (fora do Git) a partir de
 // wifi_local.exemplo.h para usar outra rede sem publicar a senha no GitHub.
@@ -568,19 +569,22 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.22-mqtt-cloudflare";
+  doc["firmware_version"]="s3-sensors-1.23-mqtt-cloudflare";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
   JsonArray fields=doc.createNestedArray("fields");
-  fields.add("vibration_mms");fields.add("temperature");
+  fields.add("vibration_mms");fields.add("temperature");fields.add("vib");
   char payload[384];size_t n=serializeJson(doc,payload,sizeof(payload));
   if(n)mqtt.publish(capabilitiesTopic,(const uint8_t*)payload,(unsigned int)n,true);
 }
 
 void publishTelemetry() {
   if(!mqtt.connected())return;
-  StaticJsonDocument<1024> doc;
+  // Estaticos: com o diagnostico da vibracao, ~5 KB nao cabem na pilha do loop.
+  static StaticJsonDocument<3072> doc;
+  static char payload[2048];
+  doc.clear();
   xSemaphoreTake(sensoresMutex,portMAX_DELAY);
   doc["device_id"]=DEVICE_ID;
   doc["seq"]=++sequence;
@@ -603,12 +607,15 @@ void publishTelemetry() {
     doc["vibration_mms"]=mmsAtual;  // Velocidade RMS, mm/s, 10 Hz a ~180 Hz, pior eixo
     doc["vibration_axis"]=String(eixoAtual);  // x, y ou z (String: copiado)
   }
+  // Da ultima janela de 1 s, so se ela valeu (o mm/s acima tolera 3 s).
+  if(mpuReady && vibracao::velocidadeValida)vibracaojson::descrever(doc.createNestedObject("vib"));
   if(tempReady && isfinite(temperatureC))doc["temperature"]=temperatureC;
   JsonArray disparados=doc.createNestedArray("alarms_firing");
   for(uint8_t i=0;i<alarmes::total;i++)
     if(alarmes::lista[i].disparado)disparados.add(alarmes::lista[i].id);
   xSemaphoreGive(sensoresMutex);
-  char payload[1024];size_t n=serializeJson(doc,payload,sizeof(payload));
+  size_t n=serializeJson(doc,payload,sizeof(payload));
+  if(doc.overflowed())Serial.println("[S3/MQTT] telemetria nao coube no documento JSON");
   if(!n||!mqtt.publish(telemetryTopic,(const uint8_t*)payload,(unsigned int)n,false))
     Serial.printf("[S3/MQTT] falha publicando, state=%d bytes=%u\n",mqtt.state(),(unsigned int)n);
   else if(sequence%10==1)Serial.printf("[S3/MQTT] telemetria seq=%lu, amostras=%lu, temp_ok=%d\n",(unsigned long)sequence,doc["sample_count"].as<unsigned long>(),doc["temperature_ok"].as<bool>());
