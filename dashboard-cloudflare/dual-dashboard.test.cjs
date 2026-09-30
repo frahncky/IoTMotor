@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {numeroBr,idadeLeitura,tripText,registroCsv,linhasCsv,celulaCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
+const {numeroBr,idadeLeitura,tripText,registroCsv,linhasCsv,celulaCsv,lerCondicao,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -81,6 +81,14 @@ test('a linha guardada junta as duas placas e só tem as colunas do CSV',()=>{
  const soSensor=registroCsv({sensor:sen,at:0});
  assert.equal(soSensor.at,new Date(1790000001*1000).toISOString());
  assert.equal('voltage' in soSensor||'motorOn' in soSensor,false);
+});
+
+test('condição do ensaio no tópico retido: texto aparado, inválido é ignorado',()=>{
+ assert.equal(lerCondicao('{"v":1,"condition":"  falta de fase "}'),'falta de fase');
+ assert.equal(lerCondicao('{"v":1,"condition":""}'),'');
+ assert.equal(lerCondicao(JSON.stringify({condition:'x'.repeat(60)})).length,40);
+ assert.equal(lerCondicao('{"condition":3}'),null);
+ assert.equal(lerCondicao('não é json'),null);
 });
 
 test('CSV de treino: cabeçalho fixo, contatores em colunas e texto escapado',()=>{

@@ -283,7 +283,10 @@ O CSV é pensado para treinar modelos de detecção e classificação de falhas:
 - **Condição:** antes de cada ensaio, escreva no campo **Condição** o que está
   sendo testado (normal, desbalanceamento, falta de fase…). O texto vai na
   coluna `condition` das linhas gravadas dali em diante, e é o rótulo para a
-  classificação. Troque ou apague o campo ao mudar de ensaio.
+  classificação. Troque ou apague o campo ao mudar de ensaio. Com o painel
+  conectado, a condição também é publicada no MQTT e vale para o
+  [coletor contínuo](../tools/coletor/README.md), que grava as mesmas colunas
+  sem o limite de uma hora e sem o painel aberto.
 
 A placa de sensores continua gravando o histórico mesmo sem rede (temperatura
 e vibração medidas por ela; corrente e tempo ligado dependem do quadro), e

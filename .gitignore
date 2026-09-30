@@ -55,3 +55,6 @@ esp32/iotmotor_esp32/**/build/
 comando_local.h
 # Testes nativos do firmware: ArduinoJson baixado e binarios
 esp32/testes_nativos/.cache/
+# Dados gravados pelo coletor continuo (tools/coletor)
+tools/coletor/dados/
+__pycache__/

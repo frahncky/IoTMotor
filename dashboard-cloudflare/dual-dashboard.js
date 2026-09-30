@@ -46,7 +46,7 @@ const ACQ_DEFAULT={revision:0,pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,re
 const ACQ_PRESETS={realtime:{pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,record_ms:1000},monitoring:{pzem_read_ms:1000,publish_ms:2000,chart_ms:2000,record_ms:5000},economic:{pzem_read_ms:5000,publish_ms:5000,chart_ms:5000,record_ms:30000}};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
- acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null,condicao:''};
+ acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null,condicao:'',condicaoPendente:false};
 let commandWasFresh=false;
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
 // Números na tela sempre com vírgula decimal (pt-BR); o CSV continua com ponto.
@@ -469,14 +469,17 @@ function connect(automatico){
  const active=()=>state.client===client&&state.generation===generation;
  client.on('connect',()=>{
   if(!active())return;state.connected=true;pill('Broker conectado','live');
-  const topics=[topic(config.commandDevice,'telemetry'),topic(config.commandDevice,'status'),topic(config.sensorDevice,'telemetry'),topic(config.sensorDevice,'status'),config.prefix+'/system/acquisition'];
+  const topics=[topic(config.commandDevice,'telemetry'),topic(config.commandDevice,'status'),topic(config.sensorDevice,'telemetry'),topic(config.sensorDevice,'status'),config.prefix+'/system/acquisition',config.prefix+'/system/condition'];
   client.subscribe(topics,{qos:0},err=>{
    if(!active())return;state.subscribed=!err;diag(err?`Conectado, erro de assinatura: ${err.message}`:`Broker conectado. Aguardando ${topics[0]} e ${topics[2]}.`);updateControl();
+   if(!err)publicarCondicao();  // O que foi digitado desconectado vale agora.
   });
  });
  client.on('message',(destination,payload,packet)=>{
   if(!active())return;
-  if(destination===config.prefix+'/system/acquisition'){aplicarConfiguracaoAquisicao(payload.toString('utf8'));return;}  const which=destination.startsWith(`${config.prefix}/${config.commandDevice}/`)?'command':destination.startsWith(`${config.prefix}/${config.sensorDevice}/`)?'sensor':null;
+  if(destination===config.prefix+'/system/acquisition'){aplicarConfiguracaoAquisicao(payload.toString('utf8'));return;}
+  if(destination===config.prefix+'/system/condition'){receberCondicao(payload.toString('utf8'));return;}
+  const which=destination.startsWith(`${config.prefix}/${config.commandDevice}/`)?'command':destination.startsWith(`${config.prefix}/${config.sensorDevice}/`)?'sensor':null;
   if(!which)return;
   if(destination===topic(config[which==='command'?'commandDevice':'sensorDevice'],'status')){
    state[which].status=payload.toString('utf8').slice(0,80);state[which].statusAt=Date.now();render();return;
@@ -532,6 +535,32 @@ function registrar(which){
   sensor:recente('sensor')?state.sensor.sample:null,at:agora,condicao:state.condicao}));
  if(state.records.length>MAX_REGISTROS)state.records.shift();
  guardarRegistros();
+}
+// Condição do ensaio no tópico retido <prefixo>/system/condition: o coletor
+// contínuo (tools/coletor) e outros painéis rotulam as linhas com ela.
+// {"v":1,"condition":"..."} -> texto; null se inválido.
+function lerCondicao(raw){
+ let data;try{data=typeof raw==='string'?JSON.parse(raw):raw;}catch{return null;}
+ if(!data||typeof data!=='object'||typeof data.condition!=='string')return null;
+ return data.condition.trim().slice(0,MAX_CONDICAO);
+}
+function definirCondicao(texto){
+ state.condicao=texto;
+ try{localStorage.setItem(CONDICAO,texto);}catch{}
+}
+// Vinda do broker. Não apaga o que foi digitado aqui e ainda não foi publicado.
+function receberCondicao(raw){
+ const texto=lerCondicao(raw);
+ if(texto===null||state.condicaoPendente)return;
+ definirCondicao(texto);
+ const campo=$('ensaioCondicao');
+ if(campo&&document.activeElement!==campo)campo.value=texto;
+}
+function publicarCondicao(){
+ if(!state.condicaoPendente||!state.client||!state.connected)return;
+ state.client.publish(`${state.config.prefix}/system/condition`,
+  JSON.stringify({v:1,condition:state.condicao,ts:Math.floor(Date.now()/1000)}),{qos:1,retain:true});
+ state.condicaoPendente=false;
 }
 // Célula do CSV: texto com vírgula, aspas ou quebra de linha vai entre aspas.
 function celulaCsv(v){
@@ -642,9 +671,12 @@ function init(){
  try{state.condicao=String(localStorage.getItem(CONDICAO)||'').slice(0,MAX_CONDICAO);}catch{}
  if($('ensaioCondicao')){
   $('ensaioCondicao').value=state.condicao;
+  // Publica quando para de digitar; desconectado, ao conectar.
+  let publicarTimer=null;
   $('ensaioCondicao').addEventListener('input',()=>{
-   state.condicao=$('ensaioCondicao').value.trim().slice(0,MAX_CONDICAO);
-   try{localStorage.setItem(CONDICAO,state.condicao);}catch{}
+   definirCondicao($('ensaioCondicao').value.trim().slice(0,MAX_CONDICAO));
+   state.condicaoPendente=true;
+   clearTimeout(publicarTimer);publicarTimer=setTimeout(publicarCondicao,800);
   });
  }
  $('broker').value=state.config.broker;$('prefix').value=state.config.prefix;
@@ -686,4 +718,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={numeroBr,idadeLeitura,tripText,registroCsv,linhasCsv,celulaCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={numeroBr,idadeLeitura,tripText,registroCsv,linhasCsv,celulaCsv,lerCondicao,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};

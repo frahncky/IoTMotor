@@ -58,6 +58,7 @@ caminho dos bytes.
 | `iotmotor/esp32-01/profiles` | quadro | ✔ | Partidas gravadas |
 | `iotmotor/esp32-01/motor_info` | quadro | ✔ | Dados da placa do motor e manutenção |
 | `iotmotor/system/acquisition` | quadro | ✔ | Configuração única de aquisição, publicação, gráficos e registro |
+| `iotmotor/system/condition` | painel | ✔ | Condição do ensaio: rótulo das linhas do CSV e do coletor contínuo |
 | `iotmotor/esp32-02/alarms` | sensores | ✔ | Lista de alarmes |
 | `iotmotor/esp32-02/alarm_log` | sensores | ✔ | Últimos 10 disparos |
 | `iotmotor/esp32-02/history/<0..6>` | sensores | ✔ | Histórico por hora, um tópico por dia |
@@ -125,6 +126,11 @@ alguém assina. É por isso que o painel e o app abrem já preenchidos.
 **`system/acquisition`**: configuração única do sistema, publicada pelo
 ESP32-01 e retida no broker. O ESP32-01 também grava os quatro intervalos
 ajustáveis em NVS.
+
+**`system/condition`**: `{"v":1,"condition":"desbalanceamento","ts":1790000000}`,
+publicado pelo painel quando o campo **Condição** muda (até 40 caracteres;
+vazio = não informada). O painel e o [coletor contínuo](../tools/coletor/README.md)
+gravam o texto na coluna `condition` do CSV. As placas não usam.
 
 ```json
 {"v":1,"source":"esp32-01","revision":7,
