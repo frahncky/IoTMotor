@@ -255,7 +255,7 @@ function vibrationText(sensor,motorOn,info){
  const mms=sensor?.vibration_mms;
  if(!Number.isFinite(mms))return null;
  const iso=motorOn===true?vibrationZone(mms,info?.power_cv):null;
- return {texto:`Vibração ${mms.toFixed(2).replace('.',',')} mm/s${iso?` · ${iso.label}`:''}`,iso};
+ return {texto:`Vibração ${mms.toFixed(2).replace('.',',')} mm/s${iso?` · ${iso.label}`:''}`,iso};
 }
 // Manutenção pelo horímetro: horas de uso desde a última manutenção contra o
 // intervalo cadastrado em "Dados do motor". null sem intervalo ou sem horímetro.
@@ -315,13 +315,13 @@ function renderMotorVisual(){
  const dados=[];
  if(cmd?.current!==null&&cmd?.current!==undefined){
   const carga=cmd.motorOn===true?motorLoad(cmd.current,window.iotmotorMotorInfo?.dados?.()?.current_in_use_a):null;
-  dados.push(`Corrente ${numeroBr(cmd.current,2)} A${carga!==null?` (carga ${carga}%)`:''}`);
+  dados.push(`Corrente ${numeroBr(cmd.current,2)} A${carga!==null?` (carga ${carga}%)`:''}`);
  }
  // Classificação só com o motor girando: parado, a vibração é ruído do sensor.
  const vib=vibrationText(sensor,cmd?.motorOn,info);
  if(vib)dados.push(vib.texto);
  if(vib?.iso)root.dataset.vibZone=String(vib.iso.zona);else delete root.dataset.vibZone;
- if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${numeroBr(sensor.temperature,1)} °C`);
+ if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${numeroBr(sensor.temperature,1)} °C`);
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
  const manutencao=maintenanceStatus(info,cmd?.runSTotal);

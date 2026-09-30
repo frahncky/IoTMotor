@@ -47,6 +47,12 @@ na rede da escola.
   - vibração em **mm/s RMS** com a classificação de referência do projeto (com o motor ligado);
   - temperatura;
   - uma linha de uso: *Ligado há…*, horímetro e partidas de hoje.
+
+  O desenho gira com o motor (com a queda da troca na estrela-triângulo e a
+  parada por inércia), esquenta de cor perto do limite de temperatura e **treme**
+  quando a vibração está em *Alerta* (de leve) ou *Crítica* (mais forte). A
+  bolinha do título fica verde com o motor ligado e cinza com ele desligado.
+  Com "reduzir movimento" ligado no sistema, nada gira nem treme.
 - **Alarmes ativos:** o que está disparado agora, sensores sem leitura, grandezas perto do limite e manutenção vencida ou próxima.
 - **Grandezas elétricas e mecânicas** e **Gráficos em tempo real:** todas as medições, na cadência definida em **Aquisição e registro de dados**.
 - **Histórico da placa:** os últimos 7 dias, hora a hora (veja [Histórico](#histórico)).

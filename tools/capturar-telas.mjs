@@ -263,8 +263,13 @@ try {
   await capturar(celular, 'celular', `.details`);
   await celular.fechar();
 } finally {
+  // Fecha pelo DevTools: no Windows, matar so o processo principal deixava
+  // dezenas de processos filhos do navegador abertos a cada execucao.
+  await Promise.race([cdp('Browser.close').catch(() => {}), espera(3000)]);
   ws.close();
   nav.kill();
+  if (process.platform === 'win32' && nav.pid)
+    spawn('taskkill', ['/pid', String(nav.pid), '/T', '/F'], {stdio: 'ignore'});
   servidor.close();
   await espera(500);
   try { rmSync(perfil, {recursive: true, force: true}); } catch {}
