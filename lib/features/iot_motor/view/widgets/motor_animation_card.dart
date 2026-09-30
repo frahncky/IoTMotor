@@ -9,6 +9,7 @@ import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
 import '../../models/board_alarm.dart';
 import '../../models/motor_info.dart';
+import '../../services/motor_animation_prefs.dart';
 import 'glass_panel.dart';
 import 'motor_motion.dart';
 import 'motor_usage_strip.dart';
@@ -17,7 +18,8 @@ import 'motor_usage_strip.dart';
 ///
 /// Não comanda a bancada. A rotação acompanha somente o estado confirmado
 /// pelos contatores do ESP32-01. RPM e temperatura vêm dos dados já recebidos
-/// pelo app; não há deslocamento visual por vibração.
+/// pelo app. O motor treme nas zonas Alerta e Crítica da vibração, como no
+/// painel. Cada efeito pode ser desligado em Configurações › Motor.
 ///
 /// O desenho e o movimento são os mesmos do painel web
 /// (`dashboard-cloudflare/motor-animation.js`). Com o motor parado e sem
@@ -27,10 +29,14 @@ class MotorAnimationCard extends StatefulWidget {
     super.key,
     required this.controller,
     required this.startType,
+    this.efeitos = const MotorAnimationEffects(),
   });
 
   final MotorControlController controller;
   final MotorCommandType startType;
+
+  /// Efeitos escolhidos nas Configurações; por padrão, todos.
+  final MotorAnimationEffects efeitos;
 
   @override
   State<MotorAnimationCard> createState() => _MotorAnimationCardState();
@@ -45,6 +51,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   final ValueNotifier<int> _frame = ValueNotifier<int>(0);
   Duration _lastElapsed = Duration.zero;
   double _blinkSeconds = 0;
+  double _tremorSeconds = 0;
   bool _reduceMotion = false;
   String? _shownStatus;
 
@@ -91,6 +98,37 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   _AlarmParts get _alarms =>
       _connected ? _AlarmParts.of(widget.controller) : const _AlarmParts();
 
+  /// Sem giro: "reduzir movimento" do sistema ou escolha nas Configurações.
+  bool get _semGiro => _reduceMotion || !widget.efeitos.giro;
+
+  bool get _pisca => !_reduceMotion && widget.efeitos.alarme && _alarms.blinks;
+
+  /// Amplitude do tremor em px, como no painel: Alerta 0,8 e Crítica 1,8.
+  double get _tremorPx {
+    if (_reduceMotion || !widget.efeitos.tremor || !_running) return 0;
+    final int? zona =
+        VibrationSeverity.zone(
+          widget.controller.sensorVibration,
+          widget.controller.motorInfo?.powerCv,
+        )?.zona;
+    return zona == 3 ? 1.8 : (zona == 2 ? 0.8 : 0);
+  }
+
+  Offset get _tremorOffset {
+    final double a = _tremorPx;
+    if (a == 0) return Offset.zero;
+    final double t = _tremorSeconds;
+    return Offset(
+      a * math.sin(2 * math.pi * 8.3 * t),
+      a * 0.8 * math.sin(2 * math.pi * 11.1 * t + 1),
+    );
+  }
+
+  /// Precisa de quadros: girando, piscando ou tremendo.
+  bool get _precisaQuadros =>
+      _connected &&
+      ((!_semGiro && (_running || _motion.moving)) || _pisca || _tremorPx > 0);
+
   void _onControllerChanged() {
     if (!mounted) return;
     _sync();
@@ -112,13 +150,10 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     if (!_connected) {
       // Sem telemetria ao vivo, não animamos o último estado conhecido.
       _motion.halt();
-    } else if (_reduceMotion) {
+    } else if (_semGiro) {
       _motion.settle(running: running);
     }
-    final bool needsFrames =
-        _connected &&
-        !_reduceMotion &&
-        (running || _motion.moving || _alarms.blinks);
+    final bool needsFrames = _precisaQuadros;
     if (needsFrames && !_ticker.isActive) {
       _lastElapsed = Duration.zero;
       _ticker.start();
@@ -132,17 +167,22 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     final double dt = (elapsed - _lastElapsed).inMicroseconds / 1e6;
     _lastElapsed = elapsed;
     final bool running = _running;
-    _motion.step(
-      dt,
-      running: running,
-      kind: motorStartKindFor(widget.startType),
-      rpm: widget.controller.motorInfo?.rpm,
-    );
+    if (_semGiro) {
+      _motion.settle(running: running);
+    } else {
+      _motion.step(
+        dt,
+        running: running,
+        kind: motorStartKindFor(widget.startType),
+        rpm: widget.controller.motorInfo?.rpm,
+      );
+    }
     _blinkSeconds = (_blinkSeconds + dt) % 1;
+    _tremorSeconds = (_tremorSeconds + dt) % 60;
     _frame.value++;
 
     if (_statusText() != _shownStatus) setState(() {});
-    if (!running && !_motion.moving && !_alarms.blinks) _ticker.stop();
+    if (!_precisaQuadros) _ticker.stop();
   }
 
   String _statusText() {
@@ -155,7 +195,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
 
   /// Opacidade do ícone de alarme: 1 → 0,4 → 1 a cada segundo.
   double get _blinkOpacity {
-    if (_reduceMotion) return 1;
+    if (!_pisca) return 1;
     return 0.7 + 0.3 * math.cos(_blinkSeconds * 2 * math.pi);
   }
 
@@ -169,10 +209,13 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     final String? desarme = widget.controller.desarmeCampo;
     final _AlarmParts alarms = _alarms;
     final String status = _shownStatus = _statusText();
-    final double? heat = motorHeat(
-      temperature,
-      temperatureLimit(widget.controller.boardAlarms),
-    );
+    final double? heat =
+        widget.efeitos.calor
+            ? motorHeat(
+              temperature,
+              temperatureLimit(widget.controller.boardAlarms),
+            )
+            : null;
 
     final List<String> falaDesenho = <String>[
       status,
@@ -213,7 +256,8 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                       alarmTemperature: alarms.temperature,
                       alarmVibration: alarms.vibration,
                       dimmed: !connected,
-                      motionBlur: !_reduceMotion,
+                      motionBlur: !_semGiro,
+                      tremor: () => _tremorOffset,
                     ),
                   ),
                 ),
@@ -417,6 +461,7 @@ class _MotorPainter extends CustomPainter {
     required this.alarmVibration,
     required this.dimmed,
     required this.motionBlur,
+    required this.tremor,
   }) : super(repaint: repaint);
 
   final MotorMotion motion;
@@ -426,6 +471,9 @@ class _MotorPainter extends CustomPainter {
   final bool alarmVibration;
   final bool dimmed;
   final bool motionBlur;
+
+  /// Deslocamento do tremor, em px da tela (antes da escala do desenho).
+  final Offset Function() tremor;
 
   static const double _w = 760, _h = 430;
 
@@ -507,6 +555,8 @@ class _MotorPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final double scale = math.min(size.width / _w, size.height / _h);
     canvas.save();
+    final Offset deslocamento = tremor();
+    canvas.translate(deslocamento.dx, deslocamento.dy);
     canvas.translate(
       (size.width - _w * scale) / 2,
       (size.height - _h * scale) / 2,

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../../app/providers/motor_animation_provider.dart';
 import '../../../../../app/providers/motor_sound_provider.dart';
 import '../../../../../app/theme/app_theme.dart';
 import '../../../controller/motor_control_controller.dart';
 import '../../../models/device_names.dart';
 import '../../../models/motor_info.dart';
+import '../../../services/motor_animation_prefs.dart';
 import '../../widgets/app_section.dart';
 
 /// Aba "Motor" das configurações: dados de placa, som e ações do motor.
@@ -30,6 +32,8 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
     final bool disponivel =
         controller.isConnected && controller.motorDeviceId != null;
     final sound = ref.watch(motorSoundServiceProvider);
+    final MotorAnimationPrefs animacao = ref.watch(motorAnimationPrefsProvider);
+    final MotorAnimationEffects efeitos = animacao.efeitos;
     final TextTheme texto = Theme.of(context).textTheme;
 
     final List<Widget> dados = <Widget>[];
@@ -233,6 +237,46 @@ class _MotorSettingsPanelState extends ConsumerState<MotorSettingsPanel> {
                   label: Text(sound.testing ? 'Parar teste' : 'Testar som'),
                 ),
               ],
+            ),
+          ],
+        ),
+        appSectionGap,
+        AppSection(
+          title: 'Animação do motor',
+          subtitle:
+              'Efeitos do desenho na tela Início, só neste aparelho. '
+              '"Reduzir movimento" do sistema continua valendo.',
+          children: <Widget>[
+            SwitchListTile(
+              key: const ValueKey<String>('anim_giro'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Girar'),
+              subtitle: const Text('Partida, regime e parada por inércia'),
+              value: efeitos.giro,
+              onChanged: (bool v) => animacao.set(efeitos.copyWith(giro: v)),
+            ),
+            SwitchListTile(
+              key: const ValueKey<String>('anim_tremor'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Tremer com a vibração'),
+              subtitle: const Text('Nas zonas Alerta e Crítica'),
+              value: efeitos.tremor,
+              onChanged: (bool v) => animacao.set(efeitos.copyWith(tremor: v)),
+            ),
+            SwitchListTile(
+              key: const ValueKey<String>('anim_calor'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Cor da temperatura'),
+              subtitle: const Text('A carcaça esquenta perto do limite'),
+              value: efeitos.calor,
+              onChanged: (bool v) => animacao.set(efeitos.copyWith(calor: v)),
+            ),
+            SwitchListTile(
+              key: const ValueKey<String>('anim_alarme'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Piscar nos alarmes'),
+              value: efeitos.alarme,
+              onChanged: (bool v) => animacao.set(efeitos.copyWith(alarme: v)),
             ),
           ],
         ),

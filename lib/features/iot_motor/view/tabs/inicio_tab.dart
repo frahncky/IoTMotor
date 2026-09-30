@@ -3,7 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../app/providers/motor_animation_provider.dart';
 import '../../../../app/theme/app_theme.dart';
 import '../../controller/motor_control_controller.dart';
 import '../../models/motor_command_type.dart';
@@ -222,10 +224,7 @@ class _InicioTabState extends State<InicioTab> {
                   children: <Widget>[
                     DelayedReveal(
                       delay: const Duration(milliseconds: 160),
-                      child: MotorAnimationCard(
-                        controller: widget.controller,
-                        startType: selectedStartType,
-                      ),
+                      child: _cartaoDoMotor(selectedStartType),
                     ),
                     const SizedBox(height: 8),
                     DelayedReveal(
@@ -265,10 +264,7 @@ class _InicioTabState extends State<InicioTab> {
                         children: <Widget>[
                           DelayedReveal(
                             delay: const Duration(milliseconds: 160),
-                            child: MotorAnimationCard(
-                              controller: widget.controller,
-                              startType: selectedStartType,
-                            ),
+                            child: _cartaoDoMotor(selectedStartType),
                           ),
                           const SizedBox(height: 8),
                           DelayedReveal(
@@ -298,6 +294,17 @@ class _InicioTabState extends State<InicioTab> {
       },
     );
   }
+
+  /// Cartão do motor com os efeitos escolhidos em Configurações › Motor; só
+  /// ele reconstrói quando um efeito muda.
+  Widget _cartaoDoMotor(MotorCommandType tipo) => Consumer(
+    builder:
+        (BuildContext context, WidgetRef ref, Widget? _) => MotorAnimationCard(
+          controller: widget.controller,
+          startType: tipo,
+          efeitos: ref.watch(motorAnimationPrefsProvider).efeitos,
+        ),
+  );
 
   // setState e protegido: as partes (extensoes) atualizam a tela por aqui.
   void _atualizar(VoidCallback mudanca) => setState(mudanca);
