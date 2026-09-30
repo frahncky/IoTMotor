@@ -23,13 +23,17 @@ dashboard-cloudflare/   Painel web: HTML e JavaScript puros, sem build
   *.test.cjs              Testes (node --test)
 functions/mqtt.js       Ponte MQTT na porta 443 (Cloudflare Pages Function)
 esp32/iotmotor_esp32/   Firmware das duas placas (veja firmware.md)
+esp32/testes_nativos/   Testes da lógica do firmware no PC (g++, Arduino de mentira)
+tools/                  Capturas de tela da documentação e geração do áudio
 lib/                    App Flutter
   features/iot_motor/
     controller/           Estado e regras do app: uma classe, dividida por assunto
-                          em partes (alertas, histórico, partidas, placas, dispositivos)
+                          em partes (conexão, telemetria, ajustes, alertas, histórico,
+                          partidas, placas, dispositivos)
     models/               Telemetria, aquisição, alarmes, dados do motor
     services/             MQTT, selo de comando, atualização do app, armazenamento
-    view/                 Abas Início, Histórico, Alertas e Configurações
+    view/                 Abas Início, Histórico, Alertas e Configurações;
+                          as abas grandes divididas em partes (inicio_*, settings_*)
       tabs/settings/      Painéis das Configurações (motor, perfis, alertas, manutenção)
 test/                   Testes do app (flutter test)
 tool/                   Simuladores das placas em Dart
