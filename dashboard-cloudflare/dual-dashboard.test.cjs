@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
+const {numeroBr,idadeLeitura,tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,commandPendingLabel,motorWarnings,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS}=require('./dual-dashboard.js');
 
 test('indicador de conexao combina telemetria recente e status online/offline',()=>{
  const now=100000;
@@ -181,12 +181,12 @@ test('avisos do motor: grandezas sem leitura e valores perto ou além do limite'
   ['warn|Medições elétricas (PZEM) sem leitura']);
  // Limites de fábrica: 90% avisa, no limite vira alarme.
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:5,temperature:55},alarms:null})),
-  ['alarm|Vibração RMS alta: 5.00 mm/s (limite 4.5 mm/s)','warn|Temperatura alta: 55.0 °C (limite 60 °C)']);
+  ['alarm|Vibração RMS alta: 5,00 mm/s (limite 4,5 mm/s)','warn|Temperatura alta: 55,0 °C (limite 60 °C)']);
  // Lista da placa: limites próprios, alarmes desligados ignorados, "abaixo de" também.
  const alarms=[{id:'t',field:'temperature',above:true,limit:40,on:true},{id:'i',field:'current',above:true,limit:4,on:false},
   {id:'v',field:'voltage',above:false,limit:200,on:true}];
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:{...cmd,voltage:210},sensor:{vibration_mms:1,temperature:41},alarms})),
-  ['alarm|Temperatura alta: 41.0 °C (limite 40 °C)','warn|Tensão baixa: 210.0 V (limite 200 V)']);
+  ['alarm|Temperatura alta: 41,0 °C (limite 40 °C)','warn|Tensão baixa: 210,0 V (limite 200 V)']);
 });
 
 test('avisos de limite seguem o firmware: estrito, o mais grave vale e nada com alarme desligado',()=>{
@@ -194,11 +194,11 @@ test('avisos de limite seguem o firmware: estrito, o mais grave vale e nada com 
  const cmd={voltage:220,current:3.9,power:800,pf:0.9,frequency:60,energy:1.2};
  // Exatamente no limite: a placa não dispara (valor > limite), então é só aviso.
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:1,temperature:60},alarms:null})),
-  ['warn|Temperatura alta: 60.0 °C (limite 60 °C)']);
+  ['warn|Temperatura alta: 60,0 °C (limite 60 °C)']);
  // Dois alarmes de temperatura: o de 60 °C disparou mesmo vindo depois do de 100 °C.
  const dois=[{id:'a',field:'temperature',above:true,limit:100,on:true},{id:'b',field:'temperature',above:true,limit:60,on:true}];
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{vibration_mms:1,temperature:95},alarms:dois})),
-  ['alarm|Temperatura alta: 95.0 °C (limite 60 °C)']);
+  ['alarm|Temperatura alta: 95,0 °C (limite 60 °C)']);
  // Monitoramento desligado: sem avisos de limite, mas a falta de leitura continua.
  assert.deepEqual(textos(motorWarnings({brokerReady:true,command:cmd,sensor:{alarmEnabled:false,vibration_mms:null,temperature:95},alarms:dois})),
   ['warn|Vibração sem leitura']);
@@ -311,4 +311,17 @@ test('desenho do motor tem texto para leitor de tela com os alarmes',()=>{
  assert.equal(motorVisualAria('Motor ligado',new Set()),'Desenho do motor: Motor ligado');
  assert.equal(motorVisualAria('Motor ligado',new Set(['temperature','vibration'])),'Desenho do motor: Motor ligado, alarme de temperatura, alarme de vibração');
  assert.equal(motorVisualAria('Desconectado',null),'Desenho do motor: Desconectado');
+});
+test('números da tela usam vírgula decimal', () => {
+ assert.equal(numeroBr(220.15,1), '220,2');
+ assert.equal(numeroBr(8.7,2), '8,70');
+ assert.equal(numeroBr(3022,0), '3022');
+});
+test('última leitura aparece como idade, não como horário', () => {
+ const agora=1_000_000_000;
+ assert.equal(idadeLeitura(0,agora), '—');
+ assert.equal(idadeLeitura(agora-2400,agora), 'há 2 s');
+ assert.equal(idadeLeitura(agora-125000,agora), 'há 2 min');
+ assert.equal(idadeLeitura(agora-2*3600e3,agora), 'há 2 h');
+ assert.equal(idadeLeitura(agora+500,agora), 'há 0 s');  // relógio do navegador adiantado
 });

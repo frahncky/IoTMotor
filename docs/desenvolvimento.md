@@ -61,6 +61,20 @@ dart run tool/esp32_02_simulator.dart --host test.mosquitto.org --prefix iotmoto
 Use um prefixo próprio (como `iotmotor-teste`) para não misturar com a bancada
 real, e configure o mesmo prefixo no painel. `--help` lista as opções.
 
+## Capturas de tela da documentação
+
+As imagens de `docs/images/*.png` saem do próprio painel:
+
+```sh
+node tools/capturar-telas.mjs          # todas
+node tools/capturar-telas.mjs painel   # só as que têm "painel" no nome
+```
+
+O script abre o painel no Edge ou Chrome sem janela e troca o MQTT por um broker
+de mentira dentro da página, com as duas placas publicando dados parecidos com os
+reais. Nada vai para o broker público. Depois de mudar a interface, rode de novo
+e confira as imagens antes do commit.
+
 ## Testes
 
 | O quê | Comando |

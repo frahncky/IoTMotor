@@ -44,6 +44,14 @@ const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscr
  acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null};
 let commandWasFresh=false;
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
+// Números na tela sempre com vírgula decimal (pt-BR); o CSV continua com ponto.
+function numeroBr(v,casas){return v.toFixed(casas).replace('.',',');}
+// Idade de uma leitura ("há 3 s"): diz na hora se o dado está atual.
+function idadeLeitura(at,now=Date.now()){
+ if(!at)return '—';
+ const s=Math.max(0,Math.round((now-at)/1000));
+ return s<60?`há ${s} s`:s<3600?`há ${Math.floor(s/60)} min`:`há ${Math.floor(s/3600)} h`;
+}
 function field(source,keys){for(const key of keys){const n=numeric(source[key]);if(n!==null)return n;}return null;}
 function parseTelemetry(json){
  if(!json||typeof json!=='object'||Array.isArray(json))return null;
@@ -194,7 +202,7 @@ function motorWarnings({brokerReady,command,sensor,alarms,maintenance}){
   const chave=`${a.field}:${above}`,anterior=porGrandeza.get(chave);
   if(anterior&&(anterior.passou||!passou))continue;
   const label=extra?.label??metric.label,unit=extra?.unit??metric.unit,digits=extra?.digits??metric.digits;
-  porGrandeza.set(chave,{passou,kind:passou?'over':'near',field:a.field,level:passou?'alarm':'warn',text:`${label} ${above?'alta':'baixa'}: ${value.toFixed(digits)}${unit?` ${unit}`:''} (limite ${a.limit}${unit?` ${unit}`:''})`});
+  porGrandeza.set(chave,{passou,kind:passou?'over':'near',field:a.field,level:passou?'alarm':'warn',text:`${label} ${above?'alta':'baixa'}: ${numeroBr(value,digits)}${unit?` ${unit}`:''} (limite ${String(a.limit).replace('.',',')}${unit?` ${unit}`:''})`});
  }
  for(const {kind,field,level,text} of porGrandeza.values())out.push({kind,field,level,text});
  return out;
@@ -307,13 +315,13 @@ function renderMotorVisual(){
  const dados=[];
  if(cmd?.current!==null&&cmd?.current!==undefined){
   const carga=cmd.motorOn===true?motorLoad(cmd.current,window.iotmotorMotorInfo?.dados?.()?.current_in_use_a):null;
-  dados.push(`Corrente ${cmd.current.toFixed(2)} A${carga!==null?` (carga ${carga}%)`:''}`);
+  dados.push(`Corrente ${numeroBr(cmd.current,2)} A${carga!==null?` (carga ${carga}%)`:''}`);
  }
  // Classificação só com o motor girando: parado, a vibração é ruído do sensor.
  const vib=vibrationText(sensor,cmd?.motorOn,info);
  if(vib)dados.push(vib.texto);
  if(vib?.iso)root.dataset.vibZone=String(vib.iso.zona);else delete root.dataset.vibZone;
- if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${sensor.temperature.toFixed(1)} °C`);
+ if(sensor?.temperature!==null&&sensor?.temperature!==undefined)dados.push(`Temperatura ${numeroBr(sensor.temperature,1)} °C`);
  text('motorVisualMetrics',dados.length?dados.join(' · '):
   visual.state==='offline'?'Conecte ao MQTT para visualizar o estado do motor.':'Sem grandezas recentes para exibir.');
  const manutencao=maintenanceStatus(info,cmd?.runSTotal);
@@ -348,7 +356,7 @@ function drawChart(target,metric){
  target.replaceChildren();
  if(!values.length){target.append(svg('text',{x:320,y:105,'text-anchor':'middle',class:'empty'},'Sem leitura disponível'));return;}
  let min=Math.min(...values),max=Math.max(...values);const pad=Math.max((max-min)*.12,Math.abs(max)*.01,.01);min-=pad;max+=pad;
- for(let i=0;i<4;i++){const y=20+160*i/3;target.append(svg('line',{x1:53,x2:633,y1:y,y2:y,class:'gridline'}));target.append(svg('text',{x:45,y:y+4,'text-anchor':'end'},(max-(max-min)*i/3).toFixed(metric.digits>2?2:metric.digits)));}
+ for(let i=0;i<4;i++){const y=20+160*i/3;target.append(svg('line',{x1:53,x2:633,y1:y,y2:y,class:'gridline'}));target.append(svg('text',{x:45,y:y+4,'text-anchor':'end'},numeroBr(max-(max-min)*i/3,metric.digits>2?2:metric.digits)));}
  // Grade vertical: 5 faixas; nas linhas do meio, a hora da amostra ali.
  const entries=state.series[metric.key];
  for(let k=0;k<=5;k++){
@@ -375,12 +383,16 @@ function buildCards(){const root=$('metrics');for(const m of METRICS){
  const detail=document.createElement('small');detail.id=`hint-${m.key}`;detail.textContent='Sem leitura';item.append(label,value,detail);root.append(item);
 }}
 function render(){
- for(const m of METRICS){const value=valueFor(m),source=state[m.source];text(`value-${m.key}`,value===null?'—':value.toFixed(m.digits));
+ for(const m of METRICS){const value=valueFor(m),source=state[m.source];text(`value-${m.key}`,value===null?'—':numeroBr(value,m.digits));
  text(`hint-${m.key}`,value===null?'':source.sample.demo?'Simulado — não é medição':m.source==='command'?'ESP32 PZEM-004T':'ESP32-S3 sensores');}
  renderDevice('pzemState','command',NOMES.command);
  renderDevice('sensorState','sensor',NOMES.sensor);
- text('commandAge',state.command.at?new Date(state.command.at).toLocaleTimeString('pt-BR'):'—');
- text('sensorAge',state.sensor.at?new Date(state.sensor.at).toLocaleTimeString('pt-BR'):'—');
+ for(const [id,which] of [['commandAge','command'],['sensorAge','sensor']]){
+  const at=state[which].at;text(id,idadeLeitura(at));
+  // Mesma regra do selo de conexão: passou de 10 s, o dado está velho.
+  $(id).className=at&&!freshness(which)?'velha':'';
+  $(id).title=at?new Date(at).toLocaleTimeString('pt-BR'):'';
+ }
  $('exportBtn').disabled=!state.records.length;updateControl();renderMotorVisual();renderCharts();
 }
 function reset(){commandWasFresh=false;state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
@@ -611,4 +623,4 @@ function init(){
  },1500);
 }
 if(typeof document!=='undefined')init();
-if(typeof module!=='undefined'&&module.exports)module.exports={tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};
+if(typeof module!=='undefined'&&module.exports)module.exports={numeroBr,idadeLeitura,tripText,registroCsv,parseTelemetry,validateConfig,telemetryFresh,deviceConnection,motorVisualState,motorVisualAria,motorLoad,formatDuration,usageLine,maintenanceStatus,maintenanceText,vibrationZone,vibrationText,commandPendingLabel,motorWarnings,motorHeat,temperatureLimit,alarmParts,registrosValidos,chartBucketStart,upsertChartPoint,METRICS};

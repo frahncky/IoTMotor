@@ -34,7 +34,7 @@
     <p class="muted" style="margin:0 0 14px">Marque os contatores e informe, em segundos, quando cada um liga e desliga. Desligar em <strong>0</strong> = fica ligado até parar.</p>
     <div class="field"><label for="profileNome">Nome</label><input id="profileNome" maxlength="24" required style="width:100%;padding:10px 12px;background:#092430;color:#fff;border:1px solid #507183;border-radius:9px"></div>
     <table style="width:100%;margin-top:14px;border-collapse:collapse;font-size:14px"><thead><tr><th style="text-align:left;padding:6px 4px">Contator</th><th style="text-align:left;padding:6px 4px">Liga (s)</th><th style="text-align:left;padding:6px 4px">Desliga (s)</th></tr></thead><tbody id="profileLinhas"></tbody></table>
-    <p class="feedback" id="profileErro" style="margin-top:14px">&nbsp;</p>
+    <p class="feedback" id="profileErro" style="margin-top:14px" aria-live="polite"></p>
     <div class="buttons" style="justify-content:flex-end"><button class="btn secondary" type="button" id="profileCancelar">Cancelar</button><button class="btn" type="button" id="profileSalvar">Salvar na placa</button></div></form>`;
   document.body.append(dialogo);
 
@@ -81,7 +81,7 @@
 
   function abrirEditor(perfil) {
     $('profileNome').value = perfil?.name || '';
-    $('profileErro').textContent = ' ';
+    $('profileErro').textContent = '';
     for (const n of CONTATORES) {
       const c = perfil?.cnt?.[n - 1];
       $(`usa${n}`).checked = c ? c.use === true : n === 1;

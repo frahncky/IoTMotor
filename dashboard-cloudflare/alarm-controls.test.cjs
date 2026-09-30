@@ -389,8 +389,8 @@ test('alarmes ativos tambem lista os avisos do painel sem repetir o que a placa 
   const h = setup(), c = h.connect();
   h.telemetry(c); h.alarms(c);
   const avisos = [
-    {kind: 'near', field: 'temperature', level: 'warn', text: 'Temperatura alta: 56.0 °C (limite 60 °C)'},
-    {kind: 'over', field: 'vibration_mms', level: 'alarm', text: 'Vibração RMS alta: 5.00 mm/s (limite 4.5 mm/s)'},
+    {kind: 'near', field: 'temperature', level: 'warn', text: 'Temperatura alta: 56,0 °C (limite 60 °C)'},
+    {kind: 'over', field: 'vibration_mms', level: 'alarm', text: 'Vibração RMS alta: 5,00 mm/s (limite 4,5 mm/s)'},
     {kind: 'missing', field: 'temperature', level: 'warn', text: 'Temperatura sem leitura'},
     {kind: 'missing', field: 'pzem', level: 'warn', text: 'Medições elétricas (PZEM) sem leitura'},
     {kind: 'no-data', field: 'command', level: 'warn', text: 'Quadro de comando sem dados'},
@@ -402,7 +402,7 @@ test('alarmes ativos tambem lista os avisos do painel sem repetir o que a placa 
   assert.deepEqual(textos, [
     'Vibração (RMS) (mm/s) acima de 4.5|disparado',
     'Falha de sensor: temperatura sem leitura (DS18B20)|falha',
-    'Temperatura alta: 56.0 °C (limite 60 °C)|atenção',
+    'Temperatura alta: 56,0 °C (limite 60 °C)|atenção',
     'Medições elétricas (PZEM) sem leitura|sem leitura',
     'Quadro de comando sem dados|sem leitura'
   ]);

@@ -248,7 +248,7 @@ hora, guardados na placa de sensores. O registro continua com o painel fechado.
 
 Há também o **histórico do navegador**: as leituras da **última hora** recebidas
 enquanto o painel está aberto, guardadas só naquele navegador e respeitando o
-intervalo de **Registro de dados** configurado. Use **Período**
+intervalo de **Registro de dados** configurado. No cartão **Gráficos em tempo real**, use **Período**
 (última hora, 15 min ou 5 min) e **Exportar CSV** para levar os dados para uma
 planilha, e **Limpar** para apagá-los. Para períodos maiores, use o histórico da
 placa acima (7 dias, por hora).
