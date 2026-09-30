@@ -98,6 +98,7 @@ char topicoTelemetria[80], topicoStatus[80], topicoCapacidades[80];
 char topicoComandos[80], topicoResposta[80], topicoWifi[80], topicoPerfis[80], topicoAuth[80];
 char topicoMotorInfo[80], topicoAquisicao[80];
 constexpr unsigned long MQTT_RETRY_MS = 6000UL;
+constexpr unsigned long DIAGNOSTICO_PUBLICAR_MS = 30000UL;
 unsigned long mqttPublishMs = 1000UL;
 
 struct ConfiguracaoAquisicao {
@@ -111,7 +112,7 @@ ConfiguracaoAquisicao configAquisicao;
 void carregarConfiguracaoAquisicao();
 bool salvarConfiguracaoAquisicao(JsonVariantConst cfg, const char*& motivo);
 void publicarConfiguracaoAquisicao();
-unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0;
+unsigned long ultimaTentativaMqtt = 0, ultimaPublicacaoMqtt = 0, ultimaPublicacaoDiagnostico = 0;
 uint32_t sequenciaMqtt = 0;
 
 // Ajuda a separar queda de tensao (brownout) de travamento (watchdog/panico).
@@ -465,7 +466,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v25-mqtt-cloudflare";
+  doc["firmware_version"] = "v26-mqtt-cloudflare";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -637,6 +638,7 @@ void manterMqtt(unsigned long agora) {
     publicarCapacidades();
     publicarAuth();
     publicarRedes();
+    ultimaPublicacaoDiagnostico = agora;
     publicarPerfis();
     publicarMotorInfo();
     publicarConfiguracaoAquisicao();
@@ -746,6 +748,12 @@ void loop() {
   if (lcdPrecisaAtualizar || agora - ultimaAtualizacaoLcd >= INTERVALO_LCD_MS) {
     ultimaAtualizacaoLcd = agora;
     atualizarLcd();
+  }
+  if (mqttClient.connected() &&
+      (!ultimaPublicacaoDiagnostico ||
+       agora - ultimaPublicacaoDiagnostico >= DIAGNOSTICO_PUBLICAR_MS)) {
+    ultimaPublicacaoDiagnostico = agora;
+    publicarRedes();
   }
   if (mqttClient.connected() && (!ultimaPublicacaoMqtt || agora - ultimaPublicacaoMqtt >= mqttPublishMs)) {
     ultimaPublicacaoMqtt = agora;

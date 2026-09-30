@@ -93,6 +93,7 @@ static const uint8_t MPU_ADDR = 0x68;
 static const uint32_t WIFI_RETRY_MS = 6000UL;
 static const uint32_t WIFI_RADIO_RESET_MS = 30000UL;
 static const uint32_t MQTT_RETRY_MS = 4000UL;
+static const uint32_t DIAGNOSTICO_PUBLICAR_MS = 30000UL;
 static uint32_t publishMs = 1000UL;
 static const uint32_t TEMP_REQUEST_MS = 2000UL;
 static const uint32_t TEMP_WAIT_MS = 800UL; // DS18B20 12-bit: ate 750 ms
@@ -109,7 +110,7 @@ static const uint8_t DS18B20_CANDIDATOS[]={DS18B20_PIN,1,2,6,7,8,10,11,12,13,14,
 char telemetryTopic[96], statusTopic[96], capabilitiesTopic[96], commandTopic[96], ackTopic[96], wifiTopic[96];
 char alarmsTopic[96], quadroTelemetryTopic[96], authTopic[96], alarmLogTopic[96], historyTopic[96], acquisitionTopic[96];
 char quadroCommandTopic[96];
-uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastPublish=0,lastHistorico=0;
+uint32_t lastWifiAttempt=0,lastMqttAttempt=0,lastPublish=0,lastHistorico=0,lastDiagnosticsPublish=0;
 uint32_t wifiCaiuEm=0;
 uint32_t lastTempRequest=0,tempRequestedAt=0,sequence=0,lastMpuRetry=0;
 static const uint32_t MPU_RETRY_MS = 5000UL;
@@ -567,7 +568,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.19-mqtt-cloudflare";
+  doc["firmware_version"]="s3-sensors-1.20-mqtt-cloudflare";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -983,6 +984,7 @@ void loop() {
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
         publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
+        lastDiagnosticsPublish=now;
         mqtt.subscribe(quadroTelemetryTopic,0);mqtt.subscribe(acquisitionTopic,1);publishAlarms();publishAuth();publishAlarmLog();
         for(uint8_t d=0;d<historico::DIAS;d++)publishHistory(d);
         pedirBeep(2,buzzerHz,70);  // Dois bipes sempre: placa conectada ao broker.
@@ -995,6 +997,11 @@ void loop() {
   mqtt.loop();
   verificarDesarme(millis());
   now=millis();
+  if(lastDiagnosticsPublish==0 ||
+     (uint32_t)(now-lastDiagnosticsPublish)>=DIAGNOSTICO_PUBLICAR_MS) {
+    lastDiagnosticsPublish=now;
+    publishNetworks();
+  }
   if(lastPublish==0 || (uint32_t)(now-lastPublish)>=publishMs) {
     lastPublish=now;publishTelemetry();
   }
