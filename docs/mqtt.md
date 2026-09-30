@@ -92,7 +92,7 @@ os alarmes de corrente, tensão e partidas tocam no LED e no buzzer dela.
 | `run_s_total` | número | Horímetro, em segundos |
 | `starts_total`, `starts_today`, `starts_hour` | número | Partidas no total, hoje (horário de Brasília) e na última hora |
 | `session_s` | número | Há quanto tempo o motor está girando (só enquanto gira) |
-| `motor_running` | booleano | Motor girando: algum relé ligado ou, no modo instrumentação, corrente acima de 0,3 A. O painel, o app e a placa de sensores usam para mostrar e alarmar o motor ligado |
+| `motor_running` | booleano | Motor girando: corrente acima de 0,3 A e, fora do modo instrumentação, algum relé ligado (relé ligado sem carga não conta; sem leitura do PZEM vale só o relé). O painel, o app e a placa de sensores usam para mostrar e alarmar o motor ligado |
 | `trip_alarm`, `trip_field` | texto | Desarme automático: id e grandeza do alarme que desligou o motor. Só aparecem até a próxima partida (`v16` em diante) |
 | `reset_reason`, `wifi_ip` | texto | Diagnóstico |
 

@@ -721,6 +721,26 @@ void setup() {
   watchdog::iniciar();  // Depois das esperas longas do boot (Wi-Fi, portal).
 }
 
+// Motor girando: corrente medida acima de 0,3 A. Em modo instrumentacao (motor
+// comandado por fora) basta isso; com acionamento, exige tambem algum contator
+// fechado, para o rele ligado sem carga nao girar o desenho nem contar no
+// horimetro. Sem leitura do PZEM vale so o contator.
+bool motorEstaGirando(unsigned long agora) {
+  // Queda curta de corrente com o contator fechado (tempo morto da
+  // estrela-triangulo) nao e parada: contaria uma partida a mais na retomada.
+  constexpr unsigned long TOLERANCIA_SEM_CORRENTE_MS = 3000UL;
+  static unsigned long semCorrenteDesde = 0;
+  static bool semCorrente = false;
+  const bool comCorrente = pzemOk && ultimaCorrente > 0.3f;
+  if (!acionamentoLigado) return comCorrente;
+  const bool contatorFechado = estadoReles[0] || estadoReles[1] || estadoReles[2] || estadoReles[3];
+  if (!contatorFechado) { semCorrente = false; return false; }
+  if (!pzemOk || comCorrente) { semCorrente = false; return true; }
+  if (!motorinfo::girando) return false;
+  if (!semCorrente) { semCorrente = true; semCorrenteDesde = agora; }
+  return agora - semCorrenteDesde < TOLERANCIA_SEM_CORRENTE_MS;
+}
+
 void loop() {
   const unsigned long agora = millis();
   protegerQuedaDeRede(agora);
@@ -728,12 +748,7 @@ void loop() {
   manterMqtt(agora);
   const bool saidasAtivas = saidasLigadas();
   manterPartidaBancada(agora);
-  // Motor girando: algum contator fechado ou, em modo instrumentacao (motor
-  // comandado por fora), corrente medida acima de 0,3 A.
-  const bool motorGirando = acionamentoLigado
-      ? (estadoReles[0] || estadoReles[1] || estadoReles[2] || estadoReles[3])
-      : (pzemOk && ultimaCorrente > 0.3f);
-  motorinfo::manter(agora, motorGirando, relogio::agoraUtc());
+  motorinfo::manter(agora, motorEstaGirando(agora), relogio::agoraUtc());
   // Reinicio pedido pelo painel: desiste se alguma saida ligou nesse meio tempo.
   if (reinicioPedidoEm && saidasAtivas) reinicioPedidoEm = 0;
   // Com sinal: o pedido chega pelo MQTT depois de "agora" ser lido, e sem
