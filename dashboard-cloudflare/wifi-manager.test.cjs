@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {webcrypto: cripto} = require('node:crypto');
-const {cifrarSenha, ROTULO_KDF} = require('./wifi-manager.js');
+const {cifrarSenha, ROTULO_KDF, avaliarSaudePlaca} = require('./wifi-manager.js');
 
 // Faz o papel da placa: mesmo esquema de wifi_store.h (ECDH P-256,
 // SHA-256(rotulo || segredo), AES-GCM com o SSID como dado autenticado).
@@ -79,6 +79,19 @@ function abaWifi() {
   };
 }
 
+test('saúde automática diferencia normal, aviso, crítico e offline', () => {
+  const base = {
+    rssi: -60, heap_bytes: 180000, min_heap_bytes: 140000,
+    reset_reason: 1, reconnections: 0, uptime_ms: 3600000
+  };
+  assert.deepEqual(avaliarSaudePlaca(base), {kind: 'ok', texto: 'Saúde: normal.'});
+  assert.equal(avaliarSaudePlaca({...base, rssi: -73}).kind, 'warn');
+  const critica = avaliarSaudePlaca({...base, reset_reason: 9});
+  assert.equal(critica.kind, 'error');
+  assert.match(critica.texto, /brownout/);
+  assert.equal(avaliarSaudePlaca(base, false).kind, 'offline');
+});
+
 test('diagnóstico mostra sinal, duração, última rede, reconexões e causa da queda', () => {
   const h = abaWifi();
   h.redes('esp32-01', {
@@ -95,6 +108,8 @@ test('diagnóstico mostra sinal, duração, última rede, reconexões e causa da
   assert.match(h.no('boardUptime').textContent, /1 h/);
   assert.equal(h.no('boardHeap').textContent, '176 / 140 KB');
   assert.match(h.no('boardResetReason').textContent, /queda de tensão.*brownout/);
+  assert.equal(h.no('boardHealth').className, 'board-health error');
+  assert.match(h.no('boardHealth').textContent, /atenção crítica.*brownout/);
 });
 
 test('placa offline nao aparece como conectada: a lista retida fica no broker', () => {

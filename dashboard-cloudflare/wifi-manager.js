@@ -14,6 +14,52 @@ const ROTULO_KDF = 'iotmotor-wifi-v1';
 // O CI confere que é a mesma do firmware_version de cada .ino.
 const FIRMWARE_PUBLICADO = ['v25-mqtt-cloudflare', 's3-sensors-1.19-mqtt-cloudflare'];
 
+const MOTIVOS_REINICIO = {
+  0: 'desconhecido', 1: 'energização', 2: 'reset externo',
+  3: 'reinício por software', 4: 'travamento (pânico)',
+  5: 'watchdog de interrupção', 6: 'watchdog de tarefa',
+  7: 'watchdog', 8: 'saída de deep sleep',
+  9: 'queda de tensão (brownout)', 10: 'reinício SDIO',
+  11: 'reinício USB', 12: 'reinício JTAG',
+  13: 'erro de eFuse', 14: 'oscilação de alimentação',
+  15: 'travamento da CPU'
+};
+
+function avaliarSaudePlaca(diagnostico, online = true) {
+  if (!diagnostico) return {kind: 'unknown', texto: 'Saúde: aguardando diagnóstico da placa.'};
+  if (!online) return {kind: 'offline', texto: 'Saúde: placa offline; exibindo o último diagnóstico recebido.'};
+
+  const criticos = [], avisos = [];
+  const rssi = Number(diagnostico.rssi);
+  if (Number.isFinite(rssi) && rssi < 0) {
+    if (rssi <= -80) criticos.push('sinal Wi-Fi muito fraco');
+    else if (rssi <= -70) avisos.push('sinal Wi-Fi fraco');
+  }
+
+  const heap = Number(diagnostico.heap_bytes);
+  const heapMinimo = Number(diagnostico.min_heap_bytes);
+  if ((heap > 0 && heap < 65536) || (heapMinimo > 0 && heapMinimo < 40960))
+    criticos.push('memória livre muito baixa');
+  else if ((heap > 0 && heap < 102400) || (heapMinimo > 0 && heapMinimo < 65536))
+    avisos.push('memória livre baixa');
+
+  const reinicio = Math.max(0, Number(diagnostico.reset_reason) || 0);
+  if ([4, 5, 6, 7, 9, 14, 15].includes(reinicio))
+    criticos.push('último reinício: ' + (MOTIVOS_REINICIO[reinicio] || 'código ' + reinicio));
+
+  const reconexoes = Math.max(0, Number(diagnostico.reconnections) || 0);
+  const horas = Math.max(0.25, (Number(diagnostico.uptime_ms) || 0) / 3600000);
+  if (reconexoes >= 3 && reconexoes / horas >= 1)
+    avisos.push('reconexões Wi-Fi frequentes');
+
+  const problemas = [...criticos, ...avisos];
+  if (!problemas.length) return {kind: 'ok', texto: 'Saúde: normal.'};
+  return {
+    kind: criticos.length ? 'error' : 'warn',
+    texto: (criticos.length ? 'Saúde: atenção crítica — ' : 'Saúde: atenção — ') + problemas.join('; ') + '.'
+  };
+}
+
 // O que dizer sobre a versão que a placa informa. Exportada para os testes.
 function situacaoFirmware(instalado, publicado, quadro = false) {
   if (!instalado) return {texto: 'Firmware: a placa não informou a versão (firmware antigo?).', atualizar: true};
@@ -162,16 +208,6 @@ if (typeof document !== 'undefined') (() => {
     203: 'falha de associação', 204: 'timeout do handshake',
     205: 'falha de conexão'
   };
-  const motivosReinicio = {
-    0: 'desconhecido', 1: 'energização', 2: 'reset externo',
-    3: 'reinício por software', 4: 'travamento (pânico)',
-    5: 'watchdog de interrupção', 6: 'watchdog de tarefa',
-    7: 'watchdog', 8: 'saída de deep sleep',
-    9: 'queda de tensão (brownout)', 10: 'reinício SDIO',
-    11: 'reinício USB', 12: 'reinício JTAG',
-    13: 'erro de eFuse', 14: 'oscilação de alimentação',
-    15: 'travamento da CPU'
-  };
 
   function duracao(ms) {
     const segundos = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
@@ -191,6 +227,9 @@ if (typeof document !== 'undefined') (() => {
 
   function renderizarDiagnostico(placa, online) {
     const d = placa?.diagnostics;
+    const saude = avaliarSaudePlaca(d, online);
+    $('boardHealth').className = 'board-health ' + saude.kind;
+    $('boardHealth').textContent = saude.texto;
     if (!d) {
       $('wifiRssi').textContent = $('wifiConnectedTime').textContent =
         $('wifiLastNetwork').textContent = $('wifiReconnects').textContent =
@@ -218,7 +257,7 @@ if (typeof document !== 'undefined') (() => {
       ? Math.round(heap / 1024) + ' / ' + Math.round(heapMinimo / 1024) + ' KB'
       : 'não informado';
     const reset = Math.max(0, Number(d.reset_reason) || 0);
-    $('boardResetReason').textContent = motivosReinicio[reset] || 'código ' + reset;
+    $('boardResetReason').textContent = MOTIVOS_REINICIO[reset] || 'código ' + reset;
   }
 
   function renderizar() {
@@ -710,4 +749,4 @@ if (typeof document !== 'undefined') (() => {
   renderizar();
 })();
 
-if (typeof module !== 'undefined' && module.exports) module.exports = {cifrarSenha, ROTULO_KDF, FIRMWARE_PUBLICADO, situacaoFirmware};
+if (typeof module !== 'undefined' && module.exports) module.exports = {cifrarSenha, ROTULO_KDF, FIRMWARE_PUBLICADO, situacaoFirmware, avaliarSaudePlaca};
