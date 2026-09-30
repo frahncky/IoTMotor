@@ -37,21 +37,16 @@ static double esperadoMmS(double hz, double picoG) {
 
 TESTE("senoide de 60 Hz da a velocidade RMS teorica") {
   const float mmS = medir(60, 0.1);
-  PERTO(mmS, esperadoMmS(60, 0.1), esperadoMmS(60, 0.1) * 0.03);
+  PERTO(mmS, esperadoMmS(60, 0.1), esperadoMmS(60, 0.1) * 0.01);
   CONFERE(vibracao::eixo == 'y');
   CONFERE(vibracao::velocidadeValida);
 }
 
-// O trapezio a 1 kHz le a mais baixa as frequencias altas: ganho de
-// x / tan(x), com x = pi f / fs (-1,2 % em 60 Hz, -7,5 % em 150 Hz).
-static double ganhoTrapezio(double hz) {
-  const double x = M_PI * hz / vibracao::TAXA_HZ;
-  return x / tan(x);
-}
-
-TESTE("faixa util: 30 Hz e 150 Hz batem com a conta, contando o trapezio") {
-  for (double hz : {30.0, 150.0}) {
-    const double esperado = esperadoMmS(hz, 0.2) * ganhoTrapezio(hz);
+// Integrador de Al-Alaoui: erro de ganho de no maximo ~1,3 % ate 180 Hz
+// (o trapezio de antes perdia 7,5 % em 150 Hz e 10,9 % em 180 Hz).
+TESTE("faixa util: 30, 120, 150 e 180 Hz batem com a conta em 2 %") {
+  for (double hz : {30.0, 120.0, 150.0, 180.0}) {
+    const double esperado = esperadoMmS(hz, 0.2);
     PERTO(medir(hz, 0.2), esperado, esperado * 0.02);
   }
 }

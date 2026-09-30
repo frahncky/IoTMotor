@@ -85,7 +85,7 @@ adequada para acompanhamento de tendência em bancada, mas não substitui um
 analisador de vibração de banda mais larga ou análise espectral de rolamentos e
 engrenagens.
 
-O método completo — filtros, integração trapezoidal, RMS, critérios de validade,
+O método completo — filtros, integração, RMS, critérios de validade,
 montagem e validação experimental — está em [**Vibração: medição, processamento
 e interpretação**](vibracao.md).
 

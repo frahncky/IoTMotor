@@ -66,7 +66,7 @@ flowchart LR
 - A temperatura é pedida a cada ~2 s, sem travar a comunicação.
 - Sensores, LED e buzzer rodam numa tarefa separada da rede: o alarme continua funcionando sem Wi-Fi.
 
-A cadeia completa, os filtros de 8 Hz, a integração trapezoidal, os critérios de validade, a faixa útil aproximada de 10–180 Hz e as recomendações de montagem estão em [**Vibração: medição, processamento e interpretação**](vibracao.md).
+A cadeia completa, os filtros de 8 Hz, a integração, os critérios de validade, a faixa útil aproximada de 10–180 Hz e as recomendações de montagem estão em [**Vibração: medição, processamento e interpretação**](vibracao.md).
 
 ![Montagem recomendada do sensor](images/vibracao-montagem.svg)
 

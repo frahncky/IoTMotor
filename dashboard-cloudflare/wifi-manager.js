@@ -12,7 +12,7 @@ const ROTULO_KDF = 'iotmotor-wifi-v1';
 // Versão do firmware que está publicada para OTA (release firmware-latest,
 // compilada da main junto com este painel): [quadro de comando, sensores].
 // O CI confere que é a mesma do firmware_version de cada .ino.
-const FIRMWARE_PUBLICADO = ['v27-mqtt-cloudflare', 's3-sensors-1.21-mqtt-cloudflare'];
+const FIRMWARE_PUBLICADO = ['v27-mqtt-cloudflare', 's3-sensors-1.22-mqtt-cloudflare'];
 
 const MOTIVOS_REINICIO = {
   0: 'desconhecido', 1: 'energização', 2: 'reset externo',

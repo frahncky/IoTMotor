@@ -6,7 +6,7 @@ import 'dart:math' as math;
 /// O CI confere que é a mesma do firmware_version de cada .ino.
 const List<String> firmwarePublicado = <String>[
   'v27-mqtt-cloudflare',
-  's3-sensors-1.21-mqtt-cloudflare',
+  's3-sensors-1.22-mqtt-cloudflare',
 ];
 
 double? _numero(Object? valor) =>

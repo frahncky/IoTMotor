@@ -26,7 +26,7 @@ LSB → g → m/s²
   ↓
 passa-altas Butterworth 2ª ordem · 8 Hz
   ↓
-integração trapezoidal
+integração (Al-Alaoui)
   ↓
 velocidade em m/s
   ↓
@@ -143,11 +143,11 @@ A finalidade principal desse estágio é reduzir:
 A velocidade não é obtida multiplicando a aceleração por um número fixo.
 O firmware faz **integração numérica no tempo**.
 
-É usado o método trapezoidal:
+É usado o integrador de **Al-Alaoui** (`s3-sensors-1.22` em diante):
 
 $$
 v_i[n] = v_i[n-1] +
-\frac{a[n]+a[n-1]}{2}\Delta t
+\frac{7\,a[n]+a[n-1]}{8}\Delta t
 $$
 
 com:
@@ -158,17 +158,20 @@ $$
 
 Portanto, a saída da integração está em **m/s**.
 
-O trapézio a 1 kHz tem um erro de ganho que cresce com a frequência: ele
-multiplica cada componente por $x/\tan x$, com $x = \pi f / 1000$. Na prática, a
-leitura sai um pouco **abaixo** do valor real nas frequências altas:
+Até a `s3-sensors-1.21` o firmware usava o **trapézio**
+($\frac{a[n]+a[n-1]}{2}\Delta t$). Os dois custam o mesmo, mas o trapézio a 1 kHz
+perde ganho nas frequências altas, e a leitura saía abaixo do valor real. O de
+Al-Alaoui mantém o erro pequeno em toda a faixa útil:
 
 | Frequência | 30 Hz | 60 Hz | 120 Hz | 150 Hz | 180 Hz |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Erro | −0,3 % | −1,2 % | −4,8 % | −7,5 % | −10,9 % |
+| Trapézio (até 1.21) | −0,3 % | −1,2 % | −4,8 % | −7,5 % | −10,9 % |
+| Al-Alaoui (1.22 em diante) | 0,0 % | −0,2 % | −0,7 % | −1,0 % | −1,3 % |
 
-Em motores de 2 e 4 polos, o que mais pesa na severidade (1× e 2× a rotação)
-fica abaixo de 120 Hz, onde o erro é menor que 5 %. Os testes nativos do
-firmware (`esp32/testes_nativos/teste_vibracao.cpp`) conferem essa resposta com
+Em 1× e 2× a rotação de motores de 2 e 4 polos (até ~120 Hz) a diferença entre
+os dois é pequena; o histórico de 7 dias pode misturar dias medidos pelos dois
+métodos sem mudar a classificação. Os testes nativos do firmware
+(`esp32/testes_nativos/teste_vibracao.cpp`) conferem essa resposta com
 senoides conhecidas.
 
 ### Por que não converter diretamente g → mm/s?
@@ -491,7 +494,7 @@ m/s²
       ↓
 HPF Butterworth 2ª ordem, 8 Hz
       ↓
-integração trapezoidal, Δt = 1 ms
+integração de Al-Alaoui, Δt = 1 ms
       ↓
 m/s
       ↓

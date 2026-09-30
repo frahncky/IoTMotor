@@ -118,7 +118,7 @@ Regras: `pzem_read_ms <= publish_ms <= chart_ms` e
 
 A vibração não acompanha esses intervalos de aquisição elétrica: o MPU6050
 continua sendo lido a **1000 Hz**, com janela RMS fixa de **1 s**. O cálculo
-inclui dois passa-altas Butterworth de 2ª ordem a 8 Hz e integração trapezoidal;
+inclui dois passa-altas Butterworth de 2ª ordem a 8 Hz e integração de Al-Alaoui;
 veja a [metodologia completa de vibração](vibracao.md). Também são fixos o
 histórico consolidado em janelas de 1 h e a retenção de 7 dias.
 

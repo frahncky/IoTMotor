@@ -64,7 +64,10 @@ struct Eixo {
   // Recebe g, devolve a aceleracao filtrada (m/s^2) e a velocidade (m/s).
   void passar(float g, double& a, double& v) {
     a = aceleracao.passar(g * G);
-    integral += (a + aAnterior) * 0.5 / TAXA_HZ;  // Trapezio.
+    // Integrador de Al-Alaoui (7/8 da amostra atual, 1/8 da anterior). O
+    // trapezio lia a menos nas frequencias altas (-7,5 % em 150 Hz); este
+    // erra no maximo 1,3 % ate 180 Hz, com o mesmo custo.
+    integral += (7.0 * a + aAnterior) / (8.0 * TAXA_HZ);
     aAnterior = a;
     v = velocidade.passar(integral);
   }
