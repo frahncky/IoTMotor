@@ -213,6 +213,13 @@ UTC (quando há hora) e `seconds` de duração. É zerado quando a placa reinici
 própria da placa: `name`, `open`) e `pubkey`, a chave pública P-256 usada para
 cifrar senhas novas. Nenhuma senha é publicada.
 
+`diagnostics` traz a saúde da placa: `rssi` (dBm, `0` sem Wi-Fi),
+`connected_ms` (tempo na rede atual), `last_network`, `reconnections`,
+`disconnect_reason` (código do ESP-IDF), `uptime_ms`, `heap_bytes`,
+`min_heap_bytes` e `reset_reason` (código de `esp_reset_reason()`). A placa
+republica o tópico ao conectar no broker e a cada 30 s enquanto conectada
+(`v26` do quadro e `s3-sensors-1.20` em diante).
+
 **`auth`**: `{"v":1,"device_id":"esp32-01","secure":true,"challenge":"…"}`.
 
 ## Como enviar um comando
