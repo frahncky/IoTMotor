@@ -9,7 +9,7 @@ extension MotorControlBoards on MotorControlController {
     final String instalado = firmwareByDevice[deviceId]!;
     final int indice =
         instalado.startsWith('s3-') || deviceId == 'esp32-02' ? 1 : 0;
-    return firmwareSituation(instalado, firmwarePublicado[indice]);
+    return firmwareSituation(instalado, publishedFirmware[indice]);
   }
 
   MaintenanceStatus? get maintenanceStatus =>
@@ -321,7 +321,7 @@ extension MotorControlBoards on MotorControlController {
     final String atual = firmwareByDevice[deviceId] ?? '';
     final int indice =
         atual.startsWith('s3-') || deviceId == 'esp32-02' ? 1 : 0;
-    return firmwarePublicado[indice];
+    return publishedFirmware[indice];
   }
 
   void _iniciarAtualizacaoFirmware(String deviceId, String seq) {

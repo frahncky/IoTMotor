@@ -3,4 +3,4 @@
 /// A cada atualização do app, suba o `version:` do pubspec.yaml e troque este
 /// nome (curto, dizendo o que a versão traz). O CI publica a release
 /// `app-v<versão>` com ele, e a PR que muda o app sem subir a versão falha.
-const String nomeDaVersao = 'Vibração mais precisa (sensores 1.22)';
+const String nomeDaVersao = 'Firmware novo sem precisar de app novo';

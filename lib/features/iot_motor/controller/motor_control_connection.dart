@@ -256,6 +256,16 @@ extension MotorControlConnection on MotorControlController {
     if (config != null) {
       connectionMessage = 'Conectado em ${config.host}:${config.port}';
     }
+    unawaited(_atualizarFirmwarePublicado());
+    _notify();
+  }
+
+  /// Lê a versão publicada (firmware-latest.json) a cada conexão: um firmware
+  /// novo aparece como atualização sem precisar de app novo.
+  Future<void> _atualizarFirmwarePublicado() async {
+    final List<String>? lido = await _firmwarePublicadoService.buscar();
+    if (lido == null || _disposed) return;
+    publishedFirmware = lido;
     _notify();
   }
 

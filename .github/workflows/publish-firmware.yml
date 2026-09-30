@@ -64,6 +64,15 @@ jobs:
           cp build-01/iotmotor_esp32_comandos.ino.bin dist/esp32-01.bin
           cp build-02/iotmotor_esp32_s3_sensores.ino.bin dist/esp32-02.bin
           (cd dist && sha256sum esp32-01.bin esp32-02.bin > sha256.txt)
+          # Versao que o painel e o app comparam com a de cada placa. Sai do
+          # proprio .ino compilado aqui: nao precisa escrever a versao no app.
+          versao() { grep -oP 'doc\["firmware_version"\]\s*=\s*"\K[^"]+' "$1"; }
+          quadro=$(versao esp32/iotmotor_esp32/iotmotor_esp32_comandos/iotmotor_esp32_comandos.ino)
+          sensores=$(versao esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/iotmotor_esp32_s3_sensores.ino)
+          test -n "$quadro" && test -n "$sensores"
+          jq -n --arg q "$quadro" --arg s "$sensores" --arg c "${GITHUB_SHA::7}" \
+            '{v: 1, "esp32-01": $q, "esp32-02": $s, commit: $c}' > dist/firmware-latest.json
+          cat dist/firmware-latest.json
           cat dist/sha256.txt
       # As placas baixam sempre da tag fixa firmware-latest (ver ota_update.h).
       - name: Publish release firmware-latest
@@ -73,5 +82,5 @@ jobs:
           gh release view firmware-latest >/dev/null 2>&1 ||
             gh release create firmware-latest --title 'Firmware OTA (ultimo build da main)' \
               --notes 'Binarios atualizados automaticamente a cada commit na main. Usados pela atualizacao OTA dos ESP32.'
-          gh release upload firmware-latest dist/esp32-01.bin dist/esp32-02.bin dist/sha256.txt --clobber
+          gh release upload firmware-latest dist/esp32-01.bin dist/esp32-02.bin dist/sha256.txt dist/firmware-latest.json --clobber
           gh release edit firmware-latest --notes "Build de ${GITHUB_SHA::7} em $(date -u '+%Y-%m-%d %H:%M UTC')."

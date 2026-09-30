@@ -6,7 +6,6 @@ on:
       - 'dashboard-cloudflare/**'
       - 'functions/**'
       - 'esp32/**'
-      - 'lib/features/iot_motor/models/motor_info.dart'
       - '.github/workflows/cloudflare-dashboard.yml'
   pull_request:
     paths:
@@ -81,18 +80,22 @@ jobs:
           for nome in ('wifi_store.h', 'wifi_portal.h'):
               assert (root / nome).read_text() == (s3 / nome).read_text(), nome + ' diferente entre os firmwares'
           assert 'iotmotor-wifi-v1' in (root / 'wifi_store.h').read_text() and 'iotmotor-wifi-v1' in Path('dashboard-cloudflare/wifi-manager.js').read_text(), 'rotulo da cifragem divergente'
-          # O painel avisa quando a placa difere da versao publicada (compilada desta main).
+          # Versao publicada: o publish-firmware.yml le o firmware_version de cada
+          # .ino e grava firmware-latest.json no release; o painel e o app leem esse
+          # arquivo (pela ponte /firmware/ da Cloudflare). As listas escritas no
+          # codigo sao so reserva sem rede: mudar o firmware nao obriga app novo.
           import re
+          for ino in (root / 'iotmotor_esp32_comandos.ino', s3 / 'iotmotor_esp32_s3_sensores.ino'):
+              assert len(re.findall(r'doc\["firmware_version"\]\s*=\s*"[^"]+"', ino.read_text())) == 1, \
+                  'firmware_version literal (um so) em ' + ino.name
+          publicar = Path('.github/workflows/publish-firmware.yml').read_text()
+          assert 'firmware-latest.json' in publicar, 'publish-firmware deve gravar firmware-latest.json'
+          assert "'firmware-latest.json'" in Path('functions/firmware/[file].js').read_text(), 'a ponte /firmware/ deve servir firmware-latest.json'
           wifi_js = Path('dashboard-cloudflare/wifi-manager.js').read_text()
-          publicado = re.search(r"FIRMWARE_PUBLICADO = \['([^']+)', '([^']+)'\]", wifi_js)
-          assert publicado, 'FIRMWARE_PUBLICADO ausente no wifi-manager.js'
-          for versao, ino in zip(publicado.groups(), (root / 'iotmotor_esp32_comandos.ino', s3 / 'iotmotor_esp32_s3_sensores.ino')):
-              assert re.search(r'doc\["firmware_version"\]\s*=\s*"%s"' % re.escape(versao), ino.read_text()), \
-                  'FIRMWARE_PUBLICADO (%s) diferente do firmware_version de %s' % (versao, ino.name)
-          # O app mostra o mesmo aviso de firmware novo (lib/.../motor_info.dart).
+          assert re.search(r"FIRMWARE_PUBLICADO = \['[^']+', '[^']+'\]", wifi_js), 'reserva FIRMWARE_PUBLICADO ausente no painel'
+          assert "'/firmware/firmware-latest.json'" in wifi_js, 'o painel deve ler a versao publicada'
           app_dart = Path('lib/features/iot_motor/models/motor_info.dart').read_text()
-          no_app = re.search(r"firmwarePublicado = <String>\[\s*'([^']+)',\s*'([^']+)',?\s*\]", app_dart)
-          assert no_app and no_app.groups() == publicado.groups(), 'firmwarePublicado do app diferente do painel'
+          assert re.search(r"firmwarePublicado = <String>\[", app_dart), 'reserva firmwarePublicado ausente no app'
           # Lista de alarmes: a placa guarda, o painel edita, o S3 ouve o quadro.
           sensores = (s3 / 'iotmotor_esp32_s3_sensores.ino').read_text()
           lista = (s3 / 'alarm_list.h').read_text()

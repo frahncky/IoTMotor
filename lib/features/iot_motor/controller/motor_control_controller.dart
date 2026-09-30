@@ -15,6 +15,7 @@ import '../models/mqtt_connection_config.dart';
 import '../models/telemetry_alert.dart';
 import '../models/telemetry_history_entry.dart';
 import '../models/telemetry_sample.dart';
+import '../services/firmware_publicado_service.dart';
 import '../services/motor_settings_store.dart';
 import '../services/mqtt_settings_validators.dart';
 import '../services/mqtt_motor_service.dart';
@@ -34,10 +35,13 @@ part 'motor_control_telemetry.dart';
 class MotorControlController extends ChangeNotifier {
   MotorControlController({
     MqttMotorService? service,
+    FirmwarePublicadoService? firmwarePublicadoService,
     bool loadSettings = true,
     MqttConnectionConfig? initialConfig,
     String initialProfileId = '',
-  }) : _service = service ?? MqttMotorService() {
+  }) : _service = service ?? MqttMotorService(),
+       _firmwarePublicadoService =
+           firmwarePublicadoService ?? FirmwarePublicadoService() {
     activeProfileId = initialProfileId;
     brokerController = TextEditingController(
       text: initialConfig?.host ?? 'ws://test.mosquitto.org',
@@ -313,6 +317,11 @@ class MotorControlController extends ChangeNotifier {
   ];
 
   final MqttMotorService _service;
+  final FirmwarePublicadoService _firmwarePublicadoService;
+
+  /// Versão publicada para OTA [quadro, sensores]: a do firmware-latest.json,
+  /// lida ao conectar; até lá (ou sem rede), a reserva escrita no app.
+  List<String> publishedFirmware = firmwarePublicado;
   bool _disposed = false;
   bool _startTypesLoaded = false;
   bool _settingsLoaded = false;

@@ -180,8 +180,8 @@ telemetria, que não é cifrada.
 
 ## Checklist ao mudar o firmware
 
-- [ ] Troque `firmware_version` no `.ino` e as constantes `FIRMWARE_PUBLICADO` (painel) e `firmwarePublicado` (app). O CI confere as três.
-- [ ] Arquivos comuns (`wifi_store.h`, `comando_seguro.h`, `ota_update.h`…) devem mudar **nas duas pastas**.
+- [ ] Troque só o `firmware_version` no `.ino`. O CI publica a versão em `firmware-latest.json`, e o painel e o app a leem de lá: não precisa de app novo ([detalhes](firmware.md#versões)).
+- [ ] Arquivos comuns: edite de um lado e rode `bash esp32/sincronizar-comuns.sh`.
 - [ ] Comando novo? Documente em [mqtt.md](mqtt.md). Placa antiga responde `unknown_action`, e o painel traduz isso em "atualize a placa".
 - [ ] Campo novo na telemetria do quadro? A placa de sensores lê essa telemetria: confira se o tamanho cabe (ela aceita até 1800 bytes).
 - [ ] Confira que as duas placas compilam na PR (`esp32-compile.yml`).

@@ -9,10 +9,17 @@
 
 const ROTULO_KDF = 'iotmotor-wifi-v1';
 
-// Versão do firmware que está publicada para OTA (release firmware-latest,
-// compilada da main junto com este painel): [quadro de comando, sensores].
-// O CI confere que é a mesma do firmware_version de cada .ino.
+// Versão publicada para OTA: [quadro de comando, sensores]. Vale a que o CI
+// grava em firmware-latest.json (lida na abertura, pela ponte /firmware/);
+// esta lista é só reserva para quando o arquivo não puder ser lido.
 const FIRMWARE_PUBLICADO = ['v27-mqtt-cloudflare', 's3-sensors-1.22-mqtt-cloudflare'];
+
+// {"esp32-01": "...", "esp32-02": "..."} -> [quadro, sensores]; null se inválido.
+function lerFirmwarePublicado(dados) {
+  const q = dados?.['esp32-01'], s = dados?.['esp32-02'];
+  const ok = v => typeof v === 'string' && /^[\w.+-]{1,64}$/.test(v);
+  return ok(q) && ok(s) ? [q, s] : null;
+}
 
 const MOTIVOS_REINICIO = {
   0: 'desconhecido', 1: 'energização', 2: 'reset externo',
@@ -104,6 +111,14 @@ async function cifrarSenha(chavePublicaB64, ssid, senha, cripto = globalThis.cry
 }
 
 if (typeof document !== 'undefined') (() => {
+  let firmwarePublicado = FIRMWARE_PUBLICADO.slice();
+  if (typeof fetch === 'function') fetch('/firmware/firmware-latest.json', {cache: 'no-store'})
+    .then(r => r.ok ? r.json() : null)
+    .then(dados => {
+      const lido = lerFirmwarePublicado(dados);
+      if (lido) { firmwarePublicado = lido; renderizar(); }
+    })
+    .catch(() => {});  // Sem o arquivo, vale a reserva.
   const $ = id => document.getElementById(id);
   if (!$('painel-wifi')) return;
 
@@ -272,7 +287,7 @@ if (typeof document !== 'undefined') (() => {
     const lista = $('wifiList');
     // Versão do firmware: a placa selecionada em detalhe, as duas no seletor e na aba.
     const firmware = dispositivos.map((d, i) => versoes[d] === undefined ? null
-      : situacaoFirmware(versoes[d], FIRMWARE_PUBLICADO[i], i === 0));
+      : situacaoFirmware(versoes[d], firmwarePublicado[i], i === 0));
     firmware.forEach((f, i) => {
       $('wifiDev' + i).dataset.update = String(Boolean(connected && f?.atualizar));
       if (connected && f?.atualizar) $('wifiDev' + i).title += ' · atualização de firmware disponível';
@@ -507,7 +522,7 @@ if (typeof document !== 'undefined') (() => {
     const p = pendenteDe(dev);
     const indice = dispositivos.indexOf(dev);
     const minha = indice >= 0 && versoes[dev] !== undefined
-      ? situacaoFirmware(versoes[dev], FIRMWARE_PUBLICADO[indice], indice === 0)
+      ? situacaoFirmware(versoes[dev], firmwarePublicado[indice], indice === 0)
       : null;
 
     if (!connected || !client?.connected) {
@@ -631,7 +646,7 @@ if (typeof document !== 'undefined') (() => {
         versoes[dev] = typeof dados.firmware_version === 'string' ? dados.firmware_version : '';
         const indice = dispositivos.indexOf(dev);
         const p = pendenteDe(dev);
-        if (p?.acao === 'update' && indice >= 0 && versoes[dev] === FIRMWARE_PUBLICADO[indice]) {
+        if (p?.acao === 'update' && indice >= 0 && versoes[dev] === firmwarePublicado[indice]) {
           const instalada = versoes[dev];
           atualizados[dev] = {version: instalada, em: Date.now()};
           estados[dev] = 'online';  // capabilities novo prova que a placa voltou ao MQTT.
@@ -756,4 +771,4 @@ if (typeof document !== 'undefined') (() => {
   renderizar();
 })();
 
-if (typeof module !== 'undefined' && module.exports) module.exports = {cifrarSenha, ROTULO_KDF, FIRMWARE_PUBLICADO, situacaoFirmware, avaliarSaudePlaca};
+if (typeof module !== 'undefined' && module.exports) module.exports = {cifrarSenha, ROTULO_KDF, FIRMWARE_PUBLICADO, lerFirmwarePublicado, situacaoFirmware, avaliarSaudePlaca};

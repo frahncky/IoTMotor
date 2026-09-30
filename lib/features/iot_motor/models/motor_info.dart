@@ -1,13 +1,28 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-/// Versão do firmware publicada para OTA (release firmware-latest), a mesma que
-/// o painel usa (FIRMWARE_PUBLICADO em wifi-manager.js): [quadro, sensores].
-/// O CI confere que é a mesma do firmware_version de cada .ino.
+/// Versão do firmware publicada para OTA: [quadro, sensores].
+///
+/// Vale a que o CI grava em `firmware-latest.json` (lida ao conectar, veja
+/// `FirmwarePublicadoService`); esta lista é só reserva para quando o arquivo
+/// não puder ser lido. Por isso um firmware novo não exige app novo.
 const List<String> firmwarePublicado = <String>[
   'v27-mqtt-cloudflare',
   's3-sensors-1.22-mqtt-cloudflare',
 ];
+
+final RegExp _versaoValida = RegExp(r'^[\w.+-]{1,64}$');
+
+/// `{"esp32-01": "...", "esp32-02": "..."}` -> [quadro, sensores]; null se o
+/// conteúdo não for o esperado.
+List<String>? lerFirmwarePublicado(Object? dados) {
+  if (dados is! Map) return null;
+  final Object? quadro = dados['esp32-01'], sensores = dados['esp32-02'];
+  bool ok(Object? v) => v is String && _versaoValida.hasMatch(v);
+  return ok(quadro) && ok(sensores)
+      ? <String>[quadro! as String, sensores! as String]
+      : null;
+}
 
 double? _numero(Object? valor) =>
     valor is num && valor.isFinite ? valor.toDouble() : null;

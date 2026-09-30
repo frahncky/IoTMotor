@@ -50,16 +50,23 @@ desta placa**) ou o app (**Configurações › Atualizar firmware**). O comando
 ## Versões
 
 Cada placa informa a sua versão no tópico retido `capabilities`
-(`firmware_version`). O painel e o app comparam com a versão publicada:
+(`firmware_version`). O painel e o app comparam com a versão **publicada**, que
+o `publish-firmware.yml` tira do próprio `.ino` compilado e grava em
+`firmware-latest.json`, no release `firmware-latest`. O painel lê esse arquivo
+ao abrir e o app a cada conexão, pela ponte `/firmware/` da Cloudflare (o app
+tenta o GitHub se ela falhar).
 
-- painel: `FIRMWARE_PUBLICADO` em [`wifi-manager.js`](../dashboard-cloudflare/wifi-manager.js);
-- app: `firmwarePublicado` em [`motor_info.dart`](../lib/features/iot_motor/models/motor_info.dart).
-
-Quando a placa está diferente, a aba **Dispositivos** mostra um ponto âmbar.
+Quando a placa está diferente, a aba **Dispositivos** mostra um ponto âmbar e o
+botão **Atualizar firmware** a inclui.
 
 > [!IMPORTANT]
-> Ao mudar um firmware, troque o `firmware_version` no `.ino` **e** as duas
-> constantes acima. O CI falha se elas não baterem.
+> Ao mudar um firmware, troque só o `firmware_version` no `.ino`. Painel e app
+> passam a oferecer a atualização sozinhos: **não precisa de app novo**.
+
+As listas `FIRMWARE_PUBLICADO` ([`wifi-manager.js`](../dashboard-cloudflare/wifi-manager.js))
+e `firmwarePublicado` ([`motor_info.dart`](../lib/features/iot_motor/models/motor_info.dart))
+são só reserva, para quando o arquivo não puder ser lido (sem internet, por
+exemplo). Não precisam acompanhar cada versão.
 
 ## Esquema de partições
 

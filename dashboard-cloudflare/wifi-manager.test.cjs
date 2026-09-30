@@ -28,7 +28,7 @@ const vm = require('node:vm');
 const {EventEmitter} = require('node:events');
 
 // Sobe a aba Wi-Fi com um DOM de mentira, so para conferir o que ela escreve.
-function abaWifi() {
+function abaWifi(opcoes = {}) {
   const nos = new Map();
   const criar = () => ({
     value: '', checked: false, disabled: false, textContent: '', className: '', title: '',
@@ -62,7 +62,8 @@ function abaWifi() {
     confirm: () => true,
     setTimeout() { return 0; }, clearTimeout() {}, setInterval() { return 0; },
     localStorage: {getItem: () => null, setItem() {}, removeItem() {}},
-    crypto: globalThis.crypto, TextEncoder, Uint8Array, btoa: () => ''
+    crypto: globalThis.crypto, TextEncoder, Uint8Array, btoa: () => '',
+    ...(opcoes.fetch ? {fetch: opcoes.fetch} : {})
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'wifi-manager.js'), 'utf8'), contexto);
   contexto.window.iotmotorWifi.connect();
@@ -318,4 +319,26 @@ test('OTA que volta com a versão antiga avisa que a placa retornou sozinha', ()
   }));
   assert.match(h.no('wifiActionFeedback').textContent, /voltou para v13-antigo.*voltou sozinha/);
   assert.equal(h.firmwareStatus('esp32-01'), null, 'não fica preso em "atualizando"');
+});
+
+test('versão publicada vem do firmware-latest.json; sem ele, vale a reserva', async () => {
+  const {lerFirmwarePublicado} = require('./wifi-manager.js');
+  assert.deepEqual(lerFirmwarePublicado({'esp32-01': 'v30-x', 'esp32-02': 's3-sensors-2.0'}), ['v30-x', 's3-sensors-2.0']);
+  assert.equal(lerFirmwarePublicado({'esp32-01': 'v30-x'}), null);
+  assert.equal(lerFirmwarePublicado({'esp32-01': '<script>', 'esp32-02': 'ok'}), null);
+  assert.equal(lerFirmwarePublicado(null), null);
+
+  // A placa com a versão do JSON fica "em dia", mesmo com a reserva velha.
+  const pedidos = [];
+  const h = abaWifi({fetch: async url => {
+    pedidos.push(url);
+    return {ok: true, json: async () => ({v: 1, 'esp32-01': 'v99-novo', 'esp32-02': 's3-sensors-9.9'})};
+  }});
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(pedidos, ['/firmware/firmware-latest.json']);
+  h.redes('esp32-01');
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({device_id: 'esp32-01', firmware_version: 'v99-novo'}));
+  assert.match(h.no('wifiFirmware').textContent, /v99-novo · em dia/);
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({device_id: 'esp32-01', firmware_version: 'v27-mqtt-cloudflare'}));
+  assert.match(h.no('wifiFirmware').textContent, /nova versão publicada: v99-novo/);
 });
