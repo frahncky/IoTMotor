@@ -495,6 +495,10 @@ inline void descrever(JsonDocument& doc) {
   diagnostico["last_network"] = ultimaRede;
   diagnostico["reconnections"] = reconexoes;
   diagnostico["disconnect_reason"] = ultimaRazaoDesconexao;
+  diagnostico["uptime_ms"] = millis();
+  diagnostico["heap_bytes"] = ESP.getFreeHeap();
+  diagnostico["min_heap_bytes"] = ESP.getMinFreeHeap();
+  diagnostico["reset_reason"] = (uint8_t)esp_reset_reason();
   if (chavesProntas) {
     unsigned char texto[96];
     size_t tamanho = 0;

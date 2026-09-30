@@ -12,7 +12,7 @@ const ROTULO_KDF = 'iotmotor-wifi-v1';
 // Versão do firmware que está publicada para OTA (release firmware-latest,
 // compilada da main junto com este painel): [quadro de comando, sensores].
 // O CI confere que é a mesma do firmware_version de cada .ino.
-const FIRMWARE_PUBLICADO = ['v24-mqtt-cloudflare', 's3-sensors-1.18-mqtt-cloudflare'];
+const FIRMWARE_PUBLICADO = ['v25-mqtt-cloudflare', 's3-sensors-1.19-mqtt-cloudflare'];
 
 // O que dizer sobre a versão que a placa informa. Exportada para os testes.
 function situacaoFirmware(instalado, publicado, quadro = false) {
@@ -162,6 +162,16 @@ if (typeof document !== 'undefined') (() => {
     203: 'falha de associação', 204: 'timeout do handshake',
     205: 'falha de conexão'
   };
+  const motivosReinicio = {
+    0: 'desconhecido', 1: 'energização', 2: 'reset externo',
+    3: 'reinício por software', 4: 'travamento (pânico)',
+    5: 'watchdog de interrupção', 6: 'watchdog de tarefa',
+    7: 'watchdog', 8: 'saída de deep sleep',
+    9: 'queda de tensão (brownout)', 10: 'reinício SDIO',
+    11: 'reinício USB', 12: 'reinício JTAG',
+    13: 'erro de eFuse', 14: 'oscilação de alimentação',
+    15: 'travamento da CPU'
+  };
 
   function duracao(ms) {
     const segundos = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
@@ -184,7 +194,8 @@ if (typeof document !== 'undefined') (() => {
     if (!d) {
       $('wifiRssi').textContent = $('wifiConnectedTime').textContent =
         $('wifiLastNetwork').textContent = $('wifiReconnects').textContent =
-        $('wifiDisconnectReason').textContent = 'não informado';
+        $('wifiDisconnectReason').textContent = $('boardUptime').textContent =
+        $('boardHeap').textContent = $('boardResetReason').textContent = 'não informado';
       return;
     }
     const rssi = Number(d.rssi);
@@ -199,6 +210,15 @@ if (typeof document !== 'undefined') (() => {
     $('wifiDisconnectReason').textContent = razao
       ? (motivosWifi[razao] || 'código Wi-Fi ' + razao) + ' (' + razao + ')'
       : 'nenhuma desde o boot';
+    const uptimeBase = Math.max(0, Number(d.uptime_ms) || 0);
+    $('boardUptime').textContent = duracao(uptimeBase + Math.max(0, Date.now() - placa.em));
+    const heap = Math.max(0, Number(d.heap_bytes) || 0);
+    const heapMinimo = Math.max(0, Number(d.min_heap_bytes) || 0);
+    $('boardHeap').textContent = heap && heapMinimo
+      ? Math.round(heap / 1024) + ' / ' + Math.round(heapMinimo / 1024) + ' KB'
+      : 'não informado';
+    const reset = Math.max(0, Number(d.reset_reason) || 0);
+    $('boardResetReason').textContent = motivosReinicio[reset] || 'código ' + reset;
   }
 
   function renderizar() {
@@ -602,7 +622,11 @@ if (typeof document !== 'undefined') (() => {
                 connected_ms: Number(dados.diagnostics.connected_ms) || 0,
                 last_network: typeof dados.diagnostics.last_network === 'string' ? dados.diagnostics.last_network : '',
                 reconnections: Number(dados.diagnostics.reconnections) || 0,
-                disconnect_reason: Number(dados.diagnostics.disconnect_reason) || 0
+                disconnect_reason: Number(dados.diagnostics.disconnect_reason) || 0,
+                uptime_ms: Number(dados.diagnostics.uptime_ms) || 0,
+                heap_bytes: Number(dados.diagnostics.heap_bytes) || 0,
+                min_heap_bytes: Number(dados.diagnostics.min_heap_bytes) || 0,
+                reset_reason: Number(dados.diagnostics.reset_reason) || 0
               } : null,
           em: Date.now()
         };

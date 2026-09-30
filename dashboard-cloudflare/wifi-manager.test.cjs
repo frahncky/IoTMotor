@@ -83,7 +83,8 @@ test('diagnóstico mostra sinal, duração, última rede, reconexões e causa da
   const h = abaWifi();
   h.redes('esp32-01', {
     rssi: -61, connected_ms: 125000, last_network: 'IFMA_IOT',
-    reconnections: 3, disconnect_reason: 202
+    reconnections: 3, disconnect_reason: 202, uptime_ms: 3605000,
+    heap_bytes: 180224, min_heap_bytes: 143360, reset_reason: 9
   });
   h.enviar('iotmotor/esp32-01/status', 'online');
   assert.match(h.no('wifiRssi').textContent, /-61 dBm.*bom/);
@@ -91,6 +92,9 @@ test('diagnóstico mostra sinal, duração, última rede, reconexões e causa da
   assert.equal(h.no('wifiLastNetwork').textContent, 'IFMA_IOT');
   assert.equal(h.no('wifiReconnects').textContent, '3');
   assert.match(h.no('wifiDisconnectReason').textContent, /falha de autenticação.*202/);
+  assert.match(h.no('boardUptime').textContent, /1 h/);
+  assert.equal(h.no('boardHeap').textContent, '176 / 140 KB');
+  assert.match(h.no('boardResetReason').textContent, /queda de tensão.*brownout/);
 });
 
 test('placa offline nao aparece como conectada: a lista retida fica no broker', () => {
