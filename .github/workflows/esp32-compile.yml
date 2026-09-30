@@ -5,6 +5,7 @@ on:
     paths:
       - 'esp32/iotmotor_esp32/iotmotor_esp32_comandos/**'
       - 'esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/**'
+      - 'esp32/testes_nativos/**'
       - '.github/workflows/esp32-compile.yml'
   # Na PR tambem: erro de compilacao aparece antes do merge, e nao so quando o
   # publish-firmware falha na main.
@@ -12,6 +13,7 @@ on:
     paths:
       - 'esp32/iotmotor_esp32/iotmotor_esp32_comandos/**'
       - 'esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores/**'
+      - 'esp32/testes_nativos/**'
       - '.github/workflows/esp32-compile.yml'
   workflow_dispatch:
 permissions:
@@ -22,6 +24,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      # Logica das partidas, alarmes e vibracao, no PC (g++), antes de compilar.
+      - name: Native firmware tests
+        run: bash esp32/testes_nativos/rodar.sh
       - uses: arduino/setup-arduino-cli@v2
       - name: Install ESP32 board core
         run: |

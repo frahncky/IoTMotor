@@ -12,7 +12,7 @@ const ROTULO_KDF = 'iotmotor-wifi-v1';
 // Versão do firmware que está publicada para OTA (release firmware-latest,
 // compilada da main junto com este painel): [quadro de comando, sensores].
 // O CI confere que é a mesma do firmware_version de cada .ino.
-const FIRMWARE_PUBLICADO = ['v26-mqtt-cloudflare', 's3-sensors-1.20-mqtt-cloudflare'];
+const FIRMWARE_PUBLICADO = ['v27-mqtt-cloudflare', 's3-sensors-1.21-mqtt-cloudflare'];
 
 const MOTIVOS_REINICIO = {
   0: 'desconhecido', 1: 'energização', 2: 'reset externo',
@@ -637,6 +637,13 @@ if (typeof document !== 'undefined') (() => {
           estados[dev] = 'online';  // capabilities novo prova que a placa voltou ao MQTT.
           limparPendente(dev);
           avisoFirmware(`Atualização de ${dev} concluída · firmware ${instalada} instalado.`);
+        } else if (p?.acao === 'update' && p.fase === 'confirmando' && versoes[dev]) {
+          // Reiniciou e voltou com outra versão: a nova não chegou a confirmar
+          // (travou ou reiniciou antes do broker) e o bootloader voltou à anterior.
+          limparPendente(dev);
+          avisoFirmware(`${dev} voltou para ${versoes[dev]}: a versão nova não se confirmou ` +
+            'e a placa voltou sozinha para a anterior. Ela continua funcionando; ' +
+            'tente de novo mais tarde.');
         }
         renderizar();
         return;

@@ -82,7 +82,19 @@ e confira as imagens antes do commit.
 | Painel (sintaxe) | `for f in dashboard-cloudflare/*.js; do node --check $f; done` |
 | Painel (testes) | `node --test dashboard-cloudflare/*.test.cjs` |
 | App | `flutter test` e `flutter analyze` |
-| Firmware | `arduino-cli compile …` ([comandos](firmware.md#primeira-gravação-por-cabo)) |
+| Firmware (lógica) | `bash esp32/testes_nativos/rodar.sh` |
+| Firmware (compilação) | `arduino-cli compile …` ([comandos](firmware.md#primeira-gravação-por-cabo)) |
+
+Os testes nativos do firmware compilam os cabeçalhos reais das placas no PC
+(g++), contra um Arduino de mentira em `esp32/testes_nativos/fakes/`: partidas
+(ordem dos contatores, tempo morto, limite do ensaio), alarmes e o cálculo da
+vibração. Rodam sem placa e sem rede, exceto o download do ArduinoJson na
+primeira vez.
+
+Os cabeçalhos com o mesmo nome nas duas placas (Wi-Fi, OTA, selo, vigia…)
+precisam ser iguais; o CI confere. Edite de um lado e rode
+`bash esp32/sincronizar-comuns.sh` (do quadro para os sensores; com
+`sensores`, o contrário).
 
 Os testes do painel rodam cada módulo num DOM de mentira com um cliente MQTT
 falso (`vm` do Node). Os do app usam um `MqttMotorService` falso e alimentam o
@@ -93,8 +105,8 @@ controlador com mensagens como se viessem do broker.
 | Workflow | Quando roda | O que faz |
 | --- | --- | --- |
 | `cloudflare-dashboard.yml` | PR e push na `main` que mexem no painel, em `functions/` ou no firmware | Checa sintaxe, roda os testes do painel e confere firmware × painel × app (versões, campos, arquivos iguais nas duas placas) |
-| `esp32-compile.yml` | PR e push na `main` no firmware, ou manual | Compila as duas placas |
-| `publish-firmware.yml` | Push na `main` no firmware | Compila e publica `esp32-01.bin` e `esp32-02.bin` no release `firmware-latest` |
+| `esp32-compile.yml` | PR e push na `main` no firmware, ou manual | Roda os testes nativos e compila as duas placas |
+| `publish-firmware.yml` | Push na `main` no firmware | Roda os testes nativos e os do painel (`cloudflare-dashboard.yml`); só com tudo aprovado, compila e publica `esp32-01.bin` e `esp32-02.bin` no release `firmware-latest` |
 | `android-apk.yml` | PR e push na `main` no app (`lib/`, `android/`, `assets/`, `pubspec.*`) | Na PR, exige versão maior que a da `main`. Roda `flutter test` e gera o APK assinado (só ARM, 32 e 64 bits). Só o push na `main` publica: `app-latest` e a release da versão (por exemplo, `app-v2.4.3`) |
 
 Erro de compilação do firmware ou do app aparece na própria PR, antes do merge.

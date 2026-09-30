@@ -53,3 +53,5 @@ esp32/iotmotor_esp32/**/build/
 # Cache local do Wrangler (Cloudflare)
 .wrangler/
 comando_local.h
+# Testes nativos do firmware: ArduinoJson baixado e binarios
+esp32/testes_nativos/.cache/

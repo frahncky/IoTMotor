@@ -15,6 +15,8 @@ on:
       - 'esp32/**'
       - '.github/workflows/cloudflare-dashboard.yml'
   workflow_dispatch:
+  # O publish-firmware chama estes mesmos testes antes de publicar o OTA.
+  workflow_call:
 permissions:
   contents: read
 jobs:

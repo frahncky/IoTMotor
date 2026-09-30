@@ -12,7 +12,35 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPUpdate.h>
+#include <esp_ota_ops.h>
 #include "watchdog.h"
+
+// ---- Volta automatica para a versao anterior ------------------------------
+// O bootloader ja vem com rollback ligado (CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE),
+// mas o core Arduino confirma o programa novo logo no boot, e a volta nunca
+// acontecia. Adiando a confirmacao ate a placa falar com o broker, uma versao
+// que trava, entra em laco de reinicio ou nao consegue chegar ao MQTT volta
+// sozinha para a anterior no proximo boot, sem precisar de cabo. Definida no
+// core em C (esp32-hal-misc.c), por isso o extern "C".
+extern "C" bool verifyRollbackLater() { return true; }
+
+namespace ota {
+inline bool versaoConfirmada = false;
+
+// Chamar quando a placa conectar no broker: Wi-Fi, TLS e MQTT funcionam nesta
+// versao, que e o que precisa para receber a proxima atualizacao. Sem OTA
+// pendente (gravacao por cabo, ou versao ja confirmada), nao faz nada.
+inline void confirmarVersao() {
+  if (versaoConfirmada) return;
+  versaoConfirmada = true;
+  esp_ota_img_states_t estado;
+  if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &estado) == ESP_OK &&
+      estado == ESP_OTA_IMG_PENDING_VERIFY) {
+    esp_ota_mark_app_valid_cancel_rollback();
+    Serial.println("[OTA] versao nova confirmada: a volta automatica foi cancelada");
+  }
+}
+}  // namespace ota
 
 // Release fixo "firmware-latest", atualizado pelo workflow publish-firmware.yml.
 #define OTA_BASE_URL "https://iotmotor.pages.dev/firmware/"
@@ -59,6 +87,9 @@ inline bool tentarAtualizacaoUrl(const String& url, String& motivo) {
 
 inline bool atualizarPelaInternet(const char* arquivo, String& motivo) {
   if (WiFi.status() != WL_CONNECTED) { motivo = "sem Wi-Fi"; return false; }
+  // O pedido chegou pelo MQTT, entao esta versao funciona; e o ESP-IDF recusa
+  // gravar outra enquanto a atual ainda espera confirmacao.
+  ota::confirmarVersao();
 
   const String principal = String(OTA_BASE_URL) + arquivo;
   if (tentarAtualizacaoUrl(principal, motivo)) return true;

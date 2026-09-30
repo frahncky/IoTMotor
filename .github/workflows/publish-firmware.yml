@@ -12,7 +12,20 @@ concurrency:
   group: publish-firmware-main
   cancel-in-progress: true
 jobs:
+  # As placas nao tem cabo: um firmware quebrado so volta pela volta automatica
+  # do OTA. Por isso nada e publicado sem os testes nativos e os do painel
+  # (que tambem conferem firmware x painel x app).
+  testes-nativos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Native firmware tests
+        run: bash esp32/testes_nativos/rodar.sh
+  painel:
+    uses: ./.github/workflows/cloudflare-dashboard.yml
   publish:
+    needs: [testes-nativos, painel]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

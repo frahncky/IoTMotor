@@ -297,3 +297,25 @@ test('OTA de uma placa não bloqueia o envio de atualização para a outra', () 
   assert.equal(cmd2.action, 'update');
   assert.equal(cmd2.device_id, 'esp32-02');
 });
+
+test('OTA que volta com a versão antiga avisa que a placa retornou sozinha', () => {
+  const h = abaWifi();
+  h.redes('esp32-01');
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({
+    device_id: 'esp32-01', firmware_version: 'v13-antigo'
+  }));
+  h.no('wifiUpdateFw').fire('click');
+  const comando = JSON.parse(h.cliente.publicados.at(-1).dados);
+  h.enviar('iotmotor/esp32-01/command_ack', JSON.stringify({
+    device_id: 'esp32-01', seq: comando.seq, action: 'update',
+    accepted: true, reason: 'baixando firmware'
+  }));
+  h.enviar('iotmotor/esp32-01/status', 'offline');
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  h.enviar('iotmotor/esp32-01/capabilities', JSON.stringify({
+    device_id: 'esp32-01', firmware_version: 'v13-antigo'
+  }));
+  assert.match(h.no('wifiActionFeedback').textContent, /voltou para v13-antigo.*voltou sozinha/);
+  assert.equal(h.firmwareStatus('esp32-01'), null, 'não fica preso em "atualizando"');
+});

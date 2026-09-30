@@ -44,6 +44,8 @@ desta placa**) ou o app (**Configurações › Atualizar firmware**). O comando
 - A placa **confere o certificado** do GitHub com os certificados raiz da Mozilla que já vêm no core ESP32. Numa rede com DNS ou Wi-Fi falso, o download é recusado em vez de gravar outro programa. A data dos certificados não é conferida, então a placa atualiza mesmo sem hora do NTP.
 - O quadro de comando **recusa** atualizar com saídas ligadas: pare o motor antes.
 - Se falhar, o motivo volta no `command_ack` e a placa continua na versão antiga.
+- **Volta automática** (`v27` do quadro e `s3-sensors-1.21` em diante): a versão nova só se confirma quando a placa conecta no broker e assina os comandos, ou seja, quando já consegue receber a próxima atualização. Se ela travar, reiniciar em laço ou não chegar ao MQTT, o próximo boot volta sozinho para a versão anterior, sem cabo. O painel avisa: *"voltou para … a versão nova não se confirmou"*. Uma queda de energia antes da confirmação também volta para a anterior, que continua funcionando; basta atualizar de novo.
+- O CI só publica depois dos [testes nativos do firmware](desenvolvimento.md#testes) e dos testes do painel.
 
 ## Versões
 
@@ -71,9 +73,14 @@ funcionando, mas só enquanto o binário couber em 1,31 MB.
 
 ## Como a placa entra na rede
 
-1. Na energização, a placa faz uma varredura e tenta as redes gravadas **na ordem da lista** (a ordem é editável na aba **Dispositivos**). Uma rede que não apareceu na varredura continua sendo tentada, com espera menor.
-2. Se nenhuma responder, ela tenta a rede que o próprio ESP32 guardou pelo portal. Funcionando, essa rede vai para o topo da lista.
-3. Só depois de tudo isso a placa abre a **rede própria** (`IoTMotor-esp32-01` ou `IoTMotor-esp32-02`) por 180 s, para cadastrar um Wi-Fi pelo celular.
+1. Primeiro, a **última rede que funcionou**, por cerca de 2,5 s, sem varredura: no mesmo lugar, a placa entra quase na hora.
+2. Não deu: uma varredura, e as redes gravadas **que apareceram** nela, por 3 a 4 s cada. A ordem é a da lista (editável na aba **Dispositivos**), mas uma rede com sinal bem mais forte passa à frente de uma quase inacessível: cada posição da lista vale 8 dB.
+3. Depois, as redes gravadas que **não apareceram** na varredura (podem estar ocultas), por 3 s cada.
+4. Por fim, a rede que o próprio ESP32 guardou pelo portal. Funcionando, ela entra na lista.
+5. Só então, e só no quadro de comando durante a energização, abre a **rede própria** (`IoTMotor-esp32-01`) por 180 s, para cadastrar um Wi-Fi pelo celular. A placa de sensores abre a dela (`IoTMotor-esp32-02`) apenas pelo botão **Abrir rede da placa agora**.
+
+Com a rede no ar, a placa republica o diagnóstico (sinal, reconexões, motivo da
+última queda) a cada 30 s: aparece na aba **Dispositivos**.
 
 As senhas de Wi-Fi ficam na memória da placa (NVS). Pelo painel, elas viajam
 cifradas para a chave da placa ([detalhes](mqtt.md#comandos-das-duas-placas)).

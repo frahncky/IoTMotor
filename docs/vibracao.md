@@ -158,6 +158,19 @@ $$
 
 Portanto, a saída da integração está em **m/s**.
 
+O trapézio a 1 kHz tem um erro de ganho que cresce com a frequência: ele
+multiplica cada componente por $x/\tan x$, com $x = \pi f / 1000$. Na prática, a
+leitura sai um pouco **abaixo** do valor real nas frequências altas:
+
+| Frequência | 30 Hz | 60 Hz | 120 Hz | 150 Hz | 180 Hz |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Erro | −0,3 % | −1,2 % | −4,8 % | −7,5 % | −10,9 % |
+
+Em motores de 2 e 4 polos, o que mais pesa na severidade (1× e 2× a rotação)
+fica abaixo de 120 Hz, onde o erro é menor que 5 %. Os testes nativos do
+firmware (`esp32/testes_nativos/teste_vibracao.cpp`) conferem essa resposta com
+senoides conhecidas.
+
 ### Por que não converter diretamente g → mm/s?
 
 Aceleração e velocidade são grandezas diferentes. Para uma senoide pura seria

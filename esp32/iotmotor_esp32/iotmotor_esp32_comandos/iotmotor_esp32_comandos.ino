@@ -466,7 +466,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v26-mqtt-cloudflare";
+  doc["firmware_version"] = "v27-mqtt-cloudflare";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -633,8 +633,9 @@ void manterMqtt(unsigned long agora) {
   const String clientId = String("iotmotor_v9_") + String((uint32_t)ESP.getEfuseMac(), HEX);
   if (mqttClient.connect(clientId.c_str(), topicoStatus, 0, true, "offline")) {
     mqttClient.publish(topicoStatus, "online", true);
-    if (!mqttClient.subscribe(topicoComandos, 1))
-      Serial.println("[MQTT] falha ao assinar comandos");
+    // Assinou os comandos: esta versao pode receber a proxima atualizacao.
+    if (mqttClient.subscribe(topicoComandos, 1)) ota::confirmarVersao();
+    else Serial.println("[MQTT] falha ao assinar comandos");
     publicarCapacidades();
     publicarAuth();
     publicarRedes();

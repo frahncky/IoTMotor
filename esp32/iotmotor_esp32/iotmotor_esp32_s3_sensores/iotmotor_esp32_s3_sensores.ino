@@ -568,7 +568,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.20-mqtt-cloudflare";
+  doc["firmware_version"]="s3-sensors-1.21-mqtt-cloudflare";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -983,7 +983,9 @@ void loop() {
       Serial.printf("[S3/MQTT] IP=%s conectando %s:%u\n",WiFi.localIP().toString().c_str(),MQTT_HOST,MQTT_PORT);
       String clientId=String("iotmotor_s3_")+String((uint32_t)ESP.getEfuseMac(),HEX);
       if(mqtt.connect(clientId.c_str(),statusTopic,0,true,"offline")) {
-        publishStatus("online");publishCapabilities();mqtt.subscribe(commandTopic,1);publishNetworks();
+        publishStatus("online");publishCapabilities();publishNetworks();
+        // Assinou os comandos: esta versao pode receber a proxima atualizacao.
+        if(mqtt.subscribe(commandTopic,1))ota::confirmarVersao();
         lastDiagnosticsPublish=now;
         mqtt.subscribe(quadroTelemetryTopic,0);mqtt.subscribe(acquisitionTopic,1);publishAlarms();publishAuth();publishAlarmLog();
         for(uint8_t d=0;d<historico::DIAS;d++)publishHistory(d);
