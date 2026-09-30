@@ -84,10 +84,10 @@ void publicarRespostaControle(const char* seq, bool aceito, const char* acao, co
 // painel cifrar senhas novas. Retida para a aba "Wi-Fi" abrir ja preenchida.
 void publicarRedes() {
   if (!mqttClient.connected()) return;
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<1536> doc;
   doc["device_id"] = DEVICE_ID;
   wifistore::descrever(doc);
-  char payload[1024];
+  char payload[1536];
   const size_t len = serializeJson(doc, payload, sizeof(payload));
   if (len) mqttClient.publish(topicoWifi, reinterpret_cast<const uint8_t*>(payload),
                               static_cast<unsigned int>(len), true);

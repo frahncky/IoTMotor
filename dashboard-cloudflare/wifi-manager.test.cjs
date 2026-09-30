@@ -69,8 +69,8 @@ function abaWifi() {
   const cliente = clientes.at(-1);
   cliente.emit('connect');
   const enviar = (topico, texto) => cliente.emit('message', topico, Buffer.from(texto), {retain: true});
-  const redes = placa => enviar(`iotmotor/${placa}/wifi`, JSON.stringify({
-    device_id: placa, connected: 'IFMA_IOT', max: 8,
+  const redes = (placa, diagnostics) => enviar(`iotmotor/${placa}/wifi`, JSON.stringify({
+    device_id: placa, connected: 'IFMA_IOT', max: 8, diagnostics,
     networks: [{ssid: 'IFMA_IOT', open: true}]
   }));
   return {
@@ -78,6 +78,20 @@ function abaWifi() {
     firmwareStatus: dev => contexto.window.iotmotorFirmwareStatus?.(dev) || null
   };
 }
+
+test('diagnóstico mostra sinal, duração, última rede, reconexões e causa da queda', () => {
+  const h = abaWifi();
+  h.redes('esp32-01', {
+    rssi: -61, connected_ms: 125000, last_network: 'IFMA_IOT',
+    reconnections: 3, disconnect_reason: 202
+  });
+  h.enviar('iotmotor/esp32-01/status', 'online');
+  assert.match(h.no('wifiRssi').textContent, /-61 dBm.*bom/);
+  assert.match(h.no('wifiConnectedTime').textContent, /2 min/);
+  assert.equal(h.no('wifiLastNetwork').textContent, 'IFMA_IOT');
+  assert.equal(h.no('wifiReconnects').textContent, '3');
+  assert.match(h.no('wifiDisconnectReason').textContent, /falha de autenticação.*202/);
+});
 
 test('placa offline nao aparece como conectada: a lista retida fica no broker', () => {
   const h = abaWifi();

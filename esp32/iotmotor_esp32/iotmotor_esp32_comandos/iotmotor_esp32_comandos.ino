@@ -465,7 +465,7 @@ void publicarCapacidades() {
   StaticJsonDocument<384> doc;
   doc["device_id"] = DEVICE_ID;
   doc["role"] = "actuator_mqtt";
-  doc["firmware_version"] = "v23-mqtt-cloudflare";
+  doc["firmware_version"] = "v24-mqtt-cloudflare";
   doc["accepts_direct_command"] = true;
   doc["accepts_command_request"] = false;
   doc["command_auth"] = "none";
@@ -669,6 +669,7 @@ void setup() {
   // PZEM criado depois da inicializacao do core.
   pzem = new PZEM004Tv30(Serial2, PZEM_RX_PIN, PZEM_TX_PIN);
   WiFi.mode(WIFI_STA);
+  wifistore::iniciarDiagnostico();
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);

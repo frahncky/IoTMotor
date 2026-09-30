@@ -12,7 +12,7 @@ const ROTULO_KDF = 'iotmotor-wifi-v1';
 // Versão do firmware que está publicada para OTA (release firmware-latest,
 // compilada da main junto com este painel): [quadro de comando, sensores].
 // O CI confere que é a mesma do firmware_version de cada .ino.
-const FIRMWARE_PUBLICADO = ['v23-mqtt-cloudflare', 's3-sensors-1.17-mqtt-cloudflare'];
+const FIRMWARE_PUBLICADO = ['v24-mqtt-cloudflare', 's3-sensors-1.18-mqtt-cloudflare'];
 
 // O que dizer sobre a versão que a placa informa. Exportada para os testes.
 function situacaoFirmware(instalado, publicado, quadro = false) {
@@ -155,6 +155,52 @@ if (typeof document !== 'undefined') (() => {
     return {url: url.toString(), p, d};
   }
 
+  const motivosWifi = {
+    2: 'autenticação expirada', 4: 'inatividade ou sinal perdido',
+    8: 'desassociação solicitada', 15: 'timeout na troca de chaves',
+    201: 'rede não encontrada', 202: 'falha de autenticação',
+    203: 'falha de associação', 204: 'timeout do handshake',
+    205: 'falha de conexão'
+  };
+
+  function duracao(ms) {
+    const segundos = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    if (segundos < 60) return segundos + ' s';
+    const minutos = Math.floor(segundos / 60);
+    if (minutos < 60) return minutos + ' min ' + (segundos % 60) + ' s';
+    const horas = Math.floor(minutos / 60);
+    return horas + ' h ' + (minutos % 60) + ' min';
+  }
+
+  function qualidadeRssi(rssi) {
+    if (rssi >= -55) return 'excelente';
+    if (rssi >= -67) return 'bom';
+    if (rssi >= -75) return 'fraco';
+    return 'muito fraco';
+  }
+
+  function renderizarDiagnostico(placa, online) {
+    const d = placa?.diagnostics;
+    if (!d) {
+      $('wifiRssi').textContent = $('wifiConnectedTime').textContent =
+        $('wifiLastNetwork').textContent = $('wifiReconnects').textContent =
+        $('wifiDisconnectReason').textContent = 'não informado';
+      return;
+    }
+    const rssi = Number(d.rssi);
+    $('wifiRssi').textContent = online && Number.isFinite(rssi) && rssi < 0
+      ? rssi + ' dBm · ' + qualidadeRssi(rssi) : 'sem sinal atual';
+    const base = Math.max(0, Number(d.connected_ms) || 0);
+    $('wifiConnectedTime').textContent = online
+      ? duracao(base + Math.max(0, Date.now() - placa.em)) : 'desconectada';
+    $('wifiLastNetwork').textContent = d.last_network || 'nenhuma registrada';
+    $('wifiReconnects').textContent = String(Math.max(0, Number(d.reconnections) || 0));
+    const razao = Math.max(0, Number(d.disconnect_reason) || 0);
+    $('wifiDisconnectReason').textContent = razao
+      ? (motivosWifi[razao] || 'código Wi-Fi ' + razao) + ' (' + razao + ')'
+      : 'nenhuma desde o boot';
+  }
+
   function renderizar() {
     const dev = dispositivos[selecionado];
     $('wifiDev0').textContent = 'Quadro de comando';
@@ -179,6 +225,7 @@ if (typeof document !== 'undefined') (() => {
     const ota = pendenteDe(dev)?.acao === 'update' ? pendenteDe(dev) : null;
     const atualizado = atualizados[dev] || null;
     const noAr = () => estados[dispositivos[selecionado]] !== 'offline';
+    renderizarDiagnostico(placa, connected && noAr());
     if (!connected) {
       $('wifiFirmware').textContent = '';
     } else if (ota) {
@@ -549,6 +596,14 @@ if (typeof document !== 'undefined') (() => {
           connected: typeof dados.connected === 'string' ? dados.connected : '',
           ap: dados.ap && typeof dados.ap.name === 'string' ? {name: dados.ap.name, open: dados.ap.open === true} : null,
           max: Number(dados.max) || 8,
+          diagnostics: dados.diagnostics && typeof dados.diagnostics === 'object'
+            ? {
+                rssi: Number(dados.diagnostics.rssi),
+                connected_ms: Number(dados.diagnostics.connected_ms) || 0,
+                last_network: typeof dados.diagnostics.last_network === 'string' ? dados.diagnostics.last_network : '',
+                reconnections: Number(dados.diagnostics.reconnections) || 0,
+                disconnect_reason: Number(dados.diagnostics.disconnect_reason) || 0
+              } : null,
           em: Date.now()
         };
         if (dev === dispositivos[selecionado] && !pendenteDe(dev)) ordemEditada = null;
@@ -624,6 +679,10 @@ if (typeof document !== 'undefined') (() => {
 
   // Ligado ao botao Conectar/Desconectar do painel (dual-dashboard.js).
   window.iotmotorWifi = {connect: conectar, disconnect: desconectar};
+  setInterval(() => {
+    const placa = atual();
+    renderizarDiagnostico(placa, connected && estados[dispositivos[selecionado]] !== 'offline');
+  }, 1000);
   renderizar();
 })();
 

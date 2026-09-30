@@ -567,7 +567,7 @@ void tarefaSensores(void*) {
 void publishCapabilities() {
   StaticJsonDocument<384> doc;
   doc["device_id"]=DEVICE_ID;
-  doc["firmware_version"]="s3-sensors-1.17-mqtt-cloudflare";
+  doc["firmware_version"]="s3-sensors-1.18-mqtt-cloudflare";
   doc["demo"]=false;
   doc["accepts_direct_command"]=false;
   doc["accepts_command_request"]=false;
@@ -617,10 +617,10 @@ void publishTelemetry() {
 // painel cifrar senhas novas. Retida para a aba "Wi-Fi" abrir ja preenchida.
 void publishNetworks() {
   if(!mqtt.connected())return;
-  StaticJsonDocument<1024> doc;
+  StaticJsonDocument<1536> doc;
   doc["device_id"]=DEVICE_ID;
   wifistore::descrever(doc);
-  char payload[1024];size_t n=serializeJson(doc,payload,sizeof(payload));
+  char payload[1536];size_t n=serializeJson(doc,payload,sizeof(payload));
   if(n)mqtt.publish(wifiTopic,(const uint8_t*)payload,(unsigned int)n,true);
 }
 
@@ -917,6 +917,7 @@ void setup() {
   mqtt.setBufferSize(2048);  // Cabe um dia inteiro do historico.
   mqtt.setCallback(onCommand);
   WiFi.mode(WIFI_STA);
+  wifistore::iniciarDiagnostico();
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);  // Mantem o radio acordado: melhora estabilidade perto do motor.
   wifistore::carregar(REDES_INICIAIS,SENHAS_INICIAIS,sizeof(REDES_INICIAIS)/sizeof(REDES_INICIAIS[0]));

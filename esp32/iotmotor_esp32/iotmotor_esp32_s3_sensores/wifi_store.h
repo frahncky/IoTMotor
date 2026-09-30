@@ -40,6 +40,28 @@ inline uint8_t chavePrivada[32];
 inline uint8_t chavePublica[65];  // Ponto P-256 nao comprimido (0x04 || X || Y).
 inline bool chavesProntas = false;
 inline char ultimaRede[MAX_SSID + 1] = "";
+inline volatile bool wifiConectado = false;
+inline volatile bool wifiJaConectou = false;
+inline volatile uint32_t conectadoDesdeMs = 0;
+inline volatile uint32_t reconexoes = 0;
+inline volatile uint8_t ultimaRazaoDesconexao = 0;
+
+inline void eventoWifi(WiFiEvent_t evento, WiFiEventInfo_t info) {
+  if (evento == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    if (wifiJaConectou) ++reconexoes;
+    wifiJaConectou = true;
+    wifiConectado = true;
+    conectadoDesdeMs = millis();
+  } else if (evento == ARDUINO_EVENT_WIFI_STA_DISCONNECTED && wifiConectado) {
+    ultimaRazaoDesconexao = info.wifi_sta_disconnected.reason;
+    wifiConectado = false;
+    conectadoDesdeMs = 0;
+  }
+}
+
+inline void iniciarDiagnostico() {
+  WiFi.onEvent(eventoWifi);
+}
 
 inline int aleatorio(void*, unsigned char* saida, size_t tamanho) {
   esp_fill_random(saida, tamanho);
@@ -466,6 +488,13 @@ inline void descrever(JsonDocument& doc) {
   propria["name"] = apNome;
   propria["open"] = !*apSenha;
   if (WiFi.status() == WL_CONNECTED) doc["connected"] = WiFi.SSID();
+  JsonObject diagnostico = doc.createNestedObject("diagnostics");
+  diagnostico["rssi"] = WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0;
+  diagnostico["connected_ms"] =
+      wifiConectado && conectadoDesdeMs ? (uint32_t)(millis() - conectadoDesdeMs) : 0;
+  diagnostico["last_network"] = ultimaRede;
+  diagnostico["reconnections"] = reconexoes;
+  diagnostico["disconnect_reason"] = ultimaRazaoDesconexao;
   if (chavesProntas) {
     unsigned char texto[96];
     size_t tamanho = 0;
