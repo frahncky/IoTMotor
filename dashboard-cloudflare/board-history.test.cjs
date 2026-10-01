@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {lerDia, serieDoHistorico, resumoDoHistorico, GRANDEZAS_HISTORICO} = require('./board-history.js');
+const {lerDia, serieDoHistorico, resumoDoHistorico, legendaDoHistorico, GRANDEZAS_HISTORICO} = require('./board-history.js');
 
 const HORA = 3600000;
 const g = id => GRANDEZAS_HISTORICO.find(x => x.id === id);
@@ -41,4 +41,32 @@ test('vibração em mm/s; dias antigos em g ficam fora do gráfico', () => {
   // O dia do exemplo acima veio do firmware antigo (sem "vib"): vibração em g.
   assert.equal(serieDoHistorico([dia], g('vibracao'), agora).length, 0);
   assert.equal(serieDoHistorico([dia], g('corrente'), agora).length, 1, 'o resto do dia antigo continua');
+});
+
+test('legenda só com o que aparece no gráfico', () => {
+  const tipos = (dias, id) => legendaDoHistorico(dias, g(id), agora).map(i => i.tipo);
+  // Uma hora só de corrente: bolinha, sem linha nem tracejada.
+  assert.deepEqual(tipos([dia], 'corrente'), ['ponto']);
+  // Temperatura em duas horas seguidas: linha e tracejada, sem bolinha.
+  assert.deepEqual(tipos([dia], 'temperatura'), ['linha', 'tracejada']);
+  // Tensão não tem máximo; tempo ligado vira barra.
+  assert.deepEqual(tipos([dia], 'tensao'), ['linha']);
+  assert.deepEqual(tipos([dia], 'ligado'), ['barra']);
+  // Sem dados, sem legenda.
+  assert.deepEqual(legendaDoHistorico([null], g('corrente'), agora), []);
+
+  // Corrente com zero e lacuna: avisa os dois.
+  const falhas = lerDia({day: 20000, v: 1, vib: 'mm/s', hours: [
+    [6, 0, 0, 2200, null, null, null, null, 1],
+    [8, 350, 380, 2200, null, null, 1000, 1200, 30],
+    [9, 360, 390, 2200, null, null, 1100, 1300, 40]
+  ]});
+  const textos = legendaDoHistorico([falhas], g('corrente'), agora).map(i => i.texto).join(' | ');
+  assert.match(textos, /com o motor girando/);
+  assert.match(textos, /Zero: motor marcado como ligado sem corrente/);
+  assert.match(textos, /Espaço vazio: motor parado/);
+
+  // Vibração: o dia antigo em g é avisado.
+  assert.match(legendaDoHistorico([dia, falhas], g('vibracao'), agora).map(i => i.texto).join(' '),
+    /1 dia\(s\) do firmware antigo/);
 });

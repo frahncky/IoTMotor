@@ -58,6 +58,81 @@ final List<_Grandeza> _grandezas = <_Grandeza>[
   ),
 ];
 
+/// O que um item da legenda representa no gráfico.
+enum TipoLegenda { media, maximo, ponto, barra, nota }
+
+typedef ItemLegenda = ({TipoLegenda tipo, String texto});
+
+/// Legenda só com o que aparece no gráfico da grandeza [grandeza] (índice na
+/// ordem dos botões: corrente, temperatura, vibração, tensão, tempo ligado).
+List<ItemLegenda> legendaDoHistorico(
+  List<BoardHistoryHour> horas,
+  int grandeza,
+) {
+  const int horaMs = 3600000;
+  final _Grandeza g = _grandezas[grandeza];
+  final List<BoardHistoryHour> pontos = <BoardHistoryHour>[
+    for (final BoardHistoryHour h in horas)
+      if (g.media(h) != null) h,
+  ];
+  int ms(int i) => pontos[i].time.millisecondsSinceEpoch;
+  bool seguida(int i) => i > 0 && ms(i) - ms(i - 1) <= horaMs;
+  final List<ItemLegenda> itens = <ItemLegenda>[];
+  if (g.barras) {
+    if (pontos.any((BoardHistoryHour h) => g.media(h)! > 0)) {
+      itens.add((
+        tipo: TipoLegenda.barra,
+        texto: 'minutos ligado em cada hora',
+      ));
+    }
+    return itens;
+  }
+  if (pontos.isEmpty) return itens;
+  final bool soLigado = g.nome == 'Corrente' || g.nome == 'Vibração';
+  final Iterable<int> indices = Iterable<int>.generate(pontos.length);
+  if (indices.any(seguida)) {
+    itens.add((
+      tipo: TipoLegenda.media,
+      texto: 'média de cada hora${soLigado ? ', com o motor girando' : ''}',
+    ));
+  }
+  if (g.maximo != null &&
+      indices.any(
+        (int i) =>
+            seguida(i) &&
+            g.maximo!(pontos[i]) != null &&
+            g.maximo!(pontos[i - 1]) != null,
+      )) {
+    itens.add((tipo: TipoLegenda.maximo, texto: 'máximo da hora'));
+  }
+  if (indices.any(
+    (int i) => !seguida(i) && !(i + 1 < pontos.length && seguida(i + 1)),
+  )) {
+    itens.add((
+      tipo: TipoLegenda.ponto,
+      texto: 'hora isolada (sem hora vizinha com registro)',
+    ));
+  }
+  if (g.nome == 'Corrente' &&
+      pontos.any((BoardHistoryHour h) => g.media(h) == 0)) {
+    itens.add((
+      tipo: TipoLegenda.nota,
+      texto:
+          'Zero: motor marcado como ligado sem corrente (quadro antes da v28).',
+    ));
+  }
+  if (indices.any((int i) => i > 0 && !seguida(i))) {
+    itens.add((
+      tipo: TipoLegenda.nota,
+      texto:
+          soLigado
+              ? 'Espaço vazio: motor parado ou placa sem dados.'
+              : 'Espaço vazio: placa sem leitura.',
+    ));
+  }
+  return itens;
+}
+
 /// Histórico por hora dos últimos 7 dias guardado na placa de sensores: o
 /// registro continua com o app fechado.
 class BoardHistoryPanel extends StatefulWidget {
@@ -128,18 +203,84 @@ class _BoardHistoryPanelState extends State<BoardHistoryPanel> {
             ),
           ),
           const SizedBox(height: 6),
-          Text(
-            g.barras
-                ? 'Minutos ligado em cada hora.'
-                : g.maximo == null
-                ? 'Média de cada hora.'
-                : 'Linha forte: média · linha clara: máximo.',
-            style: texto.bodySmall?.copyWith(color: AppTheme.labelSoft),
+          Wrap(
+            spacing: 14,
+            runSpacing: 4,
+            children: <Widget>[
+              for (final ItemLegenda item in legendaDoHistorico(
+                widget.horas,
+                _escolhida,
+              ))
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    if (item.tipo != TipoLegenda.nota) ...<Widget>[
+                      CustomPaint(
+                        size: const Size(18, 10),
+                        painter: _AmostraLegenda(item.tipo, _cor(_escolhida)),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    Flexible(
+                      child: Text(
+                        item.texto,
+                        style: texto.bodySmall?.copyWith(
+                          color: AppTheme.labelSoft,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
         ],
       ],
     );
   }
+}
+
+/// Amostra de um item da legenda, desenhada como no gráfico.
+class _AmostraLegenda extends CustomPainter {
+  _AmostraLegenda(this.tipo, this.cor);
+
+  final TipoLegenda tipo;
+  final Color cor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset meio = size.center(Offset.zero);
+    final Paint tinta = Paint()..color = cor;
+    switch (tipo) {
+      case TipoLegenda.media:
+      case TipoLegenda.maximo:
+        tinta
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = tipo == TipoLegenda.media ? 2 : 1.2;
+        if (tipo == TipoLegenda.maximo) {
+          tinta.color = cor.withValues(alpha: 0.55);
+        }
+        canvas.drawLine(
+          Offset(1, meio.dy),
+          Offset(size.width - 1, meio.dy),
+          tinta,
+        );
+      case TipoLegenda.ponto:
+        tinta
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2;
+        canvas.drawCircle(meio, 1.2, tinta);
+      case TipoLegenda.barra:
+        canvas.drawRect(
+          Rect.fromCenter(center: meio, width: 6, height: size.height - 1),
+          tinta,
+        );
+      case TipoLegenda.nota:
+        break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_AmostraLegenda old) => old.tipo != tipo || old.cor != cor;
 }
 
 class _HistoricoPainter extends CustomPainter {

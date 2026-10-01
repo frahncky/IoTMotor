@@ -43,6 +43,48 @@ function serieDoHistorico(dias, grandeza, agoraMs) {
   return pontos.sort((a, b) => a.t - b.t);
 }
 
+// Ponto sem hora vizinha: não forma linha, vira bolinha.
+function pontoIsolado(pontos, i) {
+  const vizinha = q => q && Math.abs(q.t - pontos[i].t) <= HORA_MS;
+  return !vizinha(pontos[i - 1]) && !vizinha(pontos[i + 1]);
+}
+
+// Há trecho de linha nesta chave: duas horas seguidas com valor.
+function temTrecho(pontos, chave) {
+  return pontos.some((p, i) => i > 0 && Number.isFinite(p[chave]) &&
+    Number.isFinite(pontos[i - 1][chave]) && p.t - pontos[i - 1].t <= HORA_MS);
+}
+
+// Legenda só com o que aparece no gráfico desta grandeza:
+// [{tipo: 'linha'|'tracejada'|'ponto'|'barra'|'nota', texto}].
+function legendaDoHistorico(dias, grandeza, agoraMs) {
+  const pontos = serieDoHistorico(dias, grandeza, agoraMs);
+  const itens = [];
+  const soLigado = grandeza.id === 'corrente' || grandeza.id === 'vibracao';
+  if (grandeza.barras) {
+    if (pontos.some(p => p.media > 0)) itens.push({tipo: 'barra', texto: 'minutos ligado em cada hora'});
+  } else if (pontos.length) {
+    if (temTrecho(pontos, 'media'))
+      itens.push({tipo: 'linha', texto: `média de cada hora${soLigado ? ', com o motor girando' : ''}`});
+    if (grandeza.maximo !== null && temTrecho(pontos, 'maximo'))
+      itens.push({tipo: 'tracejada', texto: 'máximo da hora'});
+    if (pontos.some((_, i) => pontoIsolado(pontos, i)))
+      itens.push({tipo: 'ponto', texto: 'hora isolada (sem hora vizinha com registro)'});
+    if (grandeza.id === 'corrente' && pontos.some(p => p.media === 0))
+      itens.push({tipo: 'nota', texto: 'Zero: motor marcado como ligado sem corrente (quadro antes da v28).'});
+    if (pontos.some((p, i) => i > 0 && p.t - pontos[i - 1].t > HORA_MS))
+      itens.push({tipo: 'nota', texto: soLigado
+        ? 'Espaço vazio: motor parado ou placa sem dados.'
+        : 'Espaço vazio: placa sem leitura.'});
+  }
+  if (grandeza.soMms) {
+    const inicio = agoraMs - DIAS * DIA_MS - DIA_MS;
+    const antigos = dias.filter(d => d && !d.vibracaoMms && d.horas.length && d.dia * DIA_MS >= inicio).length;
+    if (antigos) itens.push({tipo: 'nota', texto: `${antigos} dia(s) do firmware antigo (vibração em g) fora do gráfico.`});
+  }
+  return itens;
+}
+
 function numeroBr(v, casas) { return v.toFixed(casas).replace('.', ','); }
 
 // Resumo dos 7 dias: tempo ligado e os picos de corrente e temperatura.
@@ -127,16 +169,15 @@ if (typeof document !== 'undefined') (() => {
       grafico.append(svg('text', {x: 4, y: y(v) + 4}, numeroBr(v, g.barras ? 0 : g.casas)));
     }
     grafico.append(svg('text', {x: 4, y: H - 8}, g.unidade));
+    legenda(g, agora);
     if (!pontos.length) {
       grafico.append(svg('text', {x: W / 2, y: H / 2, class: 'empty', 'text-anchor': 'middle'}, 'Sem registros nestes 7 dias'));
-      $('historyLegenda').textContent = '';
       return;
     }
     if (g.barras) {
       const largura = Math.max(1, x(HORA_MS) - x(0) - 0.5);
       for (const p of pontos) if (p.media > 0)
         grafico.append(svg('rect', {x: x(p.t), y: y(p.media), width: largura, height: y(0) - y(p.media), fill: g.cor}));
-      $('historyLegenda').textContent = 'Barras: minutos ligado em cada hora.';
       return;
     }
     // Linhas quebradas onde falta hora (placa desligada ou sem leitura).
@@ -153,13 +194,33 @@ if (typeof document !== 'undefined') (() => {
     grafico.append(svg('path', {d: trilha('media'), fill: 'none', stroke: g.cor, 'stroke-width': 2.2}));
     // Pontos isolados (hora sem vizinhas) viram bolinhas para não sumir.
     pontos.forEach((p, i) => {
-      const vizinha = q => q && Math.abs(q.t - p.t) <= HORA_MS;
-      if (!vizinha(pontos[i - 1]) && !vizinha(pontos[i + 1]))
+      if (pontoIsolado(pontos, i))
         grafico.append(svg('circle', {cx: x(p.t + HORA_MS / 2), cy: y(p.media), r: 2.5, fill: g.cor}));
     });
-    $('historyLegenda').textContent = g.maximo !== null
-      ? `Linha cheia: média de cada hora · tracejada: máximo da hora${g.id === 'temperatura' || g.id === 'tensao' ? '' : ' (só com o motor ligado)'}.`
-      : 'Média de cada hora.';
+  }
+
+  // Amostra de cada item, desenhada como no gráfico.
+  const AMOSTRAS = {
+    linha: c => svg('line', {x1: 1, x2: 17, y1: 5, y2: 5, stroke: c, 'stroke-width': 2.2}),
+    tracejada: c => svg('line', {x1: 1, x2: 17, y1: 5, y2: 5, stroke: c, 'stroke-width': 1.5, 'stroke-dasharray': '4 3', opacity: 0.7}),
+    ponto: c => svg('circle', {cx: 9, cy: 5, r: 2.5, fill: c}),
+    barra: c => svg('rect', {x: 6, y: 1, width: 6, height: 9, fill: c})
+  };
+
+  function legenda(g, agora) {
+    const alvo = $('historyLegenda');
+    alvo.replaceChildren();
+    for (const item of legendaDoHistorico(dias, g, agora)) {
+      const span = document.createElement('span');
+      span.className = 'legenda-item';
+      if (AMOSTRAS[item.tipo]) {
+        const icone = svg('svg', {width: 18, height: 10, viewBox: '0 0 18 10', 'aria-hidden': 'true'});
+        icone.append(AMOSTRAS[item.tipo](g.cor));
+        span.append(icone);
+      }
+      span.append(item.texto);
+      alvo.append(span);
+    }
   }
 
   function desconectar() {
@@ -208,4 +269,4 @@ if (typeof document !== 'undefined') (() => {
 })();
 
 if (typeof module !== 'undefined' && module.exports)
-  module.exports = {lerDia, serieDoHistorico, resumoDoHistorico, GRANDEZAS_HISTORICO};
+  module.exports = {lerDia, serieDoHistorico, resumoDoHistorico, legendaDoHistorico, GRANDEZAS_HISTORICO};
