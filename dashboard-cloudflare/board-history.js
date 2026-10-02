@@ -262,10 +262,32 @@ if (typeof document !== 'undefined') (() => {
   }
 
   let redesenho = null;
-  window.addEventListener?.('resize', () => { clearTimeout(redesenho); redesenho = setTimeout(desenhar, 150); });
+  const agendarRedesenho = () => {
+    clearTimeout(redesenho);
+    redesenho = setTimeout(desenhar, 100);
+  };
+  window.addEventListener?.('resize', agendarRedesenho);
+
+  // Na primeira abertura o painel ainda pode estar fechando o layout quando o
+  // SVG é desenhado. Se a largura mudar depois (inclusive ao mostrar uma aba),
+  // redesenha com o viewBox correto sem depender de o usuário clicar em outra
+  // grandeza do histórico.
+  if (typeof ResizeObserver !== 'undefined') {
+    let larguraAnterior = 0;
+    const observador = new ResizeObserver(entradas => {
+      const largura = Math.round(entradas[0]?.contentRect?.width || 0);
+      if (!largura || largura === larguraAnterior) return;
+      larguraAnterior = largura;
+      agendarRedesenho();
+    });
+    observador.observe($('historyChart'));
+  }
+
   botoes();
   window.iotmotorHistorico = {connect: conectar, disconnect: desconectar};
   desenhar();
+  // Segunda medição após o navegador concluir o primeiro layout.
+  window.requestAnimationFrame?.(() => window.requestAnimationFrame?.(desenhar));
 })();
 
 if (typeof module !== 'undefined' && module.exports)
