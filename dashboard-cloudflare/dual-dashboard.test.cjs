@@ -36,7 +36,11 @@ test('OTA tem prioridade visual sobre o estado normal das duas placas',()=>{
 test('animação do diagnóstico segue o estado do motor sem exibir sentido de rotação',()=>{
  assert.deepEqual(motorVisualState({brokerReady:false,commandFresh:false,motorOn:null}),{state:'offline',label:'Desconectado'});
  assert.equal(motorVisualState({brokerReady:true,commandFresh:false,motorOn:null}).state,'waiting');
- assert.equal(motorVisualState({brokerReady:true,commandFresh:true,motorOn:false}).state,'stopped');
+ assert.equal(motorVisualState({brokerReady:true,commandFresh:true,motorOn:false,pzemOk:true,voltage:220,current:0}).state,'stopped');
+ const bloqueado=motorVisualState({brokerReady:true,commandFresh:true,motorOn:false,pzemOk:false,voltage:null,current:null});
+ assert.equal(bloqueado.state,'blocked');
+ assert.match(bloqueado.label,/Partida bloqueada/);
+ assert.match(bloqueado.label,/tensão\/corrente/);
  const ligado=motorVisualState({brokerReady:true,commandFresh:true,motorOn:true});
  assert.equal(ligado.state,'running');
  assert.equal(ligado.label,'Motor ligado');
