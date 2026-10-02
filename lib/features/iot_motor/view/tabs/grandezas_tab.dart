@@ -441,57 +441,59 @@ class _MagnitudeCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Align(
-                alignment: Alignment.topCenter,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(
-                        magnitude.icon,
-                        color: magnitude.color,
-                        size: dense ? 18 : 20,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        magnitude.label,
-                        style: textTheme.labelMedium?.copyWith(
-                          color: AppTheme.inkSoft,
-                          fontWeight: FontWeight.w800,
-                          fontSize: dense ? 11 : 12,
-                        ),
-                        maxLines: 1,
-                      ),
-                      if (trend != null) ...<Widget>[
-                        const SizedBox(width: 6),
-                        Tooltip(
-                          message: 'Tendência: ${trend.label}',
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Icon(
-                                trend.icon,
-                                color: trend.color,
-                                size: dense ? 12 : 14,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                trend.label,
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: trend.color,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: dense ? 10 : 11,
-                                ),
-                                maxLines: 1,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(
+                    magnitude.icon,
+                    color: magnitude.color,
+                    size: dense ? 16 : 18,
                   ),
-                ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Text(
+                      magnitude.label,
+                      style: textTheme.labelMedium?.copyWith(
+                        color: AppTheme.inkSoft,
+                        fontWeight: FontWeight.w800,
+                        fontSize: dense ? 13 : 14,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  if (trend != null) ...<Widget>[
+                    const SizedBox(width: 6),
+                    Tooltip(
+                      message: 'Tendência: ${trend.label}',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            trend.icon,
+                            color: trend.color,
+                            size: dense ? 14 : 16,
+                            semanticLabel: 'Tendência: ${trend.label}',
+                          ),
+                          if (constraints.maxWidth >= 220) ...<Widget>[
+                            const SizedBox(width: 3),
+                            Text(
+                              trend.label,
+                              style: textTheme.labelSmall?.copyWith(
+                                color: trend.color,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
               const SizedBox(height: 8),
               Expanded(
