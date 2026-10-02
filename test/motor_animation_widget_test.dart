@@ -79,7 +79,7 @@ void main() {
     )..isConnected = true;
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
-      '{"relays":[false,false,false,false],"motor_running":false}',
+      '{"relays":[false,false,false,false],"motor_running":false,"voltage":220,"current":0,"pzem_ok":true}',
     );
 
     await tester.pumpWidget(
@@ -120,6 +120,36 @@ void main() {
     expect(find.text('Motor desacelerando'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text('Motor desligado'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('PZEM sem leitura identifica partida bloqueada', (
+    WidgetTester tester,
+  ) async {
+    final MotorControlController controller = MotorControlController(
+      loadSettings: false,
+    )..isConnected = true;
+    controller.handlePayloadForTest(
+      'iotmotor/esp32-01/telemetry',
+      '{"relays":[false,false,false,false],"motor_running":false,"pzem_ok":false}',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MotorAnimationCard(
+            controller: controller,
+            startType: MotorCommandType.directStart,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Partida bloqueada'), findsOneWidget);
+    expect(find.text('Sem medição válida de tensão/corrente'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
@@ -168,7 +198,7 @@ void main() {
     )..isConnected = true;
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
-      '{"relays":[false,false,false,false],"motor_running":false,"alarms_firing":["current"]}',
+      '{"relays":[false,false,false,false],"motor_running":false,"voltage":220,"current":0,"pzem_ok":true,"alarms_firing":["current"]}',
     );
 
     await tester.pumpWidget(
