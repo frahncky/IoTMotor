@@ -82,10 +82,10 @@ class GrandezasTab extends StatelessWidget {
                         );
                         final int rows = (magnitudes.length / columns).ceil();
                         final double preferredHeight =
-                            maxWidth >= 760 ? 136 : 120;
+                            maxWidth >= 760 ? 82 : 76;
                         final double cardHeight =
                             ((maxHeight - (rows - 1) * spacing) / rows).clamp(
-                              104.0,
+                              56.0,
                               preferredHeight,
                             );
                         final double cardWidth =
@@ -144,7 +144,7 @@ class GrandezasTab extends StatelessWidget {
 
     while (height.isFinite && columns < maxColumns) {
       final int rows = (itemCount / columns).ceil();
-      final double minimumHeight = rows * 104 + (rows - 1) * spacing;
+      final double minimumHeight = rows * 56 + (rows - 1) * spacing;
       if (minimumHeight <= height) {
         break;
       }
@@ -417,9 +417,9 @@ class _MagnitudeCard extends StatelessWidget {
         final bool dense =
             constraints.maxWidth < 150;
         final double horizontalPadding = dense ? 6 : 10;
-        final double verticalPadding = dense ? 7 : 8;
+        final double verticalPadding = dense ? 4 : 5;
         final double valueFontSize =
-            dense ? 36 : (magnitude.compactValue ? 44 : 42);
+            dense ? 28 : (magnitude.compactValue ? 32 : 30);
 
         return Container(
           padding: EdgeInsets.symmetric(
@@ -495,7 +495,7 @@ class _MagnitudeCard extends StatelessWidget {
                   ],
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Expanded(
                 child: Align(
                   alignment: Alignment.bottomCenter,
