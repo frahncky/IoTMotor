@@ -380,28 +380,100 @@ function updateControl(){
 }
 function svg(tag,attrs={},content){const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,v]of Object.entries(attrs))n.setAttribute(key,String(v));if(content!==undefined)n.textContent=String(content);return n;}
 function drawChart(target,metric){
- const values=state.series[metric.key].map(entry=>entry.v);
+ const entries=state.series[metric.key];
+ const values=entries.map(entry=>entry.v);
+ const hoverSalvo=Number(target.dataset.hoverRatio);
  target.replaceChildren();
- if(!values.length){target.append(svg('text',{x:320,y:105,'text-anchor':'middle',class:'empty'},'Sem leitura disponível'));return;}
+ if(!values.length){
+  delete target.dataset.hoverRatio;
+  target.onpointermove=null;target.onpointerleave=null;
+  target.append(svg('text',{x:320,y:105,'text-anchor':'middle',class:'empty'},'Sem leitura disponível'));
+  return;
+ }
  let min=Math.min(...values),max=Math.max(...values);const pad=Math.max((max-min)*.12,Math.abs(max)*.01,.01);min-=pad;max+=pad;
  for(let i=0;i<4;i++){const y=20+160*i/3;target.append(svg('line',{x1:53,x2:633,y1:y,y2:y,class:'gridline'}));target.append(svg('text',{x:45,y:y+4,'text-anchor':'end'},numeroBr(max-(max-min)*i/3,metric.digits>2?2:metric.digits)));}
  // Grade vertical: 5 faixas; nas linhas do meio, a hora da amostra ali.
- const entries=state.series[metric.key];
  for(let k=0;k<=5;k++){
   const x=56+570*k/5;target.append(svg('line',{x1:x,x2:x,y1:20,y2:180,class:'gridline'}));
   const entry=entries[Math.round(k/5*(entries.length-1))];
   if(k>0&&k<5&&entries.length>1&&Number.isFinite(entry?.t))
    target.append(svg('text',{x,y:196,'text-anchor':'middle'},new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})));
  }
- const points=values.map((v,i)=>`${(56+(values.length===1?280:570*i/(values.length-1))).toFixed(1)},${(180-(v-min)/(max-min)*160).toFixed(1)}`).join(' ');
- target.append(svg('polyline',{points,stroke:metric.color}));target.append(svg('text',{x:56,y:209},'Mais antigo'));target.append(svg('text',{x:631,y:209,'text-anchor':'end'},'Mais recente'));
+ const pontoX=i=>56+(values.length===1?280:570*i/(values.length-1));
+ const pontoY=v=>180-(v-min)/(max-min)*160;
+ const points=values.map((v,i)=>`${pontoX(i).toFixed(1)},${pontoY(v).toFixed(1)}`).join(' ');
+ target.append(svg('polyline',{points,stroke:metric.color}));
+ target.append(svg('text',{x:56,y:209},'Mais antigo'));
+ target.append(svg('text',{x:631,y:209,'text-anchor':'end'},'Mais recente'));
+
+ // Consulta do histórico pelo cursor. É independente do valor atual mostrado
+ // no cabeçalho: aqui aparecem a hora e o valor do ponto passado mais próximo.
+ const hover=svg('g',{class:'chart-hover',visibility:'hidden','pointer-events':'none'});
+ const guia=svg('line',{y1:20,y2:180,class:'chart-hover-line'});
+ const ponto=svg('circle',{r:4,fill:metric.color,class:'chart-hover-dot'});
+ const caixa=svg('rect',{height:28,rx:6,ry:6,class:'chart-hover-box'});
+ const textoHover=svg('text',{y:0,'text-anchor':'middle',class:'chart-hover-text'});
+ hover.append(guia,ponto,caixa,textoHover);target.append(hover);
+
+ const mostrarHover=ratio=>{
+  const r=Math.max(0,Math.min(1,Number(ratio)||0));
+  const indice=values.length===1?0:Math.round(r*(values.length-1));
+  const entry=entries[indice];
+  if(!entry||!Number.isFinite(entry.v))return;
+  const px=pontoX(indice),py=pontoY(entry.v);
+  const hora=Number.isFinite(entry.t)
+   ?new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+   :'—';
+  const valor=`${numeroBr(entry.v,metric.digits)}${metric.unit?' '+metric.unit:''}`;
+  const rotulo=`${hora} · ${valor}`;
+  const largura=Math.max(118,Math.min(220,rotulo.length*6.4+18));
+  const cx=Math.max(56+largura/2,Math.min(633-largura/2,px));
+  const cy=py<58?py+34:py-20;
+  guia.setAttribute('x1',px);guia.setAttribute('x2',px);
+  ponto.setAttribute('cx',px);ponto.setAttribute('cy',py);
+  caixa.setAttribute('x',cx-largura/2);caixa.setAttribute('y',cy-18);caixa.setAttribute('width',largura);
+  textoHover.setAttribute('x',cx);textoHover.setAttribute('y',cy);textoHover.textContent=rotulo;
+  hover.setAttribute('visibility','visible');
+ };
+ target.onpointermove=event=>{
+  const rect=target.getBoundingClientRect();
+  if(!rect.width)return;
+  const xSvg=(event.clientX-rect.left)*650/rect.width;
+  const ratio=Math.max(0,Math.min(1,(xSvg-56)/570));
+  target.dataset.hoverRatio=String(ratio);
+  mostrarHover(ratio);
+ };
+ target.onpointerleave=()=>{
+  delete target.dataset.hoverRatio;
+  hover.setAttribute('visibility','hidden');
+ };
+ if(Number.isFinite(hoverSalvo))mostrarHover(hoverSalvo);
 }
-function renderCharts(){const root=$('plots');root.replaceChildren();for(const metric of METRICS.filter(m=>state.group==='todos'||m.group===state.group)){
- const article=document.createElement('article');article.className='panel chart-card';
- const heading=document.createElement('h3');heading.textContent=`${metric.label}${metric.unit?' ('+metric.unit+')':''}`;
- const graphic=svg('svg',{viewBox:'0 0 650 215',class:'chart',role:'img','aria-label':`Gráfico de ${metric.label}`});
- drawChart(graphic,metric);article.append(heading,graphic);root.append(article);
-}}
+function renderCharts(){
+ const root=$('plots');
+ const metrics=METRICS.filter(m=>state.group==='todos'||m.group===state.group);
+ const assinatura=metrics.map(m=>m.key).join(',');
+ if(root.dataset.metrics!==assinatura||root.children.length!==metrics.length){
+  root.replaceChildren();
+  for(const metric of metrics){
+   const article=document.createElement('article');article.className='panel chart-card';article.dataset.metric=metric.key;
+   const heading=document.createElement('h3');heading.className='chart-heading';
+   const titulo=document.createElement('span');titulo.className='chart-title';titulo.textContent=`${metric.label}${metric.unit?' ('+metric.unit+')':''}`;
+   const atual=document.createElement('span');atual.className='chart-current';
+   heading.append(titulo,atual);
+   const graphic=svg('svg',{viewBox:'0 0 650 215',class:'chart',role:'img','aria-label':`Gráfico de ${metric.label}`});
+   article.append(heading,graphic);root.append(article);
+  }
+  root.dataset.metrics=assinatura;
+ }
+ metrics.forEach((metric,i)=>{
+  const article=root.children[i];
+  const atual=article.querySelector('.chart-current');
+  const valor=valueFor(metric);
+  atual.textContent=valor===null?'—':`${numeroBr(valor,metric.digits)}${metric.unit?' '+metric.unit:''}`;
+  drawChart(article.querySelector('.chart'),metric);
+ });
+}
 function buildCards(){const root=$('metrics');for(const m of METRICS){
  const item=document.createElement('article');item.className='panel metric';
  const label=document.createElement('div');label.className='metric-label';label.textContent=m.label;
