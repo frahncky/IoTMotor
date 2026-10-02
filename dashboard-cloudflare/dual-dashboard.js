@@ -379,6 +379,44 @@ function updateControl(){
  }));
 }
 function svg(tag,attrs={},content){const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,v]of Object.entries(attrs))n.setAttribute(key,String(v));if(content!==undefined)n.textContent=String(content);return n;}
+function chartBubblePath({cx,boxY,width,height,px,py,tailOnTop}) {
+ const left=cx-width/2,right=cx+width/2,top=boxY,bottom=boxY+height;
+ const radius=8,tail=9;
+ const baseX=Math.max(left+radius+tail,Math.min(right-radius-tail,px));
+ if(tailOnTop){
+  return [
+   `M ${left+radius} ${top}`,
+   `L ${baseX-tail} ${top}`,
+   `L ${px} ${py}`,
+   `L ${baseX+tail} ${top}`,
+   `L ${right-radius} ${top}`,
+   `Q ${right} ${top} ${right} ${top+radius}`,
+   `L ${right} ${bottom-radius}`,
+   `Q ${right} ${bottom} ${right-radius} ${bottom}`,
+   `L ${left+radius} ${bottom}`,
+   `Q ${left} ${bottom} ${left} ${bottom-radius}`,
+   `L ${left} ${top+radius}`,
+   `Q ${left} ${top} ${left+radius} ${top}`,
+   'Z'
+  ].join(' ');
+ }
+ return [
+  `M ${left+radius} ${top}`,
+  `L ${right-radius} ${top}`,
+  `Q ${right} ${top} ${right} ${top+radius}`,
+  `L ${right} ${bottom-radius}`,
+  `Q ${right} ${bottom} ${right-radius} ${bottom}`,
+  `L ${baseX+tail} ${bottom}`,
+  `L ${px} ${py}`,
+  `L ${baseX-tail} ${bottom}`,
+  `L ${left+radius} ${bottom}`,
+  `Q ${left} ${bottom} ${left} ${bottom-radius}`,
+  `L ${left} ${top+radius}`,
+  `Q ${left} ${top} ${left+radius} ${top}`,
+  'Z'
+ ].join(' ');
+}
+
 function drawChart(target,metric){
  const entries=state.series[metric.key];
  const values=entries.map(entry=>entry.v);
@@ -418,14 +456,13 @@ function drawChart(target,metric){
    ?new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
    :'—';
   const valor=`${numeroBr(entry.v,metric.digits)}${metric.unit?' '+metric.unit:''}`;
-  const largura=Math.max(138,Math.min(230,Math.max(valor.length*9.2,hora.length*7.2)+28));
+  const largura=Math.max(138,Math.min(230,Math.max(valor.length*9.4,hora.length*7.4)+30));
   const altura=48;
   const abaixo=py<82||(ordem%2===1&&py<138);
   const boxY=abaixo
-   ?Math.min(180-altura,py+16+(ordem%3)*3)
-   :Math.max(20,py-altura-16-(ordem%3)*3);
+   ?Math.min(180-altura,py+18+(ordem%3)*3)
+   :Math.max(20,py-altura-18-(ordem%3)*3);
   const cx=Math.max(56+largura/2,Math.min(633-largura/2,px));
-  const conectorY=abaixo?boxY:boxY+altura;
   const grupo=svg('g',{class:'chart-pin','pointer-events':'none'});
   const texto=svg('text',{x:cx,'text-anchor':'middle',class:'chart-pin-text'});
   texto.append(
@@ -433,11 +470,12 @@ function drawChart(target,metric){
    svg('tspan',{x:cx,y:boxY+38,class:'chart-pin-time'},hora)
   );
   grupo.append(
-   svg('line',{x1:px,x2:px,y1:20,y2:180,class:'chart-pin-line'}),
-   svg('line',{x1:px,y1:py,x2:cx,y2:conectorY,class:'chart-pin-leader'}),
    svg('circle',{cx:px,cy:py,r:8,class:'chart-pin-halo'}),
    svg('circle',{cx:px,cy:py,r:5,fill:metric.color,class:'chart-pin-dot'}),
-   svg('rect',{x:cx-largura/2,y:boxY,width:largura,height:altura,rx:8,ry:8,class:'chart-pin-box',stroke:metric.color}),
+   svg('path',{
+    d:chartBubblePath({cx,boxY,width:largura,height:altura,px,py,tailOnTop:abaixo}),
+    class:'chart-pin-bubble',stroke:metric.color
+   }),
    texto
   );
   target.append(grupo);
@@ -446,16 +484,14 @@ function drawChart(target,metric){
  // Consulta do histórico pelo cursor. É independente do valor atual mostrado
  // no cabeçalho: aqui aparecem a hora e o valor do ponto passado mais próximo.
  const hover=svg('g',{class:'chart-hover',visibility:'hidden','pointer-events':'none'});
- const guia=svg('line',{y1:20,y2:180,class:'chart-hover-line'});
- const liderHover=svg('line',{class:'chart-hover-leader'});
- const haloHover=svg('circle',{r:7,class:'chart-hover-halo'});
+ const haloHover=svg('circle',{r:7.5,class:'chart-hover-halo'});
  const ponto=svg('circle',{r:4.5,fill:metric.color,class:'chart-hover-dot'});
- const caixa=svg('rect',{height:48,rx:8,ry:8,class:'chart-hover-box'});
+ const bubbleHover=svg('path',{class:'chart-hover-bubble'});
  const textoHover=svg('text',{'text-anchor':'middle',class:'chart-hover-text'});
  const valorHover=svg('tspan',{class:'chart-hover-value'});
  const horaHover=svg('tspan',{class:'chart-hover-time'});
  textoHover.append(valorHover,horaHover);
- hover.append(guia,liderHover,haloHover,ponto,caixa,textoHover);target.append(hover);
+ hover.append(haloHover,ponto,bubbleHover,textoHover);target.append(hover);
 
  const mostrarHover=ratio=>{
   const r=Math.max(0,Math.min(1,Number(ratio)||0));
@@ -467,18 +503,15 @@ function drawChart(target,metric){
    ?new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
    :'—';
   const valor=`${numeroBr(entry.v,metric.digits)}${metric.unit?' '+metric.unit:''}`;
-  const largura=Math.max(138,Math.min(230,Math.max(valor.length*9.2,hora.length*7.2)+28));
+  const largura=Math.max(138,Math.min(230,Math.max(valor.length*9.4,hora.length*7.4)+30));
   const altura=48;
   const abaixo=py<82;
-  const boxY=abaixo?Math.min(180-altura,py+16):Math.max(20,py-altura-16);
+  const boxY=abaixo?Math.min(180-altura,py+18):Math.max(20,py-altura-18);
   const cx=Math.max(56+largura/2,Math.min(633-largura/2,px));
-  const conectorY=abaixo?boxY:boxY+altura;
-  guia.setAttribute('x1',px);guia.setAttribute('x2',px);
-  liderHover.setAttribute('x1',px);liderHover.setAttribute('y1',py);
-  liderHover.setAttribute('x2',cx);liderHover.setAttribute('y2',conectorY);
   haloHover.setAttribute('cx',px);haloHover.setAttribute('cy',py);
   ponto.setAttribute('cx',px);ponto.setAttribute('cy',py);
-  caixa.setAttribute('x',cx-largura/2);caixa.setAttribute('y',boxY);caixa.setAttribute('width',largura);
+  bubbleHover.setAttribute('d',chartBubblePath({cx,boxY,width:largura,height:altura,px,py,tailOnTop:abaixo}));
+  bubbleHover.setAttribute('stroke',metric.color);
   valorHover.setAttribute('x',cx);valorHover.setAttribute('y',boxY+20);valorHover.textContent=valor;
   horaHover.setAttribute('x',cx);horaHover.setAttribute('y',boxY+38);horaHover.textContent=hora;
   hover.setAttribute('visibility','visible');
