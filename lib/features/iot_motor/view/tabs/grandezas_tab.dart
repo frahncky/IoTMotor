@@ -465,6 +465,35 @@ class _MagnitudeCard extends StatelessWidget {
                       textAlign: TextAlign.center,
                     ),
                     SizedBox(height: dense ? 0 : 1),
+                    if (trend != null) ...<Widget>[
+                      SizedBox(height: dense ? 1 : 3),
+                      Tooltip(
+                        message: 'Tendência: ${trend.label}',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(
+                              trend.icon,
+                              color: trend.color,
+                              size: dense ? 11 : 13,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              trend.label,
+                              style: textTheme.labelSmall?.copyWith(
+                                color: trend.color,
+                                fontWeight: FontWeight.w800,
+                                fontSize: dense ? 9 : 10,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(height: dense ? 1 : 3),
+                    ],
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Row(
@@ -500,34 +529,6 @@ class _MagnitudeCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (trend != null) ...<Widget>[
-                      SizedBox(height: dense ? 1 : 3),
-                      Tooltip(
-                        message: 'Tendência: ${trend.label}',
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Icon(
-                              trend.icon,
-                              color: trend.color,
-                              size: dense ? 11 : 13,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              trend.label,
-                              style: textTheme.labelSmall?.copyWith(
-                                color: trend.color,
-                                fontWeight: FontWeight.w800,
-                                fontSize: dense ? 9 : 10,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
