@@ -31,7 +31,7 @@ Painel web, app Android e dois ESP32 integrados por MQTT.
 | ▶️ **Comando e partidas** | Acionamento remoto e perfis como partida direta e estrela-triângulo, gravados no quadro de comando. |
 | 🧾 **Uso e manutenção** | Dados de placa, carga em % da corrente nominal, horímetro, partidas e lembrete de manutenção. |
 | 📈 **Histórico na própria bancada** | Médias e máximos por hora, com histórico de 7 dias retido na placa mesmo sem o painel aberto. |
-| 📱 **Painel web e app Android** | Controle, telemetria, animação do motor, som opcional, diagnóstico e atualização do app. |
+| 📱 **Painel web e app Android** | Controle, telemetria, animação do motor, som opcional, diagnóstico e atualização do app. No Android, a área de medições reúne cartões compactos com ícone, nome e tendência no topo e o valor em destaque na parte inferior. |
 | 🔔 **Alertas no celular** | Opcional: o app avisa quando um alarme da placa dispara, mesmo fechado. |
 | 🔄 **Atualização remota** | Firmware dos dois ESP32 pode ser atualizado pelo painel ou pelo app, sem nova gravação por cabo. |
 | 🔐 **Segurança opcional** | Quando uma senha é configurada nas placas, os comandos são cifrados e autenticados com AES-256-GCM. |
