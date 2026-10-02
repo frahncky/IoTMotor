@@ -418,17 +418,27 @@ function drawChart(target,metric){
    ?new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
    :'—';
   const valor=`${numeroBr(entry.v,metric.digits)}${metric.unit?' '+metric.unit:''}`;
-  const rotulo=`${hora} · ${valor}`;
-  const largura=Math.max(132,Math.min(250,rotulo.length*7.8+22));
-  const abaixo=py<70||(ordem%2===1&&py<145);
-  const cy=abaixo?Math.min(170,py+42+(ordem%3)*4):Math.max(34,py-26-(ordem%3)*4);
+  const largura=Math.max(138,Math.min(230,Math.max(valor.length*9.2,hora.length*7.2)+28));
+  const altura=48;
+  const abaixo=py<82||(ordem%2===1&&py<138);
+  const boxY=abaixo
+   ?Math.min(180-altura,py+16+(ordem%3)*3)
+   :Math.max(20,py-altura-16-(ordem%3)*3);
   const cx=Math.max(56+largura/2,Math.min(633-largura/2,px));
+  const conectorY=abaixo?boxY:boxY+altura;
   const grupo=svg('g',{class:'chart-pin','pointer-events':'none'});
+  const texto=svg('text',{x:cx,'text-anchor':'middle',class:'chart-pin-text'});
+  texto.append(
+   svg('tspan',{x:cx,y:boxY+20,class:'chart-pin-value'},valor),
+   svg('tspan',{x:cx,y:boxY+38,class:'chart-pin-time'},hora)
+  );
   grupo.append(
    svg('line',{x1:px,x2:px,y1:20,y2:180,class:'chart-pin-line'}),
+   svg('line',{x1:px,y1:py,x2:cx,y2:conectorY,class:'chart-pin-leader'}),
+   svg('circle',{cx:px,cy:py,r:8,class:'chart-pin-halo'}),
    svg('circle',{cx:px,cy:py,r:5,fill:metric.color,class:'chart-pin-dot'}),
-   svg('rect',{x:cx-largura/2,y:cy-22,width:largura,height:34,rx:7,ry:7,class:'chart-pin-box',stroke:metric.color}),
-   svg('text',{x:cx,y:cy,'text-anchor':'middle',class:'chart-pin-text'},rotulo)
+   svg('rect',{x:cx-largura/2,y:boxY,width:largura,height:altura,rx:8,ry:8,class:'chart-pin-box',stroke:metric.color}),
+   texto
   );
   target.append(grupo);
  });
@@ -437,10 +447,15 @@ function drawChart(target,metric){
  // no cabeçalho: aqui aparecem a hora e o valor do ponto passado mais próximo.
  const hover=svg('g',{class:'chart-hover',visibility:'hidden','pointer-events':'none'});
  const guia=svg('line',{y1:20,y2:180,class:'chart-hover-line'});
- const ponto=svg('circle',{r:4,fill:metric.color,class:'chart-hover-dot'});
- const caixa=svg('rect',{height:34,rx:7,ry:7,class:'chart-hover-box'});
- const textoHover=svg('text',{y:0,'text-anchor':'middle',class:'chart-hover-text'});
- hover.append(guia,ponto,caixa,textoHover);target.append(hover);
+ const liderHover=svg('line',{class:'chart-hover-leader'});
+ const haloHover=svg('circle',{r:7,class:'chart-hover-halo'});
+ const ponto=svg('circle',{r:4.5,fill:metric.color,class:'chart-hover-dot'});
+ const caixa=svg('rect',{height:48,rx:8,ry:8,class:'chart-hover-box'});
+ const textoHover=svg('text',{'text-anchor':'middle',class:'chart-hover-text'});
+ const valorHover=svg('tspan',{class:'chart-hover-value'});
+ const horaHover=svg('tspan',{class:'chart-hover-time'});
+ textoHover.append(valorHover,horaHover);
+ hover.append(guia,liderHover,haloHover,ponto,caixa,textoHover);target.append(hover);
 
  const mostrarHover=ratio=>{
   const r=Math.max(0,Math.min(1,Number(ratio)||0));
@@ -452,14 +467,20 @@ function drawChart(target,metric){
    ?new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
    :'—';
   const valor=`${numeroBr(entry.v,metric.digits)}${metric.unit?' '+metric.unit:''}`;
-  const rotulo=`${hora} · ${valor}`;
-  const largura=Math.max(132,Math.min(250,rotulo.length*7.8+22));
+  const largura=Math.max(138,Math.min(230,Math.max(valor.length*9.2,hora.length*7.2)+28));
+  const altura=48;
+  const abaixo=py<82;
+  const boxY=abaixo?Math.min(180-altura,py+16):Math.max(20,py-altura-16);
   const cx=Math.max(56+largura/2,Math.min(633-largura/2,px));
-  const cy=py<64?py+40:py-24;
+  const conectorY=abaixo?boxY:boxY+altura;
   guia.setAttribute('x1',px);guia.setAttribute('x2',px);
+  liderHover.setAttribute('x1',px);liderHover.setAttribute('y1',py);
+  liderHover.setAttribute('x2',cx);liderHover.setAttribute('y2',conectorY);
+  haloHover.setAttribute('cx',px);haloHover.setAttribute('cy',py);
   ponto.setAttribute('cx',px);ponto.setAttribute('cy',py);
-  caixa.setAttribute('x',cx-largura/2);caixa.setAttribute('y',cy-22);caixa.setAttribute('width',largura);
-  textoHover.setAttribute('x',cx);textoHover.setAttribute('y',cy);textoHover.textContent=rotulo;
+  caixa.setAttribute('x',cx-largura/2);caixa.setAttribute('y',boxY);caixa.setAttribute('width',largura);
+  valorHover.setAttribute('x',cx);valorHover.setAttribute('y',boxY+20);valorHover.textContent=valor;
+  horaHover.setAttribute('x',cx);horaHover.setAttribute('y',boxY+38);horaHover.textContent=hora;
   hover.setAttribute('visibility','visible');
  };
  const indicePeloEvento=event=>{
