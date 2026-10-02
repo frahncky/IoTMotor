@@ -95,6 +95,11 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   bool get _connected => widget.controller.hasLiveMotorState;
   bool get _running => _connected && widget.controller.isMotorRunning;
 
+  /// Quadro está vivo, motor parado, mas o PZEM não confirmou as grandezas
+  /// mínimas exigidas pelo intertravamento local para aceitar uma partida.
+  bool get _measurementBlocked =>
+      _connected && !_running && !widget.controller.hasValidBenchVoltage;
+
   _AlarmParts get _alarms =>
       _connected ? _AlarmParts.of(widget.controller) : const _AlarmParts();
 
@@ -190,7 +195,9 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
     if (_running) {
       return _motion.speed < 0.95 ? 'Motor partindo' : 'Motor ligado';
     }
-    return _motion.speed > 0.03 ? 'Motor desacelerando' : 'Motor desligado';
+    if (_motion.speed > 0.03) return 'Motor desacelerando';
+    if (_measurementBlocked) return 'Partida bloqueada';
+    return 'Motor desligado';
   }
 
   /// Opacidade do ícone de alarme: 1 → 0,4 → 1 a cada segundo.
@@ -203,6 +210,7 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
   Widget build(BuildContext context) {
     final bool connected = _connected;
     final bool running = _running;
+    final bool measurementBlocked = _measurementBlocked;
     final MotorInfo? info = widget.controller.motorInfo;
     final double? temperature = widget.controller.latestSample?.temperature;
     final double rpm = info?.rpm ?? 1750;
@@ -317,6 +325,14 @@ class _MotorAnimationCardState extends State<MotorAnimationCard>
                     key: const ValueKey<String>('motor_desarme'),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: AppTheme.danger,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                if (measurementBlocked && desarme == null)
+                  Text(
+                    'Sem medição válida de tensão/corrente',
+                    key: const ValueKey<String>('motor_partida_bloqueada'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
