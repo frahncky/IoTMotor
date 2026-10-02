@@ -492,7 +492,6 @@ class _MagnitudeCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      SizedBox(height: dense ? 1 : 3),
                     ],
                     FittedBox(
                       fit: BoxFit.scaleDown,
