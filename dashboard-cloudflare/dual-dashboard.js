@@ -155,11 +155,15 @@ function renderDevice(id,which,name){
  $(id).title=`${ident} · ${s.at?`última telemetria ${new Date(s.at).toLocaleTimeString('pt-BR')}`:'nenhuma telemetria recebida'}${ota}`;
 }
 function valueFor(metric){const source=state[metric.source];return freshness(metric.source)&&source.sample?source.sample[metric.key]:null;}
-function motorVisualState({brokerReady,commandFresh,motorOn}){
+function motorVisualState({brokerReady,commandFresh,motorOn,pzemOk,voltage,current}){
  if(!brokerReady)return {state:'offline',label:'Desconectado'};
  if(!commandFresh)return {state:'waiting',label:'Aguardando quadro de comando'};
  if(motorOn===true)return {state:'running',label:'Motor ligado'};
- if(motorOn===false)return {state:'stopped',label:'Motor desligado'};
+ if(motorOn===false){
+  const medicaoOk=pzemOk!==false&&Number.isFinite(voltage)&&Number.isFinite(current);
+  if(!medicaoOk)return {state:'blocked',label:'Partida bloqueada · sem medição válida de tensão/corrente'};
+  return {state:'stopped',label:'Motor desligado'};
+ }
  return {state:'waiting',label:'Estado do motor não informado'};
 }
 // Texto do desenho do motor para leitores de tela: estado e alarmes na peça.
@@ -317,7 +321,7 @@ function renderMotorVisual(){
  if(commandWasFresh&&!commandFresh)window.iotmotorMotorSound?.stopForDisconnect?.();
  commandWasFresh=commandFresh;
  const cmd=commandFresh?state.command.sample:null,sensor=sensorFresh?state.sensor.sample:null;
- const visual=motorVisualState({brokerReady:state.connected&&state.subscribed,commandFresh,motorOn:cmd?.motorOn});
+ const visual=motorVisualState({brokerReady:state.connected&&state.subscribed,commandFresh,motorOn:cmd?.motorOn,pzemOk:cmd?.pzemOk,voltage:cmd?.voltage,current:cmd?.current});
  const pendente=commandPendingLabel(window.iotmotorRemoteControls?.pendente?.()||null,cmd?.motorOn);
  root.dataset.state=visual.state;text('motorVisualStatus',pendente||visual.label);
  if(pendente)root.dataset.command='pending';else delete root.dataset.command;
