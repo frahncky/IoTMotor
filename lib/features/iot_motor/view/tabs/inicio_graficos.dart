@@ -126,7 +126,12 @@ extension _InicioGraficos on _InicioTabState {
         children: <Widget>[
           _buildGroupSelector(),
           const SizedBox(height: 8),
-          SizedBox(height: 360, child: panel),
+          // No layout com rolagem da página, mostra todas as medições
+          // sem comprimir os cards nem criar uma segunda rolagem.
+          SizedBox(
+            height: constraints.maxWidth >= 760 ? 280 : 632,
+            child: panel,
+          ),
         ],
       );
     }
