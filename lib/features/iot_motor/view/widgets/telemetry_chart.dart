@@ -151,16 +151,28 @@ class TelemetryChart extends StatelessWidget {
       lineTouchData: LineTouchData(
         handleBuiltInTouches: true,
         touchTooltipData: LineTouchTooltipData(
-          getTooltipColor: (_) => AppTheme.ink.withValues(alpha: 0.9),
-          tooltipRoundedRadius: 10,
+          getTooltipColor: (_) => AppTheme.ink,
+          tooltipRoundedRadius: 12,
+          tooltipPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 11,
+          ),
+          tooltipMargin: 12,
+          maxContentWidth: 180,
+          fitInsideHorizontally: true,
+          fitInsideVertically: true,
           getTooltipItems: (List<LineBarSpot> touchedSpots) {
             return touchedSpots.map((LineBarSpot spot) {
               final String formatted = spot.y.toStringAsFixed(decimalDigits);
               return LineTooltipItem(
                 unit.isEmpty ? formatted : '$formatted $unit',
-                (Theme.of(context).textTheme.labelMedium ??
-                        const TextStyle(fontSize: 11))
-                    .copyWith(color: Colors.white),
+                const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.2,
+                  height: 1.15,
+                ),
               );
             }).toList();
           },
