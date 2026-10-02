@@ -417,7 +417,7 @@ class _MagnitudeCard extends StatelessWidget {
         final bool dense =
             constraints.maxHeight < 74 || constraints.maxWidth < 140;
         final double horizontalPadding = dense ? 6 : 8;
-        final double verticalPadding = dense ? 5 : 8;
+        final double verticalPadding = dense ? 4 : 5;
         final double contentWidth = math.max(
           1,
           constraints.maxWidth - horizontalPadding * 2,
@@ -450,7 +450,7 @@ class _MagnitudeCard extends StatelessWidget {
                     Icon(
                       magnitude.icon,
                       color: magnitude.color,
-                      size: dense ? 17 : 20,
+                      size: dense ? 15 : 18,
                     ),
                     SizedBox(height: dense ? 1 : 3),
                     Text(
@@ -458,7 +458,7 @@ class _MagnitudeCard extends StatelessWidget {
                       style: textTheme.labelMedium?.copyWith(
                         color: AppTheme.inkSoft,
                         fontWeight: FontWeight.w800,
-                        fontSize: dense ? 11 : null,
+                        fontSize: dense ? 10 : 11,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -476,7 +476,7 @@ class _MagnitudeCard extends StatelessWidget {
                             Icon(
                               trend.icon,
                               color: trend.color,
-                              size: dense ? 11 : 13,
+                              size: dense ? 9 : 11,
                             ),
                             const SizedBox(width: 3),
                             Text(
@@ -484,7 +484,7 @@ class _MagnitudeCard extends StatelessWidget {
                               style: textTheme.labelSmall?.copyWith(
                                 color: trend.color,
                                 fontWeight: FontWeight.w800,
-                                fontSize: dense ? 9 : 10,
+                                fontSize: dense ? 8 : 9,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -507,8 +507,8 @@ class _MagnitudeCard extends StatelessWidget {
                               fontWeight: FontWeight.w900,
                               fontSize:
                                   dense
-                                      ? 13
-                                      : (magnitude.compactValue ? 14 : 16),
+                                      ? 20
+                                      : (magnitude.compactValue ? 22 : 24),
                             ),
                           ),
                           if (magnitude.unit.isNotEmpty) ...<Widget>[
@@ -520,7 +520,7 @@ class _MagnitudeCard extends StatelessWidget {
                                 style: textTheme.labelMedium?.copyWith(
                                   color: AppTheme.inkSoft,
                                   fontWeight: FontWeight.w800,
-                                  fontSize: dense ? 10 : null,
+                                  fontSize: dense ? 9 : 10,
                                 ),
                               ),
                             ),
