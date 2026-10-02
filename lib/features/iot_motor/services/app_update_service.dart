@@ -66,7 +66,7 @@ class AppUpdateService {
     }
 
     final Map<String, dynamic> dados =
-        jsonDecode(resposta.body) as Map<String, dynamic>;
+        jsonDecode(utf8.decode(resposta.bodyBytes)) as Map<String, dynamic>;
     final String publicada = (dados['version'] ?? '').toString();
     final String build = (dados['build'] ?? '').toString();
 
