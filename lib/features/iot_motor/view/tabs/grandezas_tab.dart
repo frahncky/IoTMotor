@@ -415,13 +415,12 @@ class _MagnitudeCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool dense =
-            constraints.maxHeight < 74 || constraints.maxWidth < 140;
+            constraints.maxHeight < 86 || constraints.maxWidth < 150;
         final double horizontalPadding = dense ? 6 : 8;
-        final double verticalPadding = dense ? 4 : 5;
-        final double contentWidth = math.max(
-          1,
-          constraints.maxWidth - horizontalPadding * 2,
-        );
+        final double verticalPadding = dense ? 5 : 7;
+        final double valueFontSize =
+            dense ? 23 : (magnitude.compactValue ? 26 : 29);
+
         return Container(
           padding: EdgeInsets.symmetric(
             horizontal: horizontalPadding,
@@ -439,20 +438,20 @@ class _MagnitudeCard extends StatelessWidget {
               ),
             ],
           ),
-          child: Center(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: SizedBox(
-                width: contentWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Align(
+                alignment: Alignment.topCenter,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Icon(
                       magnitude.icon,
                       color: magnitude.color,
-                      size: dense ? 15 : 18,
+                      size: dense ? 14 : 17,
                     ),
-                    SizedBox(height: dense ? 1 : 3),
+                    SizedBox(height: dense ? 1 : 2),
                     Text(
                       magnitude.label,
                       style: textTheme.labelMedium?.copyWith(
@@ -464,9 +463,8 @@ class _MagnitudeCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                     ),
-                    SizedBox(height: dense ? 0 : 1),
                     if (trend != null) ...<Widget>[
-                      SizedBox(height: dense ? 1 : 3),
+                      SizedBox(height: dense ? 1 : 2),
                       Tooltip(
                         message: 'Tendência: ${trend.label}',
                         child: Row(
@@ -493,45 +491,48 @@ class _MagnitudeCard extends StatelessWidget {
                         ),
                       ),
                     ],
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: <Widget>[
-                          Text(
-                            value,
-                            style: textTheme.titleMedium?.copyWith(
-                              color: magnitude.color,
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w900,
-                              fontSize:
-                                  dense
-                                      ? 20
-                                      : (magnitude.compactValue ? 22 : 24),
-                            ),
-                          ),
-                          if (magnitude.unit.isNotEmpty) ...<Widget>[
-                            const SizedBox(width: 4),
-                            Padding(
-                              padding: EdgeInsets.only(bottom: dense ? 0 : 1),
-                              child: Text(
-                                magnitude.unit,
-                                style: textTheme.labelMedium?.copyWith(
-                                  color: AppTheme.inkSoft,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: dense ? 9 : 10,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: <Widget>[
+                        Text(
+                          value,
+                          style: textTheme.titleLarge?.copyWith(
+                            color: magnitude.color,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w900,
+                            fontSize: valueFontSize,
+                            height: 1,
+                          ),
+                        ),
+                        if (magnitude.unit.isNotEmpty) ...<Widget>[
+                          const SizedBox(width: 4),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(
+                              magnitude.unit,
+                              style: textTheme.labelMedium?.copyWith(
+                                color: AppTheme.inkSoft,
+                                fontWeight: FontWeight.w800,
+                                fontSize: dense ? 9 : 10,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
