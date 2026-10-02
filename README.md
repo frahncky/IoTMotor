@@ -40,8 +40,7 @@ Painel web, app Android e dois ESP32 integrados por MQTT.
 
 <table>
   <tr>
-    <td width="68%"><img src="docs/images/historico.png" alt="Histórico de 7 dias guardado na placa"></td>
-    <td rowspan="2" width="32%"><img src="docs/images/celular.png" alt="IoTMotor no celular"></td>
+    <td><img src="docs/images/historico.png" alt="Histórico de 7 dias guardado na placa"></td>
   </tr>
   <tr>
     <td><img src="docs/images/dados-do-motor.png" alt="Cadastro dos dados do motor"></td>
