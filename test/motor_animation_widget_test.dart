@@ -99,7 +99,7 @@ void main() {
     // Liga: anima; desliga: desacelera e volta a dormir.
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
-      '{"relays":[true,false,false,false],"motor_running":true}',
+      '{"relays":[true,false,false,false],"motor_running":true,"voltage":220,"current":0,"pzem_ok":true}',
     );
     controller.notifyListeners();
     await tester.pump(const Duration(milliseconds: 100));
@@ -112,7 +112,7 @@ void main() {
 
     controller.handlePayloadForTest(
       'iotmotor/esp32-01/telemetry',
-      '{"relays":[false,false,false,false],"motor_running":false}',
+      '{"relays":[false,false,false,false],"motor_running":false,"voltage":220,"current":0,"pzem_ok":true}',
     );
     controller.notifyListeners();
     await tester.pump(const Duration(milliseconds: 100));
