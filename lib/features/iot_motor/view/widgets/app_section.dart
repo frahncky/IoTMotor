@@ -100,11 +100,12 @@ class AppInfoRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Expanded(child: Text(label, style: texto.bodyMedium)),
+          Text(label, style: texto.bodyMedium),
           const SizedBox(width: 12),
-          Flexible(
+          Expanded(
             child: Text(
               value,
+              maxLines: 2,
               textAlign: TextAlign.end,
               style: texto.bodyMedium?.copyWith(
                 color: AppTheme.ink,
