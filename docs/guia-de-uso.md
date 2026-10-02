@@ -17,6 +17,7 @@ cada mensagem, veja a [referência MQTT](mqtt.md).
 - [Placas: Wi-Fi, atualização e reinício](#placas-wi-fi-atualização-e-reinício)
 - [Senha de comando](#senha-de-comando)
 - [App Android](#app-android)
+  - [Medições no app](#medições-no-app)
   - [Alertas no celular](#alertas-no-celular)
 - [Problemas comuns](#problemas-comuns)
 
@@ -341,10 +342,31 @@ baixa o APK e o Android pede a confirmação.
 
 | Aba | O que tem |
 | --- | --- |
-| **Início** | Partida e Ligar/Desligar, cartão do motor (animação, carga, vibração RMS, horímetro, manutenção, aviso de firmware) e gráficos |
+| **Início** | Partida e Ligar/Desligar, cartão do motor (animação, carga, vibração RMS, horímetro, manutenção e aviso de firmware) e o seletor **Medições / Elétrica / Mecânica** |
 | **Histórico** | Histórico da placa (7 dias) e leituras recebidas pelo app, com exportação |
 | **Alertas** | Alertas de limite e de manutenção vencida; **Reconhecer** marca como visto |
 | **Configurações** | Conexão, **Aquisição**, dados do motor (**Editar dados do motor**, **Manutenção feita**), Wi-Fi, **Atualizar firmware** e **Atualizar este app** |
+
+### Medições no app
+
+Na aba **Início**, o seletor central **Medições / Elétrica / Mecânica** alterna
+entre o resumo numérico e os gráficos em tempo real.
+
+Em **Medições**, o app mostra 10 cartões: **Aparente, Ativa, Reativa, FP,
+Tensão, Corrente, Energia, Frequência, Vibração** e **Temperatura**. O conteúdo
+de cada cartão é organizado para priorizar a leitura no celular:
+
+- no **topo, centralizados**, ficam o ícone da grandeza, o nome e a tendência;
+- a tendência aparece como **Subindo, Caindo** ou **Estável**, calculada a partir
+  das leituras recentes; ela é uma indicação visual e não substitui os alarmes;
+- na **parte inferior**, o valor atual aparece em fonte maior, com a unidade ao
+  lado;
+- o grid se adapta à largura e à altura disponíveis para manter os cartões
+  compactos sem exigir rolagem horizontal.
+
+Em **Elétrica**, ficam os gráficos das grandezas elétricas. Em **Mecânica**,
+ficam os gráficos de vibração e temperatura. Os gráficos podem ser escolhidos
+diretamente em cada cartão.
 
 **Conexão no app.** O app já vem em `ws://test.mosquitto.org`, porta **8080**,
 com TLS desligado: é o mesmo caminho das placas e passa em rede que bloqueia
