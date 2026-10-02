@@ -411,7 +411,7 @@ function drawChart(target,metric){
  const hover=svg('g',{class:'chart-hover',visibility:'hidden','pointer-events':'none'});
  const guia=svg('line',{y1:20,y2:180,class:'chart-hover-line'});
  const ponto=svg('circle',{r:4,fill:metric.color,class:'chart-hover-dot'});
- const caixa=svg('rect',{height:28,rx:6,ry:6,class:'chart-hover-box'});
+ const caixa=svg('rect',{height:34,rx:7,ry:7,class:'chart-hover-box'});
  const textoHover=svg('text',{y:0,'text-anchor':'middle',class:'chart-hover-text'});
  hover.append(guia,ponto,caixa,textoHover);target.append(hover);
 
@@ -426,12 +426,12 @@ function drawChart(target,metric){
    :'—';
   const valor=`${numeroBr(entry.v,metric.digits)}${metric.unit?' '+metric.unit:''}`;
   const rotulo=`${hora} · ${valor}`;
-  const largura=Math.max(118,Math.min(220,rotulo.length*6.4+18));
+  const largura=Math.max(132,Math.min(250,rotulo.length*7.8+22));
   const cx=Math.max(56+largura/2,Math.min(633-largura/2,px));
-  const cy=py<58?py+34:py-20;
+  const cy=py<64?py+40:py-24;
   guia.setAttribute('x1',px);guia.setAttribute('x2',px);
   ponto.setAttribute('cx',px);ponto.setAttribute('cy',py);
-  caixa.setAttribute('x',cx-largura/2);caixa.setAttribute('y',cy-18);caixa.setAttribute('width',largura);
+  caixa.setAttribute('x',cx-largura/2);caixa.setAttribute('y',cy-22);caixa.setAttribute('width',largura);
   textoHover.setAttribute('x',cx);textoHover.setAttribute('y',cy);textoHover.textContent=rotulo;
   hover.setAttribute('visibility','visible');
  };
