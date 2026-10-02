@@ -151,7 +151,7 @@ class TelemetryChart extends StatelessWidget {
       lineTouchData: LineTouchData(
         handleBuiltInTouches: true,
         touchTooltipData: LineTouchTooltipData(
-          getTooltipColor: (_) => AppTheme.ink,
+          getTooltipColor: (_) => const Color(0xFF0B1220),
           tooltipRoundedRadius: 12,
           tooltipPadding: const EdgeInsets.symmetric(
             horizontal: 16,
