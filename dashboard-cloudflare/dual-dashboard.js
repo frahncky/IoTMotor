@@ -46,7 +46,7 @@ const ACQ_DEFAULT={revision:0,pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,re
 const ACQ_PRESETS={realtime:{pzem_read_ms:1000,publish_ms:1000,chart_ms:1000,record_ms:1000},monitoring:{pzem_read_ms:1000,publish_ms:2000,chart_ms:2000,record_ms:5000},economic:{pzem_read_ms:5000,publish_ms:5000,chart_ms:5000,record_ms:30000}};
 const state={config:{...DEFAULT},client:null,generation:0,connected:false,subscribed:false,group:'todos',
  command:{sample:null,at:0,count:0,status:'—'},sensor:{sample:null,at:0,count:0,status:'—'},
- acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),records:[],pending:null,condicao:'',condicaoPendente:false};
+ acquisition:{...ACQ_DEFAULT},lastRecord:{},series:Object.fromEntries(METRICS.map(m=>[m.key,[]])),chartPins:Object.fromEntries(METRICS.map(m=>[m.key,new Set()])),records:[],pending:null,condicao:'',condicaoPendente:false};
 let commandWasFresh=false;
 function numeric(v){if(v===null||v===undefined||v==='')return null;const n=Number(typeof v==='string'?v.replace(',','.'):v);return Number.isFinite(n)?n:null;}
 // Números na tela sempre com vírgula decimal (pt-BR); o CSV continua com ponto.
@@ -386,7 +386,7 @@ function drawChart(target,metric){
  target.replaceChildren();
  if(!values.length){
   delete target.dataset.hoverRatio;
-  target.onpointermove=null;target.onpointerleave=null;
+  target.onclick=null;target.onpointermove=null;target.onpointerleave=null;
   target.append(svg('text',{x:320,y:105,'text-anchor':'middle',class:'empty'},'Sem leitura disponível'));
   return;
  }
@@ -405,6 +405,33 @@ function drawChart(target,metric){
  target.append(svg('polyline',{points,stroke:metric.color}));
  target.append(svg('text',{x:56,y:209},'Mais antigo'));
  target.append(svg('text',{x:631,y:209,'text-anchor':'end'},'Mais recente'));
+
+ // Pontos fixados por clique. A chave é o instante da amostra para a marca
+ // continuar presa ao dado certo enquanto novas medições entram no gráfico.
+ const pins=state.chartPins[metric.key]??new Set();
+ const temposAtuais=new Set(entries.map(entry=>entry.t));
+ for(const t of [...pins])if(!temposAtuais.has(t))pins.delete(t);
+ const indicesFixos=entries.map((entry,i)=>pins.has(entry.t)?i:-1).filter(i=>i>=0);
+ indicesFixos.forEach((indice,ordem)=>{
+  const entry=entries[indice],px=pontoX(indice),py=pontoY(entry.v);
+  const hora=Number.isFinite(entry.t)
+   ?new Date(entry.t).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+   :'—';
+  const valor=`${numeroBr(entry.v,metric.digits)}${metric.unit?' '+metric.unit:''}`;
+  const rotulo=`${hora} · ${valor}`;
+  const largura=Math.max(132,Math.min(250,rotulo.length*7.8+22));
+  const abaixo=py<70||(ordem%2===1&&py<145);
+  const cy=abaixo?Math.min(170,py+42+(ordem%3)*4):Math.max(34,py-26-(ordem%3)*4);
+  const cx=Math.max(56+largura/2,Math.min(633-largura/2,px));
+  const grupo=svg('g',{class:'chart-pin','pointer-events':'none'});
+  grupo.append(
+   svg('line',{x1:px,x2:px,y1:20,y2:180,class:'chart-pin-line'}),
+   svg('circle',{cx:px,cy:py,r:5,fill:metric.color,class:'chart-pin-dot'}),
+   svg('rect',{x:cx-largura/2,y:cy-22,width:largura,height:34,rx:7,ry:7,class:'chart-pin-box',stroke:metric.color}),
+   svg('text',{x:cx,y:cy,'text-anchor':'middle',class:'chart-pin-text'},rotulo)
+  );
+  target.append(grupo);
+ });
 
  // Consulta do histórico pelo cursor. É independente do valor atual mostrado
  // no cabeçalho: aqui aparecem a hora e o valor do ponto passado mais próximo.
@@ -434,6 +461,21 @@ function drawChart(target,metric){
   caixa.setAttribute('x',cx-largura/2);caixa.setAttribute('y',cy-22);caixa.setAttribute('width',largura);
   textoHover.setAttribute('x',cx);textoHover.setAttribute('y',cy);textoHover.textContent=rotulo;
   hover.setAttribute('visibility','visible');
+ };
+ const indicePeloEvento=event=>{
+  const rect=target.getBoundingClientRect();
+  if(!rect.width)return 0;
+  const xSvg=(event.clientX-rect.left)*650/rect.width;
+  const ratio=Math.max(0,Math.min(1,(xSvg-56)/570));
+  return values.length===1?0:Math.round(ratio*(values.length-1));
+ };
+ target.onclick=event=>{
+  const indice=indicePeloEvento(event);
+  const entry=entries[indice];
+  if(!entry||!Number.isFinite(entry.t))return;
+  const fixos=state.chartPins[metric.key]??(state.chartPins[metric.key]=new Set());
+  if(fixos.has(entry.t))fixos.delete(entry.t);else fixos.add(entry.t);
+  drawChart(target,metric);
  };
  target.onpointermove=event=>{
   const rect=target.getBoundingClientRect();
@@ -496,7 +538,7 @@ function render(){
  $('exportBtn').disabled=!state.records.length;updateControl();renderMotorVisual();renderCharts();
 }
 function reset(){commandWasFresh=false;state.command={sample:null,at:0,count:0,status:'—',statusAt:0};state.sensor={sample:null,at:0,count:0,status:'—',statusAt:0};
- state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.lastRecord={};state.pending=null;state.subscribed=false;
+ state.series=Object.fromEntries(METRICS.map(m=>[m.key,[]]));state.chartPins=Object.fromEntries(METRICS.map(m=>[m.key,new Set()]));state.lastRecord={};state.pending=null;state.subscribed=false;
  render();}
 function disconnect(){const old=state.client;state.generation++;state.client=null;state.connected=false;state.subscribed=false;if(old)old.end(true);
  window.iotmotorMotorSound?.stopForDisconnect?.();  // Pausa sem som de desligamento e permite retomar após reconectar.
