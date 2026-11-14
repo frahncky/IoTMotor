@@ -54,6 +54,7 @@ O IoTMotor divide as funções entre duas placas:
 - **ESP32-01 — quadro de comando:** grandezas elétricas, contatores, partidas, LCD, dados do motor e horímetro.
 - **ESP32-S3 — sensores do motor:** vibração, temperatura, LED RGB, buzzer e diagnóstico de condição.
 - **Painel web e app Android:** visualização, configuração e comandos remotos.
+- **BitDogLab:** painel de bolso com medições, escolha da partida e liga/desliga.
 - **MQTT:** transporte da telemetria, estados e comandos entre as interfaces e a bancada.
 
 ```mermaid
@@ -61,6 +62,7 @@ flowchart LR
     subgraph Usuario["Quem usa"]
         P["🖥️ Painel web<br/>Cloudflare Pages"]
         A["📱 App Android<br/>Flutter"]
+        D["🎛️ BitDogLab<br/>MicroPython"]
     end
     B(("☁️ Broker MQTT"))
     subgraph Bancada["Bancada do motor"]
@@ -70,6 +72,7 @@ flowchart LR
     end
     P <--> B
     A <--> B
+    D <--> B
     B <--> Q
     B <--> S
     Q -- comando dos contatores --> M
@@ -84,6 +87,7 @@ As placas publicam telemetria e também mantêm dados importantes localmente, co
 | --- | --- | --- |
 | **ESP32-01** · quadro de comando | PZEM-004T, contatores CNT 1 a 4, LCD 20×4, horímetro e dados do motor | [`iotmotor_esp32_comandos`](esp32/iotmotor_esp32/iotmotor_esp32_comandos) |
 | **ESP32-S3** · sensores do motor | MPU6050 (vibração), DS18B20 (temperatura), LED RGB, buzzer, alarmes e histórico | [`iotmotor_esp32_s3_sensores`](esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores) |
+| **BitDogLab** · painel de bolso (opcional) | Pico W com OLED, joystick, botões, buzzer e matriz 5×5: medições, temperatura, vibração, escolha da partida e liga/desliga | [`bitdoglab`](bitdoglab) |
 
 ## 🚀 Começando
 
@@ -97,6 +101,7 @@ As placas publicam telemetria e também mantêm dados importantes localmente, co
 dashboard-cloudflare/   Painel web (HTML + JS, sem build) e testes
 functions/              Ponte MQTT na porta 443 (Cloudflare Pages Functions)
 esp32/iotmotor_esp32/   Firmware das duas placas
+bitdoglab/              Painel de bolso BitDogLab (MicroPython)
 lib/                    App Flutter
 test/                   Testes do app
 docs/                   Documentação técnica e imagens
@@ -113,6 +118,7 @@ docs/                   Documentação técnica e imagens
 | 📐 [Vibração](docs/vibracao.md) | Cálculo de mm/s RMS, filtros, montagem, validação e limitações |
 | 🔊 [Áudio do motor](docs/audio.md) | Origem do som, processamento para web/app e arquivos derivados |
 | 🛠️ [Desenvolvimento](docs/desenvolvimento.md) | Estrutura, testes, CI e publicação |
+| 🎛️ [Painel BitDogLab](bitdoglab/README.md) | Instalar e usar o painel de bolso na BitDogLab |
 
 ## 🎓 Escopo do projeto
 

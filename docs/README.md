@@ -8,6 +8,7 @@
 | 🔧 [Firmware](firmware.md) | Quem grava as placas | Primeira gravação, OTA, versões, partições, Wi-Fi, senha de comando |
 | 📐 [Vibração](vibracao.md) | Quem mede/valida | De LSB a mm/s RMS, filtros, RMS, montagem, faixa útil, validação e limites |
 | 🔊 [Áudio do motor](audio.md) | Quem mantém a interface | Origem Pixabay, arquivo-base, processamento, loop e arquivos derivados do app |
+| 🎛️ [Painel BitDogLab](../bitdoglab/README.md) | Quem quer um painel de bolso | Instalação, telas, botões, buzzer, matriz de LED e tópicos usados |
 | 🛠️ [Desenvolvimento](desenvolvimento.md) | Quem programa | Estrutura, testes, simuladores, CI, publicação do painel, do firmware e do app |
 
 ## Visão geral
@@ -16,6 +17,7 @@
 flowchart LR
     P["🖥️ Painel web"] <--> B(("☁️ Broker MQTT"))
     A["📱 App Android"] <--> B
+    D["🎛️ BitDogLab"] <--> B
     B <--> Q["ESP32-01<br/>Quadro de comando"]
     B <--> S["ESP32-S3<br/>Sensores do motor"]
     Q -- contatores --> M["⚙️ Motor"]
