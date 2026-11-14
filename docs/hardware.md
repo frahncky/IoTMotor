@@ -92,6 +92,13 @@ alimentação. Depois de conferir os fios, mande o comando `buzzer_probe`
 2. Ela anuncia cada passo no `command_ack`.
 3. No passo em que sair som, ajuste `BUZZER_PIN` no sketch. Se o buzzer for do tipo ativo, troque `tone()`/`noTone()` por `digitalWrite()`.
 
+## Painel BitDogLab (opcional)
+
+A BitDogLab (Raspberry Pi Pico W) funciona como painel de bolso: mostra as
+medições, a temperatura e a vibração, escolhe a partida e liga/desliga o motor
+pelo broker, como o painel web. Ela não se liga ao quadro por fio. Pinos,
+instalação e uso estão em [`bitdoglab/README.md`](../bitdoglab/README.md).
+
 ## Segurança elétrica
 
 > [!CAUTION]

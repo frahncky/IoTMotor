@@ -24,6 +24,7 @@ dashboard-cloudflare/   Painel web: HTML e JavaScript puros, sem build
 functions/mqtt.js       Ponte MQTT na porta 443 (Cloudflare Pages Function)
 esp32/iotmotor_esp32/   Firmware das duas placas (veja firmware.md)
 esp32/testes_nativos/   Testes da lógica do firmware no PC (g++, Arduino de mentira)
+bitdoglab/              Painel de bolso BitDogLab em MicroPython (veja bitdoglab/README.md)
 tools/                  Capturas de tela da documentação e geração do áudio
 lib/                    App Flutter
   features/iot_motor/
@@ -177,6 +178,7 @@ telemetria, que não é cifrada.
 - [ ] Mudou `vibracao.h`? Atualize [vibracao.md](vibracao.md), especialmente filtros, taxa, janela, critérios de validade e faixa útil.
 - [ ] Gráficos não devem criar amostras sintéticas. A janela temporal deve usar dados realmente recebidos.
 - [ ] Atualize [mqtt.md](mqtt.md), [guia-de-uso.md](guia-de-uso.md) e [firmware.md](firmware.md) quando o contrato mudar.
+- [ ] Mudou campo de telemetria, `profiles`, `motor_info`, `alarms` ou o `start`? Confira o painel BitDogLab ([`bitdoglab/main.py`](../bitdoglab/main.py)), que lê esses tópicos.
 
 ## Checklist ao mudar o firmware
 

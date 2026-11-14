@@ -51,7 +51,7 @@ caminho dos bytes.
 | `iotmotor/<placa>/telemetry` | placa, conforme `publish_ms` (padrão 1 s) | | Medições e estado ([quadro](#telemetria-do-quadro-de-comando), [sensores](#telemetria-dos-sensores-do-motor)) |
 | `iotmotor/<placa>/status` | placa | ✔ | `online` / `offline` (texto puro; `offline` é a última vontade da conexão) |
 | `iotmotor/<placa>/capabilities` | placa | ✔ | Versão do firmware e grandezas publicadas |
-| `iotmotor/<placa>/command` | painel, app | | [Comandos](#como-enviar-um-comando) |
+| `iotmotor/<placa>/command` | painel, app, [BitDogLab](../bitdoglab/README.md) | | [Comandos](#como-enviar-um-comando) |
 | `iotmotor/<placa>/command_ack` | placa | | Resposta a cada comando |
 | `iotmotor/<placa>/auth` | placa | ✔ | Desafio para [comandos cifrados](#comandos-cifrados) |
 | `iotmotor/<placa>/wifi` | placa | ✔ | Redes Wi-Fi gravadas (sem senhas) |
