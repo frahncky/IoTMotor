@@ -24,8 +24,7 @@ quadro ---command_ack-------------------> broker ---> BitDogLab
 
 | Arquivo | Conteúdo |
 |---|---|
-| `main.py` | Programa: Wi-Fi, MQTT, telas, controles, LED e buzzer |
-| `matrix.py` | Matriz 5×5 WS2812: ícones e barras |
+| `main.py` | Programa: Wi-Fi, MQTT, telas, controles e LED |
 | `mqtt_websocket.py` | Cliente `umqtt.simple` sobre WebSocket (porta 8080) |
 | `config.example.py` | Modelo de configuração; copie para `config.py` |
 | `config.py` | Configuração real com senhas. **Ignorado pelo Git** |
@@ -58,41 +57,13 @@ fase da partida ou `Parado`.
 | A (toque) | Vai para a tela Partida |
 | A (segurar 1,2 s) | Liga com a partida escolhida |
 | B | Desliga (`stop`); sempre enviado |
-| SW (botão do joystick) | Silencia o alarme sonoro atual |
 
 **LED RGB** (brilho em `LED_BRIGHTNESS`, padrão 6%): azul parado, verde
 ligado, amarelo partindo, vermelho sem conexão, quadro offline ou alarme.
 
-**Buzzer** (`BUZZER_ENABLED`): clique em cada controle, dois bipes agudos
-quando o quadro aceita, bipe grave na recusa e bipe duplo a cada 3 s com
-alarme ou desarme ativo. O SW silencia; um alarme diferente volta a tocar.
-
-## Matriz de LED 5×5
-
-A matriz mostra o estado de longe, com brilho baixo (`MATRIX_BRIGHTNESS`, 4%).
-Prioridade:
-
-| Situação | Matriz |
-|---|---|
-| Sem conexão ou quadro offline | X azul |
-| Alarme ou desarme | ! vermelho piscando |
-| Estrela-triângulo em curso | Y ciano na estrela, traço no tempo morto, Δ por 3 s após a troca |
-| Motor ligado, tela Sensores | Barra de vibração (mm/s ÷ limite do alarme de vibração) |
-| Motor ligado | Barra de carga (corrente ÷ corrente nominal) |
-| Partindo (relé ligado, sem corrente) | Play amarelo piscando |
-| Parado | Quadrado azul |
-
-Barras: só a linha de baixo da matriz. 4 LEDs = 100% (nominal ou limite); o
-5º, vermelho, acende acima disso. Verde até 75%, amarelo até 100%.
-
-- A corrente nominal vem de `iotmotor/esp32-01/motor_info` (`current_a`, ou
-  `current_y_a` com o motor ligado em estrela). Sem ela, o motor ligado
-  aparece como play verde. `MOTOR_NOMINAL_A` no `config.py` é a reserva.
-- O limite de vibração vem do alarme `vibration_mms` em
-  `iotmotor/esp32-02/alarms`; reserva `VIBRATION_LIMIT_MMS` (4,5 mm/s).
-- Estrela e triângulo saem da partida gravada: o contator que desliga no
-  meio (`off > 0`) é a estrela; o que liga depois dele é o triângulo.
-- Ícones de cabeça para baixo: `MATRIX_FLIP = True`.
+O **buzzer** e a **matriz de LED 5×5** não são usados: ao iniciar, o programa
+apaga a matriz e deixa o pino do buzzer em nível baixo. Avisos de comando,
+recusas e alarmes aparecem só no rodapé do OLED e no LED RGB.
 
 ## Partida e parada
 
@@ -124,8 +95,6 @@ Prefixo e placas em `IOTMOTOR_PREFIX`, `IOTMOTOR_BOARD` e
 | `iotmotor/esp32-01/status` | recebe | `online` / `offline` |
 | `iotmotor/esp32-01/command` | envia | `start` e `stop` |
 | `iotmotor/esp32-01/command_ack` | recebe | Aceite ou motivo da recusa |
-| `iotmotor/esp32-01/motor_info` | recebe | Corrente nominal para a barra de carga (retido) |
-| `iotmotor/esp32-02/alarms` | recebe | Limite de vibração para a barra (retido) |
 | `iotmotor/esp32-02/telemetry` | recebe | `temperature`, `vibration_mms`, `vibration_axis`, `alarm_active`, `alarms_firing` |
 
 Exemplo de partida enviada:
@@ -142,11 +111,10 @@ BitDogLab v6.3 com Raspberry Pi Pico W. Confirme os pinos em outras revisões.
 |---|---|---|
 | Botão A / B | 5 / 6 | `PIN_BUTTON_A`, `PIN_BUTTON_B` |
 | Joystick X / Y (ADC) | 27 / 26 | `PIN_JOYSTICK_X`, `PIN_JOYSTICK_Y` |
-| Botão do joystick | 22 | `PIN_JOYSTICK_BUTTON` |
 | OLED 128×64 SDA / SCL | 14 / 15 | `PIN_OLED_SDA`, `PIN_OLED_SCL` |
 | LED R / G / B (PWM) | 13 / 11 / 12 | `PIN_LED_R`, `PIN_LED_G`, `PIN_LED_B` |
-| Buzzer (PWM) | 21 | `PIN_BUZZER` |
-| Matriz 5×5 WS2812 | 7 | `PIN_MATRIX` |
+| Buzzer (mantido desligado) | 21 | `PIN_BUZZER` |
+| Matriz 5×5 WS2812 (mantida apagada) | 7 | `PIN_MATRIX` |
 
 Se o joystick estiver invertido, troque `JOYSTICK_X_SIGN` ou
 `JOYSTICK_Y_SIGN` para `-1`.
@@ -164,7 +132,7 @@ Se o joystick estiver invertido, troque `JOYSTICK_X_SIGN` ou
 4. Envie os arquivos e reinicie:
 
    ```sh
-   mpremote connect COM5 cp main.py :main.py + cp matrix.py :matrix.py + cp mqtt_websocket.py :mqtt_websocket.py + cp config.py :config.py + reset
+   mpremote connect COM5 cp main.py :main.py + cp mqtt_websocket.py :mqtt_websocket.py + cp config.py :config.py + reset
    ```
 
 5. Acompanhe pelo serial (115200). Esperado:

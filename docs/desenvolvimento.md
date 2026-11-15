@@ -178,7 +178,7 @@ telemetria, que não é cifrada.
 - [ ] Mudou `vibracao.h`? Atualize [vibracao.md](vibracao.md), especialmente filtros, taxa, janela, critérios de validade e faixa útil.
 - [ ] Gráficos não devem criar amostras sintéticas. A janela temporal deve usar dados realmente recebidos.
 - [ ] Atualize [mqtt.md](mqtt.md), [guia-de-uso.md](guia-de-uso.md) e [firmware.md](firmware.md) quando o contrato mudar.
-- [ ] Mudou campo de telemetria, `profiles`, `motor_info`, `alarms` ou o `start`? Confira o painel BitDogLab ([`bitdoglab/main.py`](../bitdoglab/main.py)), que lê esses tópicos.
+- [ ] Mudou campo de telemetria, `profiles` ou o `start`? Confira o painel BitDogLab ([`bitdoglab/main.py`](../bitdoglab/main.py)), que lê esses tópicos.
 
 ## Checklist ao mudar o firmware
 

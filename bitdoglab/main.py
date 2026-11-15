@@ -11,11 +11,8 @@ Controles:
   A (segurar 1,2 s) -> liga com a partida escolhida
   A (toque)         -> vai para a tela Partida
   B                 -> desliga (sempre enviado)
-  SW (joystick)     -> silencia o alarme sonoro
 
-Matriz 5x5: alarme (pisca), Y/triangulo na estrela-triangulo, barra de carga
-(corrente/nominal) com o motor ligado, barra de vibracao na tela Sensores e
-icone de estado com o motor parado.
+Matriz 5x5 e buzzer ficam desligados; o estado aparece no OLED e no LED RGB.
 """
 import json
 import time
@@ -33,18 +30,14 @@ T_STATUS = "%s/%s/status" % (PREFIX, BOARD)
 T_COMMAND = "%s/%s/command" % (PREFIX, BOARD)
 T_ACK = "%s/%s/command_ack" % (PREFIX, BOARD)
 T_SENSORS = "%s/%s/telemetry" % (PREFIX, SENSORS)
-T_MOTOR_INFO = "%s/%s/motor_info" % (PREFIX, BOARD)
-T_ALARMS = "%s/%s/alarms" % (PREFIX, SENSORS)
 
 PAGE_NAMES = ("Eletrica", "Sensores", "Uso", "Partida")
 PAGE_PROFILE = 3
 LED_LEVEL = int(65535 * getattr(config, "LED_BRIGHTNESS", 0.06))
-BUZZER_ON = getattr(config, "BUZZER_ENABLED", True)
 
 # ---------------------------------------------------------------- hardware
 a = Pin(config.PIN_BUTTON_A, Pin.IN, Pin.PULL_UP)
 b = Pin(config.PIN_BUTTON_B, Pin.IN, Pin.PULL_UP)
-sw = Pin(config.PIN_JOYSTICK_BUTTON, Pin.IN, Pin.PULL_UP)
 joy_x = ADC(getattr(config, "PIN_JOYSTICK_X", 27))
 joy_y = ADC(getattr(config, "PIN_JOYSTICK_Y", 26))
 leds = []
@@ -53,8 +46,17 @@ for pin in (config.PIN_LED_R, config.PIN_LED_G, config.PIN_LED_B):
     p.freq(1000)
     p.duty_u16(0)
     leds.append(p)
-buzzer = PWM(Pin(getattr(config, "PIN_BUZZER", 21)))
-buzzer.duty_u16(0)
+# Buzzer e matriz nao sao usados: so garante que fiquem desligados (os WS2812
+# guardam a ultima cor mesmo depois de reiniciar o Pico).
+Pin(getattr(config, "PIN_BUZZER", 21), Pin.OUT, value=0)
+try:
+    import neopixel
+    _np = neopixel.NeoPixel(Pin(getattr(config, "PIN_MATRIX", 7)), 25)
+    _np.fill((0, 0, 0))
+    _np.write()
+    del _np
+except Exception as exc:
+    print("Matriz de LED indisponivel:", exc)
 
 oled = None
 try:
@@ -63,16 +65,6 @@ try:
     oled = ssd1306.SSD1306_I2C(128, 64, i2c)
 except Exception as exc:
     print("Display OLED indisponivel:", exc)
-
-mat = None
-try:
-    from matrix import Matrix, GREEN, YELLOW, RED, BLUE, CYAN
-    mat = Matrix(getattr(config, "PIN_MATRIX", 7),
-                 getattr(config, "MATRIX_BRIGHTNESS", 0.04),
-                 getattr(config, "MATRIX_FLIP", False))
-    mat.clear()
-except Exception as exc:
-    print("Matriz de LED indisponivel:", exc)
 
 nic = network.WLAN(network.STA_IF)
 nic.active(True)
@@ -85,9 +77,6 @@ tele_ts_ms = None
 sens = {}
 sens_ms = None
 profiles = []          # [(id, nome_sem_acento)]
-profile_cnt = {}       # id e nome -> lista cnt da partida
-nominal_a = getattr(config, "MOTOR_NOMINAL_A", None)
-vib_limit = getattr(config, "VIBRATION_LIMIT_MMS", 4.5)
 sel = 0
 pending = None         # (seq, action)
 pending_at = 0
@@ -97,15 +86,10 @@ seq_counter = 0
 page = 0
 a_start = None
 a_long_done = False
-was_a = was_b = was_sw = False
+was_a = was_b = False
 joy_x_dir = joy_y_dir = 0
-alarm_muted_key = None
-beeps = []             # fila [(freq, ms_ligado, ms_pausa)]
-beep_until = 0
-beep_off_until = 0
 last_wifi_attempt = time.ticks_ms() - 5000
 last_ping = time.ticks_ms()
-last_alarm_beep = 0
 
 ACCENTS = {
     "á": "a", "à": "a", "â": "a", "ã": "a", "é": "e", "ê": "e", "í": "i",
@@ -122,29 +106,6 @@ def led(red=0, green=0, blue=0):
     for p, on in zip(leds, (red, green, blue)):
         p.duty_u16(LED_LEVEL if on else 0)
 
-def beep(*notes):
-    """Enfileira bipes: cada nota e (freq, ms_ligado, ms_pausa)."""
-    if BUZZER_ON:
-        beeps.extend(notes)
-
-CLICK = (2000, 25, 0)
-OK_TONE = ((1800, 60, 60), (2400, 90, 0))
-FAIL_TONE = ((600, 350, 0),)
-ALARM_TONE = ((2600, 150, 100), (2600, 150, 0))
-
-def buzzer_tick(now):
-    global beep_until, beep_off_until
-    if beep_until and time.ticks_diff(now, beep_until) >= 0:
-        buzzer.duty_u16(0)
-        beep_until = 0
-    if beep_until or time.ticks_diff(now, beep_off_until) < 0 or not beeps:
-        return
-    freq, on_ms, off_ms = beeps.pop(0)
-    buzzer.freq(freq)
-    buzzer.duty_u16(32768)
-    beep_until = time.ticks_add(now, on_ms)
-    beep_off_until = time.ticks_add(beep_until, off_ms)
-
 def show(text):
     global message, message_at
     message = ascii_text(text)
@@ -154,7 +115,6 @@ def show(text):
 # ---------------------------------------------------------------- MQTT
 def callback(topic, raw):
     global tele, tele_ms, tele_ts_ms, profiles, sel, pending, sens, sens_ms
-    global profile_cnt, nominal_a, vib_limit
     t = topic.decode() if isinstance(topic, bytes) else topic
     if t == T_STATUS:
         return
@@ -178,30 +138,15 @@ def callback(topic, raw):
         current = profiles[sel][0] if profiles else None
         profiles = [(p.get("id"), ascii_text(p.get("name", p.get("id"))))
                     for p in data.get("profiles", []) if p.get("id")]
-        profile_cnt = {}
-        for p in data.get("profiles", []):
-            for k in (p.get("id"), p.get("name")):
-                if k:
-                    profile_cnt[k] = p.get("cnt") or []
         ids = [p[0] for p in profiles]
         sel = ids.index(current) if current in ids else 0
-    elif t == T_MOTOR_INFO:
-        key = "current_y_a" if data.get("connection") == "star" else "current_a"
-        if data.get(key):
-            nominal_a = float(data[key])
-    elif t == T_ALARMS:
-        for al in data.get("alarms", []):
-            if al.get("field") == "vibration_mms" and al.get("above") and al.get("limit"):
-                vib_limit = float(al["limit"])
     elif t == T_ACK:
         if pending and str(data.get("seq")) == pending[0]:
             pending = None
             if data.get("accepted"):
                 show("Aceito: " + str(data.get("action")))
-                beep(*OK_TONE)
             else:
                 show("Recusado: " + str(data.get("reason")))
-                beep(*FAIL_TONE)
 
 def wifi_networks():
     nets = getattr(config, "WIFI_NETWORKS", None)
@@ -269,7 +214,7 @@ def connect():
     c.set_callback(callback)
     try:
         c.connect()
-        for t in (T_STATUS, T_PROFILES, T_ACK, T_TELEMETRY, T_SENSORS, T_MOTOR_INFO, T_ALARMS):
+        for t in (T_STATUS, T_PROFILES, T_ACK, T_TELEMETRY, T_SENSORS):
             c.subscribe(t.encode())
     except Exception:
         try:
@@ -296,7 +241,6 @@ def send(action, extra=None):
     global pending, pending_at
     if mqtt is None:
         show("Sem MQTT")
-        beep(*FAIL_TONE)
         return
     seq = next_seq() if tele_ts_ms is not None else str(time.ticks_ms())
     cmd = {"v": 1, "device_id": BOARD, "seq": seq, "action": action}
@@ -311,23 +255,19 @@ def send(action, extra=None):
         print("Erro ao enviar:", exc)
         disconnect()
 
-def refuse(text):
-    show(text)
-    beep(*FAIL_TONE)
-
 def request_start():
     if not config.ENABLE_MOTOR_COMMANDS:
-        return refuse("Partida desativada")
+        return show("Partida desativada")
     if not fresh(tele_ms) or tele_ts_ms is None:
-        return refuse("Quadro offline")
+        return show("Quadro offline")
     if not profiles:
-        return refuse("Sem partidas")
+        return show("Sem partidas")
     if tele.get("secure"):
-        return refuse("Exige selo")
+        return show("Exige selo")
     if tele.get("actuation") is False:
-        return refuse("Instrumentacao")
+        return show("Instrumentacao")
     if tele.get("motor_running") or any(tele.get("relays") or []):
-        return refuse("Ja ligado")
+        return show("Ja ligado")
     send("start", {"boot": tele.get("boot"), "profile": profiles[sel][0]})
 
 # ---------------------------------------------------------------- entradas
@@ -340,19 +280,16 @@ def joy_dir(adc):
     return 0
 
 def inputs(now):
-    global was_a, was_b, was_sw, a_start, a_long_done, page, sel
-    global joy_x_dir, joy_y_dir, alarm_muted_key
+    global was_a, was_b, a_start, a_long_done, page, sel
+    global joy_x_dir, joy_y_dir
     av = a.value() == 0
     bv = b.value() == 0
-    sv = sw.value() == 0
 
     if bv and not was_b:
-        beep(CLICK)
         send("stop")  # parar e o lado seguro: vai sempre
     if av and not was_a:
         a_start = now
         a_long_done = False
-        beep(CLICK)
     if av and a_start is not None and not a_long_done and not bv:
         if time.ticks_diff(now, a_start) >= config.START_HOLD_MS:
             a_long_done = True
@@ -361,23 +298,15 @@ def inputs(now):
         if not a_long_done:
             page = PAGE_PROFILE
         a_start = None
-    if sv and not was_sw:
-        key = alarm_key()
-        if key:
-            alarm_muted_key = key
-            show("Alarme silenciado")
-        beep(CLICK)
 
     dx = joy_dir(joy_x) * getattr(config, "JOYSTICK_X_SIGN", 1)
     dy = joy_dir(joy_y) * getattr(config, "JOYSTICK_Y_SIGN", 1)
     if dx and dx != joy_x_dir:
         page = (page + dx) % len(PAGE_NAMES)
-        beep(CLICK)
     if dy and dy != joy_y_dir and page == PAGE_PROFILE and profiles:
         sel = (sel - dy) % len(profiles)  # cima = anterior
-        beep(CLICK)
     joy_x_dir, joy_y_dir = dx, dy
-    was_a, was_b, was_sw = av, bv, sv
+    was_a, was_b = av, bv
 
 # ---------------------------------------------------------------- alarme
 def alarm_key():
@@ -388,16 +317,6 @@ def alarm_key():
     if fresh(sens_ms) and sens.get("alarm_active"):
         parts.append("sens:" + ",".join(sens.get("alarms_firing") or ["?"]))
     return "|".join(parts) or None
-
-def alarm_tick(now):
-    global last_alarm_beep, alarm_muted_key
-    key = alarm_key()
-    if key is None:
-        alarm_muted_key = None
-        return
-    if key != alarm_muted_key and time.ticks_diff(now, last_alarm_beep) > 3000:
-        last_alarm_beep = now
-        beep(*ALARM_TONE)
 
 # ---------------------------------------------------------------- tela
 def number(src, key, fmt):
@@ -506,75 +425,6 @@ def render():
     oled.text(status_line()[:16], 0, 56)
     oled.show()
 
-# ---------------------------------------------------------------- matriz
-def star_delta_phase():
-    """'star', 'delta', 'dead' ou None, pelos contatores da partida em curso.
-
-    Na partida gravada, o contator que desliga no meio (off > 0) e a estrela;
-    o que liga depois desse instante e o triangulo.
-    """
-    cnt = profile_cnt.get(tele.get("profile"))
-    relays = tele.get("relays") or []
-    if not cnt or not relays or tele.get("mode") != "profile_bench":
-        return None
-    star = delta = None
-    for i, c in enumerate(cnt):
-        if c.get("use") and c.get("off", 0) > 0:
-            star = i
-    if star is None:
-        return None
-    for i, c in enumerate(cnt):
-        if i != star and c.get("use") and c.get("on", 0) >= cnt[star]["off"]:
-            delta = i
-    if delta is None:
-        return None
-    if star < len(relays) and relays[star]:
-        return "star"
-    if delta < len(relays) and relays[delta]:
-        return "delta" if tele.get("profile_ms", 0) < cnt[delta]["on"] + 3000 else None
-    return "dead"
-
-def matrix_tick(now):
-    if mat is None:
-        return
-    blink = (now // 400) % 2 == 0
-    if mqtt is None or not fresh(tele_ms):
-        mat.icon("off", BLUE)
-        return
-    if alarm_key():
-        if blink:
-            mat.icon("alert", RED)
-        else:
-            mat.clear()
-        return
-    phase = star_delta_phase()
-    if phase == "star":
-        mat.icon("star", CYAN)
-        return
-    if phase == "delta":
-        mat.icon("delta", CYAN)
-        return
-    if phase == "dead":
-        mat.icon("dash", CYAN)
-        return
-    running = tele.get("motor_running")
-    if page == 1 and running and fresh(sens_ms) and sens.get("vibration_mms") is not None:
-        mat.bar(float(sens["vibration_mms"]) / vib_limit)
-        return
-    if running:
-        if nominal_a and tele.get("current") is not None:
-            mat.bar(float(tele["current"]) / nominal_a)
-        else:
-            mat.icon("play", GREEN)
-        return
-    if any(tele.get("relays") or []):
-        if blink:
-            mat.icon("play", YELLOW)
-        else:
-            mat.clear()
-        return
-    mat.icon("stop", BLUE)
-
 # ---------------------------------------------------------------- laco
 def main():
     global last_wifi_attempt, last_ping, pending
@@ -606,14 +456,11 @@ def main():
                 print("MQTT caiu:", exc)
                 disconnect()
         if pending and time.ticks_diff(now, pending_at) > 10000:
-            refuse("Sem resposta")
+            show("Sem resposta")
             pending = None
-        alarm_tick(now)
-        buzzer_tick(now)
         if time.ticks_diff(now, last_ui) > 250:
             last_ui = now
             render()
-            matrix_tick(now)
         time.sleep_ms(20)
 
 main()
