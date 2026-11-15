@@ -87,7 +87,7 @@ As placas publicam telemetria e também mantêm dados importantes localmente, co
 | --- | --- | --- |
 | **ESP32-01** · quadro de comando | PZEM-004T, contatores CNT 1 a 4, LCD 20×4, horímetro e dados do motor | [`iotmotor_esp32_comandos`](esp32/iotmotor_esp32/iotmotor_esp32_comandos) |
 | **ESP32-S3** · sensores do motor | MPU6050 (vibração), DS18B20 (temperatura), LED RGB, buzzer, alarmes e histórico | [`iotmotor_esp32_s3_sensores`](esp32/iotmotor_esp32/iotmotor_esp32_s3_sensores) |
-| **BitDogLab** · painel de bolso (opcional) | Pico W com OLED, joystick, botões, buzzer e matriz 5×5: medições, temperatura, vibração, escolha da partida e liga/desliga | [`bitdoglab`](bitdoglab) |
+| **BitDogLab** · painel de bolso (opcional) | Pico W com OLED, joystick e botões: medições, temperatura, vibração, escolha da partida e liga/desliga | [`bitdoglab`](bitdoglab) |
 
 ## 🚀 Começando
 

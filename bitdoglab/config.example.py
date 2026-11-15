@@ -32,7 +32,6 @@ ENABLE_MOTOR_COMMANDS = False
 # Verifique a revisao fisica antes de usar com outra versao.
 PIN_BUTTON_A = 5
 PIN_BUTTON_B = 6
-PIN_JOYSTICK_BUTTON = 22
 PIN_OLED_SDA = 14
 PIN_OLED_SCL = 15
 PIN_LED_R = 13
@@ -42,14 +41,9 @@ PIN_JOYSTICK_X = 27   # ADC1
 PIN_JOYSTICK_Y = 26   # ADC0
 JOYSTICK_X_SIGN = 1   # troque para -1 se esquerda/direita estiverem invertidas
 JOYSTICK_Y_SIGN = 1   # troque para -1 se cima/baixo estiverem invertidos
-PIN_BUZZER = 21
-BUZZER_ENABLED = True
 LED_BRIGHTNESS = 0.06  # 0.0 a 1.0
-PIN_MATRIX = 7            # matriz 5x5 WS2812
-MATRIX_BRIGHTNESS = 0.04  # 0.0 a 1.0
-MATRIX_FLIP = False       # True se os icones aparecerem de cabeca para baixo
-# Reservas, usadas so ate chegar motor_info/alarms retidos do broker:
-MOTOR_NOMINAL_A = None
-VIBRATION_LIMIT_MMS = 4.5
+# Buzzer e matriz 5x5 nao sao usados; o programa so os mantem desligados.
+PIN_BUZZER = 21
+PIN_MATRIX = 7
 START_HOLD_MS = 1200
 TELEMETRY_STALE_MS = 15000
